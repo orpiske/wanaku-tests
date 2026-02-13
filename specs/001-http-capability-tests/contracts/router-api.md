@@ -62,26 +62,49 @@ Lists all registered tools.
 
 Registers a new HTTP tool.
 
+**Request** (simple, without headers):
+```json
+{
+  "name": "httpbin-get",
+  "description": "Simple GET request",
+  "type": "http",
+  "uri": "https://httpbin.org/get"
+}
+```
+
+### 2b. Register Tool with Headers (ToolPayload format)
+
+**POST** `/tools/addWithPayload`
+
+Registers a tool with static headers. Use this when the target API requires authentication or custom headers.
+
 **Request**:
 ```json
 {
-  "name": "weather-api",
-  "description": "Get weather data",
-  "type": "http",
-  "uri": "http://localhost:8080/weather",
-  "configProperties": {
-    "header.Content-Type": "application/json",
-    "header.X-Api-Key": "test-key",
-    "query.format": "json"
+  "payload": {
+    "name": "httpbin-headers-tool",
+    "description": "Tool with custom headers",
+    "type": "http",
+    "uri": "https://httpbin.org/headers"
   },
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "city": { "type": "string" }
-    },
-    "required": ["city"]
-  }
+  "configurationData": "header.X-Custom-Header=test-value-123\nheader.X-Api-Key=my-api-key"
 }
+```
+
+**Note**: `configurationData` is a string in Java properties format:
+- Headers: `header.Name=value`
+- Query params: `query.name=value`
+
+Equivalent CLI:
+```bash
+wanaku tools add -n "httpbin-headers-tool" \
+  --uri "https://httpbin.org/headers" \
+  --type http \
+  --configuration-from-file config.properties
+
+# config.properties содержит:
+# header.X-Custom-Header=test-value-123
+# header.X-Api-Key=my-api-key
 ```
 
 **Response** `201 Created`:

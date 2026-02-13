@@ -156,11 +156,18 @@ Configuration for registering an HTTP tool.
 |-------|------|-------------|
 | name | String | Tool name (unique identifier) |
 | description | String | Human-readable description |
-| targetUri | String | Target HTTP endpoint URL |
+| targetUri | String | Target HTTP endpoint URL (supports parameter templates) |
 | method | String | HTTP method (GET, POST, etc.) |
-| headers | Map<String, String> | Static headers (header.* prefix) |
-| queryParams | Map<String, String> | Static query params (query.* prefix) |
 | inputSchema | JsonSchema | Expected input parameters |
+
+**Static Headers/Query Params**:
+
+To add static headers or query params, use the `/addWithPayload` endpoint with `configurationData` field (string in properties format):
+```
+header.Authorization=Bearer token123
+header.X-Api-Key=secret
+query.format=json
+```
 
 **Validation Rules**:
 - Name must be unique per Router instance
