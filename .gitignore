@@ -45,6 +45,7 @@ Thumbs.db
 # Test artifacts (JARs and Quarkus app directories)
 artifacts/*
 !artifacts/README.md
+!artifacts/download.sh
 
 # Logs
 logs/
