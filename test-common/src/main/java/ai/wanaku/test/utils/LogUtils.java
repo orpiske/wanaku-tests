@@ -1,9 +1,5 @@
 package ai.wanaku.test.utils;
 
-import ai.wanaku.test.WanakuTestConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -11,6 +7,9 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
 
 /**
  * Utility class for process output logging and log file management.
@@ -33,9 +32,8 @@ import java.time.format.DateTimeFormatter;
 public final class LogUtils {
 
     private static final Logger LOG = LoggerFactory.getLogger(LogUtils.class);
-    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter
-            .ofPattern("yyyy-MM-dd_HH-mm-ss")
-            .withZone(ZoneId.systemDefault());
+    private static final DateTimeFormatter TIMESTAMP_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss").withZone(ZoneId.systemDefault());
 
     private LogUtils() {
         // Utility class
@@ -85,7 +83,8 @@ public final class LogUtils {
         // Legacy behavior - flat structure
         Path logDir = ensureLogDirectory();
         String timestamp = TIMESTAMP_FORMAT.format(Instant.now());
-        String filename = String.format("%s-%s-%s.log", sanitizeFilename(testName), sanitizeFilename(component), timestamp);
+        String filename =
+                String.format("%s-%s-%s.log", sanitizeFilename(testName), sanitizeFilename(component), timestamp);
         return createFile(logDir, filename);
     }
 
@@ -145,5 +144,4 @@ public final class LogUtils {
         }
         return input.replaceAll("[^a-zA-Z0-9.-]", "_");
     }
-
 }

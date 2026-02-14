@@ -1,17 +1,5 @@
 package ai.wanaku.test.managers;
 
-import ai.wanaku.test.WanakuTestConstants;
-import ai.wanaku.test.config.OidcCredentials;
-import io.quarkus.test.keycloak.client.KeycloakTestClient;
-import io.quarkus.test.keycloak.server.KeycloakContainer;
-import org.keycloak.representations.idm.RealmRepresentation;
-import org.keycloak.representations.idm.UserRepresentation;
-import org.keycloak.representations.idm.CredentialRepresentation;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.utility.DockerImageName;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -23,6 +11,17 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.keycloak.representations.idm.CredentialRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
+import org.keycloak.representations.idm.UserRepresentation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.utility.DockerImageName;
+import io.quarkus.test.keycloak.client.KeycloakTestClient;
+import io.quarkus.test.keycloak.server.KeycloakContainer;
+import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.config.OidcCredentials;
 
 /**
  * Manages the Keycloak container lifecycle.
@@ -49,7 +48,10 @@ public class KeycloakManager {
     private ManagerState state = ManagerState.STOPPED;
 
     public enum ManagerState {
-        STOPPED, STARTING, RUNNING, STOPPING
+        STOPPED,
+        STARTING,
+        RUNNING,
+        STOPPING
     }
 
     public void start() {
@@ -167,8 +169,7 @@ public class KeycloakManager {
         try {
             String formData = String.format(
                     "grant_type=%s&client_id=%s&username=%s&password=%s&scope=%s",
-                    enc("password"), enc(MCP_CLIENT_ID), enc(username), enc(password),
-                    enc("openid wanaku-mcp-client"));
+                    enc("password"), enc(MCP_CLIENT_ID), enc(username), enc(password), enc("openid wanaku-mcp-client"));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(getTokenEndpoint()))
@@ -180,7 +181,8 @@ public class KeycloakManager {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) {
-                throw new RuntimeException("Failed to get MCP token: " + response.statusCode() + " - " + response.body());
+                throw new RuntimeException(
+                        "Failed to get MCP token: " + response.statusCode() + " - " + response.body());
             }
 
             LOG.debug("Obtained MCP token for user: {}", username);

@@ -1,12 +1,12 @@
 package ai.wanaku.test.http;
 
+import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
-import io.quarkus.test.junit.QuarkusTest;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
@@ -38,12 +38,8 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
     @Test
     void shouldRegisterHttpToolViaCli() {
         // Skip if CLI or Router not available
-        assumeThat(cliExecutor.isAvailable())
-                .as("CLI must be available")
-                .isTrue();
-        assumeThat(isRouterAvailable())
-                .as("Router must be available")
-                .isTrue();
+        assumeThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
+        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
 
         // Given
         String toolName = "cli-weather-api";
@@ -51,14 +47,19 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
 
         // When - use --no-auth since /api/v1/* is public per Wanaku design
         CLIResult result = cliExecutor.execute(
-                "tools", "add",
-                "--host", getRouterHost(),
+                "tools",
+                "add",
+                "--host",
+                getRouterHost(),
                 "--no-auth",
-                "--name", toolName,
-                "--type", "http",
-                "--uri", toolUri,
-                "--description", "Weather API registered via CLI"
-        );
+                "--name",
+                toolName,
+                "--type",
+                "http",
+                "--uri",
+                toolUri,
+                "--description",
+                "Weather API registered via CLI");
 
         // Then
         assertThat(result.isSuccess())
@@ -73,30 +74,24 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
     @Test
     void shouldRemoveToolViaCli() {
         // Skip if CLI or Router not available
-        assumeThat(cliExecutor.isAvailable())
-                .as("CLI must be available")
-                .isTrue();
-        assumeThat(isRouterAvailable())
-                .as("Router must be available")
-                .isTrue();
+        assumeThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
+        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
 
         // Given - Register a tool first
         String toolName = "cli-remove-test";
-        routerClient.registerTool(
-                ai.wanaku.test.model.HttpToolConfig.builder()
-                        .name(toolName)
-                        .uri("https://httpbin.org/delete")
-                        .build()
-        );
+        routerClient.registerTool(ai.wanaku.test.model.HttpToolConfig.builder()
+                .name(toolName)
+                .uri("https://httpbin.org/delete")
+                .build());
 
         assertThat(routerClient.toolExists(toolName)).isTrue();
 
         // When - use --no-auth since /api/v1/* is public per Wanaku design
-        CLIResult result = cliExecutor.execute("tools", "remove", "--host", getRouterHost(), "--no-auth", "--name", toolName);
+        CLIResult result =
+                cliExecutor.execute("tools", "remove", "--host", getRouterHost(), "--no-auth", "--name", toolName);
 
         // Then
         assertThat(result.isSuccess()).isTrue();
         assertThat(routerClient.toolExists(toolName)).isFalse();
     }
-
 }

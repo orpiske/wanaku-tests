@@ -1,11 +1,5 @@
 package ai.wanaku.test.utils;
 
-import ai.wanaku.test.WanakuTestConstants;
-import org.awaitility.Awaitility;
-import org.awaitility.core.ConditionTimeoutException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
@@ -15,6 +9,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import org.awaitility.Awaitility;
+import org.awaitility.core.ConditionTimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
 
 /**
  * Utility class for component health check verification.
@@ -23,9 +22,8 @@ import java.time.Duration;
 public final class HealthCheckUtils {
 
     private static final Logger LOG = LoggerFactory.getLogger(HealthCheckUtils.class);
-    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(5))
-            .build();
+    private static final HttpClient HTTP_CLIENT =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
 
     private HealthCheckUtils() {
         // Utility class
@@ -54,9 +52,7 @@ public final class HealthCheckUtils {
         LOG.debug("Waiting for health check: {} (timeout: {}s)", url, timeout.toSeconds());
 
         try {
-            Awaitility.await()
-                    .atMost(timeout)
-                    .until(() -> checkHealth(url));
+            Awaitility.await().atMost(timeout).until(() -> checkHealth(url));
             LOG.debug("Health check passed");
             return true;
         } catch (ConditionTimeoutException e) {
@@ -103,9 +99,7 @@ public final class HealthCheckUtils {
         LOG.debug("Waiting for port {}:{} (timeout: {}s)", host, port, timeout.toSeconds());
 
         try {
-            Awaitility.await()
-                    .atMost(timeout)
-                    .until(() -> isPortOpen(host, port));
+            Awaitility.await().atMost(timeout).until(() -> isPortOpen(host, port));
             LOG.debug("Port {}:{} is available", host, port);
             return true;
         } catch (ConditionTimeoutException e) {

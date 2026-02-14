@@ -1,12 +1,11 @@
 package ai.wanaku.test.client;
 
-import io.quarkiverse.mcp.server.test.McpAssured;
-import io.vertx.core.MultiMap;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.net.URI;
 import java.net.URISyntaxException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import io.quarkiverse.mcp.server.test.McpAssured;
+import io.vertx.core.MultiMap;
 
 /**
  * MCP Streamable HTTP client wrapper for integration tests.

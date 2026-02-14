@@ -1,9 +1,5 @@
 package ai.wanaku.test.client;
 
-import ai.wanaku.test.WanakuTestConstants;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -15,6 +11,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
 
 /**
  * Utility for executing Wanaku CLI commands.
@@ -39,8 +38,7 @@ public class CLIExecutor {
      * Creates a CLIExecutor with default CLI path from system properties.
      */
     public static CLIExecutor createDefault() {
-        String cliPath = System.getProperty(WanakuTestConstants.PROP_CLI_PATH,
-                WanakuTestConstants.DEFAULT_CLI_PATH);
+        String cliPath = System.getProperty(WanakuTestConstants.PROP_CLI_PATH, WanakuTestConstants.DEFAULT_CLI_PATH);
         return new CLIExecutor(cliPath);
     }
 
@@ -109,7 +107,7 @@ public class CLIExecutor {
             String stdout;
             String stderr;
             try (BufferedReader stdoutReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                 BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+                    BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
 
                 stdout = stdoutReader.lines().collect(Collectors.joining("\n"));
                 stderr = stderrReader.lines().collect(Collectors.joining("\n"));

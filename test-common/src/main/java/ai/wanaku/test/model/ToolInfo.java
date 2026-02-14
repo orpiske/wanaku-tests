@@ -12,8 +12,7 @@ public class ToolInfo {
     private String description;
     private String type;
 
-    public ToolInfo() {
-    }
+    public ToolInfo() {}
 
     public String getName() {
         return name;

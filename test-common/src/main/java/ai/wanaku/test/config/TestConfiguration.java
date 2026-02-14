@@ -1,12 +1,11 @@
 package ai.wanaku.test.config;
 
-import ai.wanaku.test.WanakuTestConstants;
-
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
+import ai.wanaku.test.WanakuTestConstants;
 
 /**
  * Configuration holder for the entire test framework.
@@ -38,8 +37,8 @@ public class TestConfiguration {
      * Creates a configuration with sensible defaults from system properties.
      */
     public static TestConfiguration fromSystemProperties() {
-        String artifactsDirStr = System.getProperty(WanakuTestConstants.PROP_ARTIFACTS_DIR,
-                WanakuTestConstants.DEFAULT_ARTIFACTS_DIR);
+        String artifactsDirStr =
+                System.getProperty(WanakuTestConstants.PROP_ARTIFACTS_DIR, WanakuTestConstants.DEFAULT_ARTIFACTS_DIR);
         Path artifactsDir = Path.of(artifactsDirStr);
 
         String timeoutStr = System.getProperty(WanakuTestConstants.PROP_TIMEOUT, "60");
@@ -58,9 +57,9 @@ public class TestConfiguration {
 
     private static Path findJar(Path artifactsDir, String prefix) {
         // Check system property first
-        String propKey = prefix.contains("router") ?
-                WanakuTestConstants.PROP_ROUTER_JAR :
-                WanakuTestConstants.PROP_HTTP_SERVICE_JAR;
+        String propKey = prefix.contains("router")
+                ? WanakuTestConstants.PROP_ROUTER_JAR
+                : WanakuTestConstants.PROP_HTTP_SERVICE_JAR;
         String explicitPath = System.getProperty(propKey);
         if (explicitPath != null) {
             return Path.of(explicitPath);

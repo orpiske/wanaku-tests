@@ -1,12 +1,5 @@
 package ai.wanaku.test.managers;
 
-import ai.wanaku.test.WanakuTestConstants;
-import ai.wanaku.test.utils.LogUtils;
-import org.awaitility.Awaitility;
-import org.awaitility.core.ConditionTimeoutException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -16,6 +9,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import org.awaitility.Awaitility;
+import org.awaitility.core.ConditionTimeoutException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.utils.LogUtils;
 
 /**
  * Base class for managing Java processes (Router, HTTP Tool Service).
@@ -132,7 +131,8 @@ public abstract class ProcessManager {
             LOG.debug("{} is healthy", getProcessName());
         } else {
             stop();
-            throw new IllegalStateException(getProcessName() + " failed health check. Check logs: " + logFile.getAbsolutePath());
+            throw new IllegalStateException(
+                    getProcessName() + " failed health check. Check logs: " + logFile.getAbsolutePath());
         }
     }
 
@@ -152,9 +152,8 @@ public abstract class ProcessManager {
             // Try graceful shutdown first (SIGTERM)
             process.destroy();
 
-            boolean terminated = process.waitFor(
-                    WanakuTestConstants.GRACEFUL_SHUTDOWN_TIMEOUT.toSeconds(),
-                    TimeUnit.SECONDS);
+            boolean terminated =
+                    process.waitFor(WanakuTestConstants.GRACEFUL_SHUTDOWN_TIMEOUT.toSeconds(), TimeUnit.SECONDS);
 
             if (!terminated) {
                 LOG.warn("{} did not stop gracefully, forcing shutdown", getProcessName());
@@ -210,11 +209,10 @@ public abstract class ProcessManager {
      * @param interval  time between checks (ignored, uses Awaitility default)
      * @return true if condition was met within timeout
      */
-    protected boolean waitForCondition(java.util.function.Supplier<Boolean> condition, Duration timeout, Duration interval) {
+    protected boolean waitForCondition(
+            java.util.function.Supplier<Boolean> condition, Duration timeout, Duration interval) {
         try {
-            Awaitility.await()
-                    .atMost(timeout)
-                    .until(condition::get);
+            Awaitility.await().atMost(timeout).until(condition::get);
             return true;
         } catch (ConditionTimeoutException e) {
             return false;

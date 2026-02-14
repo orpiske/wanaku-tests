@@ -1,14 +1,5 @@
 package ai.wanaku.test.client;
 
-import ai.wanaku.test.WanakuTestConstants;
-import ai.wanaku.test.model.HttpToolConfig;
-import ai.wanaku.test.model.ToolInfo;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -22,6 +13,14 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.model.HttpToolConfig;
+import ai.wanaku.test.model.ToolInfo;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * REST API client for Router management operations.
@@ -45,9 +44,8 @@ public class RouterClient {
 
     public RouterClient(String baseUrl) {
         this.baseUrl = baseUrl;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
         this.objectMapper = new ObjectMapper();
     }
 
@@ -102,7 +100,8 @@ public class RouterClient {
             } else if (response.statusCode() == 409) {
                 throw new ToolExistsException("Tool '" + config.getName() + "' already exists");
             } else {
-                throw new RouterClientException("Failed to register tool: " + response.statusCode() + " - " + response.body());
+                throw new RouterClientException(
+                        "Failed to register tool: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -191,7 +190,8 @@ public class RouterClient {
                             throw new ToolNotFoundException("Tool '" + name + "' not found");
                         }
                     }
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
                 throw new RouterClientException("Failed to get tool: " + response.statusCode());
             }
         } catch (IOException | InterruptedException e) {
@@ -298,9 +298,11 @@ public class RouterClient {
         payload.put("description", config.getDescription());
         payload.put("type", "http");
         payload.put("uri", config.getUri());
-        payload.put("inputSchema", config.getInputSchema() != null
-                ? config.getInputSchema()
-                : Map.of("type", "object", "properties", Map.of()));
+        payload.put(
+                "inputSchema",
+                config.getInputSchema() != null
+                        ? config.getInputSchema()
+                        : Map.of("type", "object", "properties", Map.of()));
 
         Map<String, Object> body = new HashMap<>();
         body.put("payload", payload);
@@ -323,7 +325,8 @@ public class RouterClient {
             } else if (response.statusCode() == 409) {
                 throw new ToolExistsException("Tool '" + config.getName() + "' already exists");
             } else {
-                throw new RouterClientException("Failed to register tool: " + response.statusCode() + " - " + response.body());
+                throw new RouterClientException(
+                        "Failed to register tool: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -334,9 +337,8 @@ public class RouterClient {
     }
 
     private HttpRequest.Builder buildRequest(String path) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(30));
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder().uri(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(30));
 
         if (accessToken != null) {
             builder.header("Authorization", "Bearer " + accessToken);

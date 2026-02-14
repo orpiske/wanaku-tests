@@ -1,15 +1,14 @@
 package ai.wanaku.test.http;
 
+import java.util.List;
+import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.client.RouterClient;
 import ai.wanaku.test.model.HttpToolConfig;
 import ai.wanaku.test.model.ToolInfo;
-import io.quarkus.test.junit.QuarkusTest;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-
-import java.util.List;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -23,9 +22,7 @@ class HttpToolRegistrationITCase extends HttpCapabilityTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable())
-                .as("Router must be available")
-                .isTrue();
+        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
     }
 
     @DisplayName("Register HTTP tool via REST API and verify it appears in tool list")

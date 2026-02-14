@@ -32,10 +32,9 @@ public class CLIResult {
 
     @Override
     public String toString() {
-        return "CLIResult{" +
-                "exitCode=" + exitCode +
-                ", duration=" + duration.toMillis() + "ms" +
-                ", stdout='" + (stdout.length() > 100 ? stdout.substring(0, 100) + "..." : stdout) + '\'' +
-                '}';
+        return "CLIResult{" + "exitCode="
+                + exitCode + ", duration="
+                + duration.toMillis() + "ms" + ", stdout='"
+                + (stdout.length() > 100 ? stdout.substring(0, 100) + "..." : stdout) + '\'' + '}';
     }
 }
