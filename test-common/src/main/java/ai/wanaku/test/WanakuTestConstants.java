@@ -24,16 +24,13 @@ public final class WanakuTestConstants {
     public static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(60);
     public static final Duration DEFAULT_HEALTH_CHECK_INTERVAL = Duration.ofMillis(500);
 
-    // Keycloak configuration
-    public static final String DEFAULT_KEYCLOAK_REALM = "wanaku";
-
     // Health check endpoints
     public static final String ROUTER_HEALTH_PATH = "/q/health/ready";
 
     // API paths
     public static final String ROUTER_API_BASE_PATH = "/api/v1";
     public static final String ROUTER_TOOLS_PATH = ROUTER_API_BASE_PATH + "/tools";
-    public static final String ROUTER_MCP_SSE_PATH = "/mcp/sse";
+    public static final String ROUTER_CAPABILITIES_PATH = ROUTER_API_BASE_PATH + "/capabilities";
 
     // Port allocation
     public static final int PORT_ALLOCATION_RETRIES = 5;

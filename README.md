@@ -1,21 +1,84 @@
 # Wanaku Integration Tests
 
-Integration test framework for Wanaku components.
+Integration test framework for [Wanaku](https://github.com/wanaku-ai/wanaku) — an MCP Router that connects AI-enabled applications via the Model Context Protocol.
 
-## Quick Start
+## What This Tests
+
+This framework tests Wanaku capabilities:
+
+- **HTTP Capability** — register HTTP endpoints as tools, invoke via MCP *(current)*
+- **Resources** — resource providers *(planned)*
+- **Camel Integration** — Apache Camel-based capabilities *(planned)*
+
+## Prerequisites
+
+- Java 21+
+- Maven 3.9+
+- Docker (for Keycloak testcontainer)
+
+## Setup
+
+### Step 1: Get Wanaku JARs
+
+Tests require Router and HTTP Capability JARs. Choose one option:
+
+**Option A: Copy from local Wanaku build**
+```bash
+WANAKU_DIR=/path/to/wanaku
+
+cp -r $WANAKU_DIR/wanaku/wanaku-router/target/quarkus-app artifacts/wanaku-router
+cp -r $WANAKU_DIR/wanaku/capabilities/tools/wanaku-tool-service-http/target/quarkus-app artifacts/wanaku-tool-service-http
+```
+
+**Option B: Download from GitHub releases**
+```bash
+./artifacts/download.sh
+```
+
+After setup:
+```
+artifacts/
+├── wanaku-router/
+│   ├── quarkus-run.jar
+│   └── lib/
+└── wanaku-tool-service-http/
+    ├── quarkus-run.jar
+    └── lib/
+```
+
+### Step 2: Install CLI (for CLI tests)
+
+CLI tests require `wanaku` command. Choose one option:
+
+**Option A: Install via jbang (recommended)**
+```bash
+jbang app install wanaku@wanaku-ai/wanaku
+
+# Verify installation
+wanaku --version
+```
+
+**Option B: Use CLI JAR from build**
+```bash
+cp -r $WANAKU_DIR/wanaku/cli/target/quarkus-app artifacts/wanaku-cli
+```
+
+> **Note:** CLI tests are skipped if CLI is not available.
+
+## Run Tests
 
 ```bash
-# Run all tests
-mvn clean test
-
-# Run with debug logging
-mvn test -Dwanaku.log.level=DEBUG
-
-# Run specific test class
-mvn test -pl http-capability-tests -Dtest=HttpToolRegistrationITCase
+# Build and run all tests
+mvn clean install
 
 # Run single test
-mvn test -pl http-capability-tests -Dtest=HttpToolRegistrationITCase#shouldRegisterAndListTool
+mvn clean install -pl http-capability-tests -Dtest=HttpToolRegistrationITCase#shouldRegisterHttpToolViaRestApi
+
+# Run with debug logging
+mvn clean install -Dwanaku.log.level=DEBUG
+
+# Run with CLI JAR instead of system CLI
+mvn clean install -Dwanaku.test.cli.path=../artifacts/wanaku-cli/quarkus-run.jar
 ```
 
 ## Project Structure
@@ -23,21 +86,16 @@ mvn test -pl http-capability-tests -Dtest=HttpToolRegistrationITCase#shouldRegis
 ```
 wanaku-tests/
 ├── artifacts/             # Wanaku JARs (not in git)
-│   ├── wanaku-router/quarkus-run.jar
-│   └── wanaku-tool-service-http/quarkus-run.jar
-├── http-capability-tests/ # HTTP capability test cases
-│   └── src/test/java/
-│       └── ai/wanaku/test/http/
-│           ├── HttpToolCliITCase.java
-│           ├── HttpToolRegistrationITCase.java
-│           └── PublicApiITCase.java
-└── test-common/           # Shared test infrastructure
-    └── src/main/java/
-        └── ai/wanaku/test/
-            ├── base/      # BaseIntegrationTest
-            ├── client/    # RouterClient, McpTestClient, CLIExecutor
-            ├── managers/  # KeycloakManager, RouterManager, HttpCapabilityManager
-            └── utils/     # HealthCheckUtils, PortUtils, LogUtils
+├── http-capability-tests/ # HTTP capability tests (17 tests)
+│   └── src/test/java/ai/wanaku/test/http/
+│       ├── HttpToolCliITCase.java          # CLI tool management
+│       ├── HttpToolRegistrationITCase.java # Register, list, remove tools via REST API
+│       └── PublicApiITCase.java            # External API invocations
+└── test-common/           # Shared infrastructure
+    └── src/main/java/ai/wanaku/test/
+        ├── base/      # BaseIntegrationTest
+        ├── client/    # RouterClient, McpTestClient, CLIExecutor
+        └── managers/  # KeycloakManager, RouterManager, HttpCapabilityManager
 ```
 
 ## Logs
@@ -70,15 +128,18 @@ target/logs/
 - Suite-scoped: Keycloak, Router (shared across tests in a class)
 - Test-scoped: HTTP Capability (fresh per test)
 
-## Requirements
+## Troubleshooting
 
-- Java 21+
-- Maven 3.9+
-- Docker (for Keycloak testcontainer)
-- Wanaku JARs in `artifacts/` directory
-- `wanaku` CLI in PATH (for CLI tests)
+| Problem | Solution |
+|---------|----------|
+| `Skipping infrastructure setup` | Copy JARs to `artifacts/` |
+| `wanaku: command not found` | Install CLI: `jbang app install wanaku@wanaku-ai/wanaku` |
+| `Port already in use` | Kill orphan processes: `pkill -f quarkus-run.jar` |
+| `Keycloak connection refused` | Ensure Docker is running |
 
-## See Also
+## Modules
 
-- [HTTP Capability Tests](http-capability-tests/README.md) - detailed test documentation
-- [Usage Guide](USAGE.md) - advanced usage and configuration
+- [HTTP Capability Tests](http-capability-tests/README.md) — HTTP tool registration and invocation
+- *Resources Tests* — planned
+- *Camel Integration Capability Tests* — planned
+- *Integration Tests* — cross-capability tests, e2e flows (planned)

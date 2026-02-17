@@ -1,14 +1,13 @@
 package ai.wanaku.test.managers;
 
-import ai.wanaku.test.config.TestConfiguration;
-import ai.wanaku.test.utils.HealthCheckUtils;
-import ai.wanaku.test.utils.PortUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.config.TestConfiguration;
+import ai.wanaku.test.utils.HealthCheckUtils;
+import ai.wanaku.test.utils.PortUtils;
 
 /**
  * Manages the HTTP Capability Service process lifecycle.
@@ -39,12 +38,18 @@ public class HttpCapabilityManager extends ProcessManager {
      * @param routerGrpcPort the Router gRPC port (for capability communication)
      * @param oidcCredentials OIDC credentials for capability registration (can be null if auth disabled)
      */
-    public void prepare(String routerHost, int routerHttpPort, int routerGrpcPort,
-                        ai.wanaku.test.config.OidcCredentials oidcCredentials) {
+    public void prepare(
+            String routerHost,
+            int routerHttpPort,
+            int routerGrpcPort,
+            ai.wanaku.test.config.OidcCredentials oidcCredentials) {
         this.grpcPort = PortUtils.findAvailablePort();
 
-        LOG.debug("HTTP Capability prepared with gRPC port {}, connecting to Router HTTP:{} gRPC:{}",
-                grpcPort, routerHttpPort, routerGrpcPort);
+        LOG.debug(
+                "HTTP Capability prepared with gRPC port {}, connecting to Router HTTP:{} gRPC:{}",
+                grpcPort,
+                routerHttpPort,
+                routerGrpcPort);
 
         // Configure Quarkus properties
         addSystemProperty("quarkus.http.port", "0"); // Disable HTTP, only gRPC
@@ -92,5 +97,4 @@ public class HttpCapabilityManager extends ProcessManager {
         // Wait for the gRPC port to be listening
         return HealthCheckUtils.waitForPort("localhost", grpcPort, config.getDefaultTimeout());
     }
-
 }

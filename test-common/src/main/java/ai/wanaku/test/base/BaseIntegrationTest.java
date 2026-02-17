@@ -1,22 +1,24 @@
 package ai.wanaku.test.base;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Duration;
+import org.awaitility.Awaitility;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.client.RouterClient;
 import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.managers.HttpCapabilityManager;
 import ai.wanaku.test.managers.KeycloakManager;
 import ai.wanaku.test.managers.RouterManager;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
 /**
  * Abstract base class for Wanaku integration tests.
@@ -82,7 +84,8 @@ public abstract class BaseIntegrationTest {
         }
 
         // Start Router
-        if (config.getRouterJarPath() != null && config.getRouterJarPath().toFile().exists()) {
+        if (config.getRouterJarPath() != null
+                && config.getRouterJarPath().toFile().exists()) {
             routerManager = new RouterManager(config);
             routerManager.prepare();
             routerManager.start(testClassName);
@@ -95,7 +98,7 @@ public abstract class BaseIntegrationTest {
     }
 
     @BeforeEach
-    void setupTestInfrastructure(TestInfo testInfo) throws IOException, InterruptedException {
+    void setupTestInfrastructure(TestInfo testInfo) throws IOException {
         testName = testInfo.getDisplayName();
         String testMethodName = testInfo.getTestMethod().map(m -> m.getName()).orElse("unknown");
         LOG.info("[{}] >>> {}", testMethodName, testName);
@@ -121,9 +124,10 @@ public abstract class BaseIntegrationTest {
         }
 
         // Start HTTP Capability (test-scoped by default)
-        if (config.getHttpToolServiceJarPath() != null &&
-            config.getHttpToolServiceJarPath().toFile().exists() &&
-            routerManager != null && routerManager.isRunning()) {
+        if (config.getHttpToolServiceJarPath() != null
+                && config.getHttpToolServiceJarPath().toFile().exists()
+                && routerManager != null
+                && routerManager.isRunning()) {
 
             // Get OIDC credentials from Keycloak for capability registration
             ai.wanaku.test.config.OidcCredentials oidcCredentials = null;
@@ -132,19 +136,24 @@ public abstract class BaseIntegrationTest {
             }
 
             httpCapabilityManager = new HttpCapabilityManager(config);
-            httpCapabilityManager.prepare("localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials);
+            httpCapabilityManager.prepare(
+                    "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials);
 
             // Set log context for structured logging
             String profile = getLogProfile();
-            String testClassName = testInfo.getTestClass().map(Class::getSimpleName).orElse("Unknown");
+            String testClassName =
+                    testInfo.getTestClass().map(Class::getSimpleName).orElse("Unknown");
             httpCapabilityManager.setLogContext(profile, testClassName, testMethodName);
 
             httpCapabilityManager.start(testName);
 
             // Wait for HTTP Capability to register with Router
-            // Registration is async after health check passes - no API to check status
             LOG.debug("Waiting for HTTP Capability registration...");
-            Thread.sleep(1000);
+            Awaitility.await()
+                    .atMost(Duration.ofSeconds(10))
+                    .pollInterval(Duration.ofMillis(200))
+                    .until(() -> routerClient.isCapabilityRegistered("http"));
+            LOG.debug("HTTP Capability is registered");
         }
 
         LOG.debug("Test infrastructure ready: {}", testName);
@@ -221,19 +230,18 @@ public abstract class BaseIntegrationTest {
 
     private static boolean hasJars(Path dir) {
         try {
-            return Files.list(dir)
-                    .anyMatch(p -> {
-                        // Check for standalone JAR files
-                        if (p.toString().endsWith(".jar")) {
-                            return true;
-                        }
-                        // Check for Quarkus app directories containing quarkus-run.jar
-                        if (Files.isDirectory(p)) {
-                            Path quarkusRunJar = p.resolve("quarkus-run.jar");
-                            return Files.exists(quarkusRunJar);
-                        }
-                        return false;
-                    });
+            return Files.list(dir).anyMatch(p -> {
+                // Check for standalone JAR files
+                if (p.toString().endsWith(".jar")) {
+                    return true;
+                }
+                // Check for Quarkus app directories containing quarkus-run.jar
+                if (Files.isDirectory(p)) {
+                    Path quarkusRunJar = p.resolve("quarkus-run.jar");
+                    return Files.exists(quarkusRunJar);
+                }
+                return false;
+            });
         } catch (IOException e) {
             return false;
         }
@@ -284,10 +292,10 @@ public abstract class BaseIntegrationTest {
             return true;
         }
         // Check preconditions (for @EnabledIf which runs before @BeforeEach)
-        return isRouterAvailable() &&
-               config != null &&
-               config.getHttpToolServiceJarPath() != null &&
-               config.getHttpToolServiceJarPath().toFile().exists();
+        return isRouterAvailable()
+                && config != null
+                && config.getHttpToolServiceJarPath() != null
+                && config.getHttpToolServiceJarPath().toFile().exists();
     }
 
     /**

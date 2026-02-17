@@ -20,8 +20,7 @@ public class HttpToolConfig {
     private Map<String, Object> inputSchema;
     private List<String> requiredProperties = new ArrayList<>();
 
-    private HttpToolConfig() {
-    }
+    private HttpToolConfig() {}
 
     public static Builder builder() {
         return new Builder();
@@ -113,13 +112,14 @@ public class HttpToolConfig {
             Map<String, Object> properties = (Map<String, Object>) config.inputSchema.get("properties");
 
             // CamelHttpMethod tells Wanaku which HTTP method to use
-            properties.put("CamelHttpMethod", Map.of(
-                    "type", "string",
-                    "description", "HTTP method",
-                    "target", "header",
-                    "scope", "service",
-                    "value", config.method
-            ));
+            properties.put(
+                    "CamelHttpMethod",
+                    Map.of(
+                            "type", "string",
+                            "description", "HTTP method",
+                            "target", "header",
+                            "scope", "service",
+                            "value", config.method));
 
             if (!config.requiredProperties.isEmpty()) {
                 config.inputSchema.put("required", new ArrayList<>(config.requiredProperties));

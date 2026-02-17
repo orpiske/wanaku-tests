@@ -1,15 +1,14 @@
 package ai.wanaku.test.http;
 
-import ai.wanaku.test.model.HttpToolConfig;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.model.HttpToolConfig;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
@@ -29,9 +28,7 @@ class PublicApiITCase extends HttpCapabilityTestBase {
         assumeThat(isFullStackAvailable())
                 .as("Full stack (Router + HTTP Tool Service) required for MCP invocation tests")
                 .isTrue();
-        assumeThat(isMcpClientAvailable())
-                .as("MCP client must be connected")
-                .isTrue();
+        assumeThat(isMcpClientAvailable()).as("MCP client must be connected").isTrue();
     }
 
     @DisplayName("Register 2 HTTP tools and verify both appear when listing tools via MCP")
@@ -51,7 +48,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
                 .build());
 
         // When/Then - List tools via MCP
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsList(page -> {
                     assertThat(page.tools()).hasSize(2);
                     assertThat(page.tools())
@@ -75,7 +73,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
         routerClient.registerTool(config);
 
         // When/Then - Invoke and verify we get users data
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsCall("jsonplaceholder-users-tool", Map.of(), response -> {
                     LOG.debug("=== jsonplaceholder-users response: {}", response.content());
                     assertThat(response.isError()).isFalse();
@@ -105,7 +104,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
 
         // When/Then - Invoke tool via MCP with wanaku_body argument
         String jsonBody = "{\"message\": \"hello\", \"count\": 42}";
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsCall("httpbin-post-tool", Map.of("wanaku_body", jsonBody), response -> {
                     LOG.debug("=== httpbin-post response: {}", response.content());
                     assertThat(response.isError()).isFalse();
@@ -122,7 +122,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
     @Test
     void meowfacts_shouldInvokeWithRequiredParameter() {
         // Given - Tool with required parameter (like Wanaku docs example)
-        // wanaku tools add -n "meow-facts" --uri "https://meowfacts.herokuapp.com?count={parameter.valueOrElse('count', 1)}"
+        // wanaku tools add -n "meow-facts" --uri "https://meowfacts.herokuapp.com?count={parameter.valueOrElse('count',
+        // 1)}"
         //                  --property "count:int,The count of facts to retrieve" --required count
         HttpToolConfig config = HttpToolConfig.builder()
                 .name("meow-facts")
@@ -135,7 +136,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
         routerClient.registerTool(config);
 
         // When/Then - Invoke with parameter value
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsCall("meow-facts", Map.of("count", 2), response -> {
                     LOG.debug("=== meow-facts response: {}", response.content());
                     assertThat(response.isError()).isFalse();
@@ -171,7 +173,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
         routerClient.registerToolWithConfig(config, configurationData);
 
         // When/Then - Invoke and verify custom headers reached httpbin
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsCall("httpbin-headers-tool", Map.of(), response -> {
                     LOG.debug("=== httpbin-headers response: {}", response.content());
                     assertThat(response.isError()).isFalse();
@@ -191,7 +194,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
     @Test
     void httpbin_shouldInvokeWithOptionalParameter() {
         // Given - Tool with optional parameter and default value
-        // Similar pattern to: wanaku tools add -n "echo-param" --uri "https://httpbin.org/anything/{parameter.valueOrElse('value', 'default')}"
+        // Similar pattern to: wanaku tools add -n "echo-param" --uri
+        // "https://httpbin.org/anything/{parameter.valueOrElse('value', 'default')}"
         //                     --property "value:string,Value to echo"
         HttpToolConfig config = HttpToolConfig.builder()
                 .name("echo-param")
@@ -203,7 +207,8 @@ class PublicApiITCase extends HttpCapabilityTestBase {
         routerClient.registerTool(config);
 
         // When/Then - Invoke with custom value
-        mcpClient.when()
+        mcpClient
+                .when()
                 .toolsCall("echo-param", Map.of("value", "test-value"), response -> {
                     LOG.debug("=== echo-param response: {}", response.content());
                     assertThat(response.isError()).isFalse();

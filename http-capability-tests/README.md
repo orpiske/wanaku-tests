@@ -2,24 +2,18 @@
 
 Integration tests for Wanaku HTTP Tool capability.
 
-## Quick Start
+## Run Tests
 
 ```bash
-# Run all tests
-mvn test -pl http-capability-tests
+# All HTTP capability tests
+mvn clean install -pl http-capability-tests
 
-# Run specific test class
-mvn test -pl http-capability-tests -Dtest=HttpToolCliITCase
+# Specific test class
+mvn clean install -pl http-capability-tests -Dtest=HttpToolCliITCase
 
-# Run single test
-mvn test -pl http-capability-tests -Dtest=HttpToolCliITCase#shouldRegisterHttpToolViaCli
+# Single test
+mvn clean install -pl http-capability-tests -Dtest=HttpToolCliITCase#shouldRegisterHttpToolViaCli
 ```
-
-## Parameters
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `wanaku.test.artifacts.dir` | `artifacts` | Path to Wanaku JARs |
 
 ## Test Classes
 
@@ -35,8 +29,8 @@ mvn test -pl http-capability-tests -Dtest=HttpToolCliITCase#shouldRegisterHttpTo
 
 ```
 ┌─────────────┐     ┌──────────┐     ┌───────────────────┐
-│  Keycloak   │────▶│  Router  │◀────│  HTTP Tool Service│
-│  (Auth)     │     │  (API)   │     │  (Capability)     │
+│  Keycloak   │────▶│  Router  │◀────│  HTTP Capability  │
+│  (Auth)     │     │  (MCP)   │     │  (Tool Service)   │
 └─────────────┘     └──────────┘     └───────────────────┘
        ▲                 ▲                    ▲
        │                 │                    │
@@ -69,13 +63,3 @@ logs/
 ## Known Limitations
 
 - **CLI stdout capture**: JLine requires TTY. Tests verify CLI results via REST API instead of stdout.
-
-## Artifacts
-
-Tests expect Wanaku JARs in `../artifacts/`:
-```
-artifacts/
-├── wanaku-router/quarkus-run.jar
-├── wanaku-tool-service-http/quarkus-run.jar
-└── wanaku-cli/quarkus-run.jar
-```

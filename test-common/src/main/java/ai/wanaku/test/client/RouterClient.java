@@ -1,14 +1,5 @@
 package ai.wanaku.test.client;
 
-import ai.wanaku.test.WanakuTestConstants;
-import ai.wanaku.test.model.HttpToolConfig;
-import ai.wanaku.test.model.ToolInfo;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -17,11 +8,18 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.model.HttpToolConfig;
+import ai.wanaku.test.model.ToolInfo;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * REST API client for Router management operations.
@@ -31,7 +29,6 @@ import java.util.Map;
  * - GET /api/v1/tools/list - List all tools
  * - POST /api/v1/tools?name={name} - Get tool by name
  * - PUT /api/v1/tools/remove?tool={name} - Remove a tool
- * - DELETE /api/v1/tools?labelExpression={expr} - Remove tools by label
  */
 public class RouterClient {
 
@@ -41,13 +38,11 @@ public class RouterClient {
     private final ObjectMapper objectMapper;
     private final String baseUrl;
     private String accessToken;
-    private Instant tokenExpiry;
 
     public RouterClient(String baseUrl) {
         this.baseUrl = baseUrl;
-        this.httpClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
+        this.httpClient =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
         this.objectMapper = new ObjectMapper();
     }
 
@@ -56,15 +51,6 @@ public class RouterClient {
      */
     public void setAccessToken(String accessToken) {
         this.accessToken = accessToken;
-        this.tokenExpiry = Instant.now().plusSeconds(300); // Assume 5 min validity
-    }
-
-    /**
-     * Sets the access token with explicit expiry.
-     */
-    public void setAccessToken(String accessToken, Instant expiry) {
-        this.accessToken = accessToken;
-        this.tokenExpiry = expiry;
     }
 
     /**
@@ -83,7 +69,6 @@ public class RouterClient {
         body.put("type", "http");
         body.put("uri", config.getUri());
         body.put("inputSchema", config.getInputSchema());
-        body.put("labels", Map.of("test", "true"));
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -102,7 +87,8 @@ public class RouterClient {
             } else if (response.statusCode() == 409) {
                 throw new ToolExistsException("Tool '" + config.getName() + "' already exists");
             } else {
-                throw new RouterClientException("Failed to register tool: " + response.statusCode() + " - " + response.body());
+                throw new RouterClientException(
+                        "Failed to register tool: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -191,7 +177,8 @@ public class RouterClient {
                             throw new ToolNotFoundException("Tool '" + name + "' not found");
                         }
                     }
-                } catch (IOException ignored) {}
+                } catch (IOException ignored) {
+                }
                 throw new RouterClientException("Failed to get tool: " + response.statusCode());
             }
         } catch (IOException | InterruptedException e) {
@@ -238,38 +225,19 @@ public class RouterClient {
 
     /**
      * Removes all registered tools.
-     * Uses label expression to remove all tools marked with test=true label.
      */
     public void clearAllTools() {
         LOG.debug("Clearing all tools");
 
-        try {
-            // First try to remove test tools by label
-            String labelExpr = URLEncoder.encode("test=true", StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH + "?labelExpression=" + labelExpr)
-                    .DELETE()
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            LOG.debug("Clear by label response: {} - {}", response.statusCode(), response.body());
-
-            // Also list and remove all remaining tools
-            List<ToolInfo> remainingTools = listTools();
-            for (ToolInfo tool : remainingTools) {
-                try {
-                    removeTool(tool.getName());
-                } catch (Exception e) {
-                    LOG.warn("Failed to remove tool {}: {}", tool.getName(), e.getMessage());
-                }
+        List<ToolInfo> tools = listTools();
+        for (ToolInfo tool : tools) {
+            try {
+                removeTool(tool.getName());
+            } catch (Exception e) {
+                LOG.warn("Failed to remove tool {}: {}", tool.getName(), e.getMessage());
             }
-
-            LOG.debug("All tools cleared");
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new RouterClientException("Failed to clear tools", e);
         }
+        LOG.debug("Cleared {} tools", tools.size());
     }
 
     /**
@@ -298,9 +266,11 @@ public class RouterClient {
         payload.put("description", config.getDescription());
         payload.put("type", "http");
         payload.put("uri", config.getUri());
-        payload.put("inputSchema", config.getInputSchema() != null
-                ? config.getInputSchema()
-                : Map.of("type", "object", "properties", Map.of()));
+        payload.put(
+                "inputSchema",
+                config.getInputSchema() != null
+                        ? config.getInputSchema()
+                        : Map.of("type", "object", "properties", Map.of()));
 
         Map<String, Object> body = new HashMap<>();
         body.put("payload", payload);
@@ -323,7 +293,8 @@ public class RouterClient {
             } else if (response.statusCode() == 409) {
                 throw new ToolExistsException("Tool '" + config.getName() + "' already exists");
             } else {
-                throw new RouterClientException("Failed to register tool: " + response.statusCode() + " - " + response.body());
+                throw new RouterClientException(
+                        "Failed to register tool: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -334,9 +305,8 @@ public class RouterClient {
     }
 
     private HttpRequest.Builder buildRequest(String path) {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
-                .uri(URI.create(baseUrl + path))
-                .timeout(Duration.ofSeconds(30));
+        HttpRequest.Builder builder =
+                HttpRequest.newBuilder().uri(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(30));
 
         if (accessToken != null) {
             builder.header("Authorization", "Bearer " + accessToken);
@@ -347,6 +317,42 @@ public class RouterClient {
 
     public String getBaseUrl() {
         return baseUrl;
+    }
+
+    /**
+     * Checks if a specific capability service is registered with the Router.
+     *
+     * @param serviceName the service name (e.g., "http" for HTTP tool service)
+     * @return true if the service is found in the registered capabilities list
+     */
+    public boolean isCapabilityRegistered(String serviceName) {
+        /*
+         * GET /api/v1/capabilities returns:
+         * {
+         *   "data": [
+         *     { "serviceName": "http", "serviceType": "TOOLS", "host": "...", "port": 9000 },
+         *     { "serviceName": "exec", "serviceType": "TOOLS", "host": "...", "port": 9001 }
+         *   ]
+         * }
+         */
+        try {
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_CAPABILITIES_PATH)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() != 200) return false;
+
+            JsonNode data = objectMapper.readTree(response.body()).path("data");
+            for (JsonNode capability : data) {
+                if (serviceName.equals(capability.path("serviceName").asText())) {
+                    return true;
+                }
+            }
+        } catch (IOException | InterruptedException e) {
+            LOG.debug("Failed to check capability: {}", e.getMessage());
+        }
+        return false;
     }
 
     // Exception classes
