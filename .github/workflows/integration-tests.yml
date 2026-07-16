@@ -60,6 +60,10 @@ jobs:
       - name: Run integration tests
         run: mvn -B verify --file pom.xml
 
+      - name: Test summary
+        if: always()
+        run: ./.github/scripts/test-summary.sh
+
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
