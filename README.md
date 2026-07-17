@@ -96,6 +96,34 @@ mvn clean install -Dwanaku.log.level=DEBUG
 mvn clean install -Dwanaku.test.cli.path=../artifacts/wanaku-cli-0.1.0/quarkus-run.jar
 ```
 
+## Running on GitHub
+
+Integration tests run automatically on schedule (nightly) and via `repository_dispatch` from upstream Wanaku CI. You can also trigger them manually.
+
+### Trigger on the default branch
+
+```bash
+gh workflow run integration-tests.yml -R wanaku-ai/wanaku-tests
+```
+
+### Trigger on a specific branch
+
+```bash
+gh workflow run integration-tests.yml -R wanaku-ai/wanaku-tests --ref my-branch
+```
+
+### Trigger with a specific Wanaku version
+
+```bash
+gh workflow run integration-tests.yml -R wanaku-ai/wanaku-tests --ref my-branch -f version=0.3.0-SNAPSHOT
+```
+
+### Trigger on a fork
+
+```bash
+gh workflow run integration-tests.yml -R youruser/wanaku-tests --ref my-branch -f version=0.3.0-SNAPSHOT
+```
+
 ## Project Structure
 
 ```
