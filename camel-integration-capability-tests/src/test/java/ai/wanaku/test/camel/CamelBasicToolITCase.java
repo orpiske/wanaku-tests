@@ -121,7 +121,7 @@ class CamelBasicToolITCase extends CamelCapabilityTestBase {
 
         dataStoreClient.upload("test-routes.camel.yaml", routesContent);
         dataStoreClient.upload("test-rules.yaml", rulesContent);
-        dataStoreClient.upload("empty-deps.txt", "");
+        dataStoreClient.upload("empty-deps.txt", "# no dependencies");
 
         startCapabilityFromDataStore(
                 "ds-tool-svc",

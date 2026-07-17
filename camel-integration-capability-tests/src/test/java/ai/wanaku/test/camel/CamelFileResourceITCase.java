@@ -208,7 +208,7 @@ class CamelFileResourceITCase extends CamelCapabilityTestBase {
 
         dataStoreClient.upload("test-res-routes.camel.yaml", routesContent);
         dataStoreClient.upload("test-res-rules.yaml", rulesContent);
-        dataStoreClient.upload("empty-deps.txt", "");
+        dataStoreClient.upload("empty-deps.txt", "# no dependencies");
 
         String dsServiceName = "ds-resource-svc";
         String dsResourceUri = dsServiceName + "://" + RESOURCE_NAME;
