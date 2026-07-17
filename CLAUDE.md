@@ -94,4 +94,15 @@ Prioritize clarity, stability, and ease of maintenance:
 - Made download script version-parameterized with snapshot support
 
 <!-- MANUAL ADDITIONS START -->
+
+## Verifying Changes on CI
+
+In many cases, you want to make sure that the changes work on CI. 
+
+To do so trigger a CI build on YOUR OWN fork using your work branch:
+
+```shell
+gh workflow run integration-tests.yml --ref <work branch> -f version=<Wanaku version to use> -R <your github ID>/wanaku-tests
+```
+
 <!-- MANUAL ADDITIONS END -->
