@@ -24,7 +24,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     @DisplayName("Add a forward to a remote MCP server")
     @Test
     void shouldAddForward() {
-        forwardsClient.add("test-forward", getTargetMcpUrl(), "default");
+        forwardsClient.add("test-forward", getTargetMcpUrl(), testNamespaceId);
 
         assertThat(forwardsClient.exists("test-forward")).isTrue();
     }
@@ -32,9 +32,9 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     @DisplayName("List forwards after adding multiple entries")
     @Test
     void shouldListForwards() {
-        forwardsClient.add("fwd-alpha", getTargetMcpUrl(), "default");
-        forwardsClient.add("fwd-beta", "http://localhost:9999/mcp/", "default");
-        forwardsClient.add("fwd-gamma", "http://localhost:9998/mcp/", "default");
+        forwardsClient.add("fwd-alpha", getTargetMcpUrl(), testNamespaceId);
+        forwardsClient.add("fwd-beta", "http://localhost:9999/mcp/", testNamespaceId);
+        forwardsClient.add("fwd-gamma", "http://localhost:9998/mcp/", testNamespaceId);
 
         List<JsonNode> forwards = forwardsClient.list();
 
@@ -44,7 +44,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
     void shouldRemoveForward() {
-        forwardsClient.add("fwd-to-remove", getTargetMcpUrl(), "default");
+        forwardsClient.add("fwd-to-remove", getTargetMcpUrl(), testNamespaceId);
         assertThat(forwardsClient.exists("fwd-to-remove")).isTrue();
 
         boolean removed = forwardsClient.remove("fwd-to-remove");
@@ -64,7 +64,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     @DisplayName("Refresh forwards without error")
     @Test
     void shouldRefreshForwards() {
-        forwardsClient.add("refresh-test-fwd", getTargetMcpUrl(), "default");
+        forwardsClient.add("refresh-test-fwd", getTargetMcpUrl(), testNamespaceId);
 
         forwardsClient.refresh("refresh-test-fwd");
 

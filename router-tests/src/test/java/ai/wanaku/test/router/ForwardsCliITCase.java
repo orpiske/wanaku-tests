@@ -8,12 +8,14 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 @QuarkusTest
 class ForwardsCliITCase extends RouterTestBase {
 
     private CLIExecutor cliExecutor;
     private String authToken;
+    private String nsId;
 
     @BeforeEach
     void setupCli() {
@@ -24,16 +26,16 @@ class ForwardsCliITCase extends RouterTestBase {
         if (keycloakManager != null && keycloakManager.isRunning()) {
             authToken = keycloakManager.getMcpToken();
         }
+
+        nsId = getOrCreateNamespaceId("fwd-cli-test-ns");
+        assumeThat(nsId).as("Test namespace must be available").isNotNull();
     }
 
     @DisplayName("Add a forward via CLI and verify it exists via REST")
     @Test
     void shouldAddForwardViaCli() {
-        // Given
         String name = "test-fwd";
-        String target = "http://example.com/mcp";
 
-        // When
         CLIResult result = executeWithAuth(
                 "forwards",
                 "add",
@@ -42,11 +44,10 @@ class ForwardsCliITCase extends RouterTestBase {
                 "--name",
                 name,
                 "--service",
-                target,
+                "http://example.com/mcp",
                 "--namespace-name",
-                "default");
+                "fwd-cli-test-ns");
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())
                 .isTrue();
@@ -56,14 +57,11 @@ class ForwardsCliITCase extends RouterTestBase {
     @DisplayName("Add a forward via REST and verify it appears in CLI list output")
     @Test
     void shouldListForwardsViaCli() {
-        // Given
         String name = "cli-list-fwd";
-        forwardsClient.add(name, "http://example.com/mcp", "default");
+        forwardsClient.add(name, "http://example.com/mcp", nsId);
 
-        // When
         CLIResult result = executeWithAuth("forwards", "list", "--host", getRouterHost());
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI list should succeed: %s", result.getCombinedOutput())
                 .isTrue();
@@ -75,15 +73,12 @@ class ForwardsCliITCase extends RouterTestBase {
     @DisplayName("Add a forward via REST, remove via CLI, and verify removal")
     @Test
     void shouldRemoveForwardViaCli() {
-        // Given
         String name = "cli-remove-fwd";
-        forwardsClient.add(name, "http://example.com/mcp", "default");
+        forwardsClient.add(name, "http://example.com/mcp", nsId);
         assertThat(forwardsClient.exists(name)).isTrue();
 
-        // When
         CLIResult result = executeWithAuth("forwards", "remove", "--host", getRouterHost(), "--name", name);
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())
                 .isTrue();

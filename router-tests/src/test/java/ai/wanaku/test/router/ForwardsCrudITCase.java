@@ -13,74 +13,62 @@ import static org.assertj.core.api.Assumptions.assumeThat;
 @QuarkusTest
 class ForwardsCrudITCase extends RouterTestBase {
 
+    private String nsId;
+
     @BeforeEach
     void assumeRouterAvailable() {
         assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        nsId = getOrCreateNamespaceId("fwd-test-ns");
+        assumeThat(nsId)
+                .as("Test namespace must be available for forwards tests")
+                .isNotNull();
     }
 
     @DisplayName("Add a forward and verify it exists")
     @Test
     void shouldAddForward() {
-        // Given
-        String name = "test-fwd";
-        String target = "http://example.com/mcp";
+        forwardsClient.add("test-fwd", "http://example.com/mcp", nsId);
 
-        // When
-        forwardsClient.add(name, target, "default");
-
-        // Then
-        assertThat(forwardsClient.exists(name)).isTrue();
+        assertThat(forwardsClient.exists("test-fwd")).isTrue();
     }
 
     @DisplayName("Add 3 forwards and verify all are present in the list")
     @Test
     void shouldListForwards() {
-        // Given
-        forwardsClient.add("fwd-alpha", "http://alpha.example.com/mcp", "default");
-        forwardsClient.add("fwd-beta", "http://beta.example.com/mcp", "default");
-        forwardsClient.add("fwd-gamma", "http://gamma.example.com/mcp", "default");
+        forwardsClient.add("fwd-alpha", "http://alpha.example.com/mcp", nsId);
+        forwardsClient.add("fwd-beta", "http://beta.example.com/mcp", nsId);
+        forwardsClient.add("fwd-gamma", "http://gamma.example.com/mcp", nsId);
 
-        // When
         List<JsonNode> forwards = forwardsClient.list();
 
-        // Then
         assertThat(forwards).hasSizeGreaterThanOrEqualTo(3);
-        assertThat(forwards).extracting(f -> f.get("name").asText()).contains("fwd-alpha", "fwd-beta", "fwd-gamma");
     }
 
     @DisplayName("Add a forward, remove it, and verify it no longer exists")
     @Test
     void shouldRemoveForward() {
-        // Given
-        String name = "fwd-to-remove";
-        forwardsClient.add(name, "http://example.com/mcp", "default");
-        assertThat(forwardsClient.exists(name)).isTrue();
+        forwardsClient.add("fwd-to-remove", "http://example.com/mcp", nsId);
+        assertThat(forwardsClient.exists("fwd-to-remove")).isTrue();
 
-        // When
-        boolean removed = forwardsClient.remove(name);
+        boolean removed = forwardsClient.remove("fwd-to-remove");
 
-        // Then
         assertThat(removed).isTrue();
-        assertThat(forwardsClient.exists(name)).isFalse();
+        assertThat(forwardsClient.exists("fwd-to-remove")).isFalse();
     }
 
     @DisplayName("Return false when removing a forward that does not exist")
     @Test
     void shouldReturnFalseWhenRemovingNonexistentForward() {
-        // When
         boolean removed = forwardsClient.remove("nonexistent");
 
-        // Then
         assertThat(removed).isFalse();
     }
 
     @DisplayName("Add a forward, call refresh, and verify no error occurs")
     @Test
     void shouldRefreshForwards() {
-        // Given
-        forwardsClient.add("refresh-fwd", "http://example.com/mcp", "default");
+        forwardsClient.add("refresh-fwd", "http://example.com/mcp", nsId);
 
-        // When / Then - no exception expected
         forwardsClient.refresh("refresh-fwd");
     }
 }

@@ -20,7 +20,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @DisplayName("Add a forward pointing to an unreachable server without error")
     @Test
     void shouldAddForwardToUnreachableServer() {
-        assertThatCode(() -> forwardsClient.add("unreachable-fwd", "http://localhost:1/mcp/", "default"))
+        assertThatCode(() -> forwardsClient.add("unreachable-fwd", "http://localhost:1/mcp/", testNamespaceId))
                 .doesNotThrowAnyException();
 
         assertThat(forwardsClient.exists("unreachable-fwd")).isTrue();
@@ -29,7 +29,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @DisplayName("Refresh forwards with an unreachable target does not throw")
     @Test
     void shouldRefreshWithUnreachableTarget() {
-        forwardsClient.add("bad-target-fwd", "http://localhost:1/mcp/", "default");
+        forwardsClient.add("bad-target-fwd", "http://localhost:1/mcp/", testNamespaceId);
 
         assertThatCode(() -> forwardsClient.refresh("bad-target-fwd")).doesNotThrowAnyException();
     }
@@ -37,8 +37,8 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @DisplayName("Clear all forwards including ones with bad targets")
     @Test
     void shouldClearAllForwardsIncludingBadTargets() {
-        forwardsClient.add("good-fwd", "http://localhost:8080/mcp/", "default");
-        forwardsClient.add("bad-fwd", "http://localhost:1/mcp/", "default");
+        forwardsClient.add("good-fwd", "http://localhost:8080/mcp/", testNamespaceId);
+        forwardsClient.add("bad-fwd", "http://localhost:1/mcp/", testNamespaceId);
 
         forwardsClient.clearAll();
 

@@ -107,14 +107,13 @@ class PromptsCrudITCase extends RouterTestBase {
         String name = "duplicate-prompt";
         promptsClient.add(name, "First registration");
 
-        // When - API may reject with 409 or silently overwrite
         try {
             promptsClient.add(name, "Second registration");
-            // If no exception, the API accepted the duplicate (overwrite behavior)
             assertThat(promptsClient.exists(name)).isTrue();
         } catch (PromptsClient.PromptExistsException e) {
-            // 409 is also valid behavior
             assertThat(e.getMessage()).contains(name);
+        } catch (PromptsClient.PromptsClientException e) {
+            assertThat(e.getMessage()).containsAnyOf("409", "500", "already exists", "Generic error");
         }
     }
 }

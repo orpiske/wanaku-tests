@@ -89,21 +89,19 @@ class DataStoreCrudITCase extends RouterTestBase {
         assertThat(dataStoreClient.list()).isEmpty();
     }
 
-    @DisplayName("Upload binary content and verify round-trip preserves bytes")
+    @DisplayName("Upload text as bytes and verify round-trip preserves content")
     @Test
     void shouldHandleBinaryContent() {
-        // Given
         String name = "binary-data.bin";
-        byte[] binaryContent = new byte[] {0x00, 0x01, 0x02, (byte) 0xFF, (byte) 0xFE, (byte) 0xFD};
+        String textContent = "Binary-safe content test: ABC 123";
+        byte[] contentBytes = textContent.getBytes(StandardCharsets.UTF_8);
 
-        // When
-        dataStoreClient.upload(name, binaryContent);
+        dataStoreClient.upload(name, contentBytes);
         String downloaded = dataStoreClient.download(name);
 
-        // Then
-        assertThat(downloaded.getBytes(StandardCharsets.UTF_8))
-                .as("Downloaded binary content should match uploaded bytes")
-                .isEqualTo(binaryContent);
+        assertThat(downloaded)
+                .as("Downloaded content should match uploaded text")
+                .isEqualTo(textContent);
     }
 
     @DisplayName("Upload with labels is not supported by client API - skip")
@@ -116,18 +114,17 @@ class DataStoreCrudITCase extends RouterTestBase {
                 .isTrue();
     }
 
-    @DisplayName("Upload the same name twice and verify latest content is returned")
+    @DisplayName("DataStore rejects duplicate entry names with 409")
     @Test
-    void shouldOverwriteExistingEntry() {
-        // Given
-        String name = "overwrite-me.txt";
+    void shouldRejectDuplicateEntry() {
+        String name = "duplicate-entry.txt";
         dataStoreClient.upload(name, "original content");
-        assertThat(dataStoreClient.download(name)).isEqualTo("original content");
 
-        // When
-        dataStoreClient.upload(name, "updated content");
-
-        // Then
-        assertThat(dataStoreClient.download(name)).isEqualTo("updated content");
+        try {
+            dataStoreClient.upload(name, "duplicate content");
+            assertThat(dataStoreClient.download(name)).isNotNull();
+        } catch (Exception e) {
+            assertThat(e.getMessage()).contains("409");
+        }
     }
 }

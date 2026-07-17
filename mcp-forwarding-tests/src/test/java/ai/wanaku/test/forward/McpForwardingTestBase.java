@@ -1,16 +1,19 @@
 package ai.wanaku.test.forward;
 
 import java.io.IOException;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.ForwardsClient;
+import ai.wanaku.test.client.NamespaceClient;
 import ai.wanaku.test.client.RouterClient;
 import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.managers.HttpCapabilityManager;
 import ai.wanaku.test.managers.RouterManager;
 import ai.wanaku.test.model.HttpToolConfig;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -26,6 +29,8 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
     protected static RouterClient targetRouterClient;
     protected static HttpCapabilityManager targetHttpCapability;
     protected ForwardsClient forwardsClient;
+    protected NamespaceClient namespaceClient;
+    protected String testNamespaceId;
 
     @BeforeAll
     static void startTargetRouter() throws IOException {
@@ -76,6 +81,21 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
                 accessToken = keycloakManager.getMcpToken();
             }
             forwardsClient = new ForwardsClient(routerManager.getBaseUrl(), accessToken);
+            namespaceClient = new NamespaceClient(routerManager.getBaseUrl(), accessToken);
+            try {
+                List<JsonNode> namespaces = namespaceClient.list();
+                for (JsonNode ns : namespaces) {
+                    if (ns.has("name") && "fwd-test-ns".equals(ns.get("name").asText())) {
+                        testNamespaceId = ns.get("id").asText();
+                        break;
+                    }
+                }
+                if (testNamespaceId == null) {
+                    testNamespaceId = namespaceClient.create("fwd-test-ns", "/fwd-test-ns");
+                }
+            } catch (Exception e) {
+                LOG.warn("Failed to setup test namespace: {}", e.getMessage());
+            }
         }
     }
 
