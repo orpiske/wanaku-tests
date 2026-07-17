@@ -57,6 +57,7 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
             keycloakManager.start();
         } catch (Exception e) {
             LOG.warn("Keycloak startup failed, Router will run without authentication: {}", e.getMessage());
+            keycloakManager = null;
         }
 
         if (config.getRouterJarPath() != null

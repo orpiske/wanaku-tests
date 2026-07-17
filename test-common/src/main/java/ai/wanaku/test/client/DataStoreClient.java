@@ -140,8 +140,24 @@ public class DataStoreClient {
                     throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found");
                 }
 
-                String encodedData = dataNode.has("data") ? dataNode.get("data").asText() : null;
+                JsonNode entryNode = dataNode;
+                if (dataNode.isArray()) {
+                    if (dataNode.isEmpty()) {
+                        throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found");
+                    }
+                    entryNode = dataNode.get(0);
+                }
+
+                String encodedData = null;
+                if (entryNode.has("data")) {
+                    encodedData = entryNode.get("data").asText();
+                } else if (entryNode.has("content")) {
+                    encodedData = entryNode.get("content").asText();
+                } else if (entryNode.isTextual()) {
+                    encodedData = entryNode.asText();
+                }
                 if (encodedData == null || encodedData.isEmpty()) {
+                    LOG.warn("Entry '{}' response structure: {}", name, entryNode);
                     throw new DataStoreClientException("Entry '" + name + "' has no data");
                 }
 
