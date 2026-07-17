@@ -92,5 +92,6 @@ jobs:
           name: integration-test-reports
           path: |
             **/target/failsafe-reports/
+            **/target/logs/
           retention-days: 14
           if-no-files-found: ignore
