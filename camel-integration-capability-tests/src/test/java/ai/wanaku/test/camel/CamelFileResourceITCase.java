@@ -76,16 +76,19 @@ class CamelFileResourceITCase extends CamelCapabilityTestBase {
         Path testFile = createTestFile("test-read.txt", "Hello Wanaku from CIC resource");
         startFileResourceCapability(SERVICE_NAME, RESOURCE_NAME, testFile);
 
-        mcpClient
-                .when()
-                .resourcesRead(RESOURCE_URI)
-                .withAssert(response -> {
-                    LOG.debug("=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
-                    assertThat(response.contents()).isNotEmpty();
-                    assertThat(response.contents().get(0).asText().text()).contains("Hello Wanaku from CIC resource");
-                })
-                .send()
-                .thenAssertResults();
+        assertResourceReadWithRetry(RESOURCE_URI, () -> {
+            mcpClient
+                    .when()
+                    .resourcesRead(RESOURCE_URI)
+                    .withAssert(response -> {
+                        LOG.debug("=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
+                        assertThat(response.contents()).isNotEmpty();
+                        assertThat(response.contents().get(0).asText().text())
+                                .contains("Hello Wanaku from CIC resource");
+                    })
+                    .send()
+                    .thenAssertResults();
+        });
     }
 
     @DisplayName("Read resource pointing to non-existent file and verify error response")
@@ -128,28 +131,32 @@ class CamelFileResourceITCase extends CamelCapabilityTestBase {
         startFileResourceCapability("switch-svc-a", "switch-res-a", fileA);
         startFileResourceCapability("switch-svc-b", "switch-res-b", fileB);
 
-        // First read
-        mcpClient
-                .when()
-                .resourcesRead("switch-svc-a://switch-res-a")
-                .withAssert(r -> {
-                    LOG.debug("=== MCP resourcesRead response [1st switch-res-a]: {}", r.contents());
-                    assertThat(r.contents()).isNotEmpty();
-                    assertThat(r.contents().get(0).asText().text()).contains("Alpha content");
-                })
-                .send()
-                .thenAssertResults();
+        // First read (with retry — CIC routes may not be fully started yet)
+        assertResourceReadWithRetry("switch-svc-a://switch-res-a", () -> {
+            mcpClient
+                    .when()
+                    .resourcesRead("switch-svc-a://switch-res-a")
+                    .withAssert(r -> {
+                        LOG.debug("=== MCP resourcesRead response [1st switch-res-a]: {}", r.contents());
+                        assertThat(r.contents()).isNotEmpty();
+                        assertThat(r.contents().get(0).asText().text()).contains("Alpha content");
+                    })
+                    .send()
+                    .thenAssertResults();
+        });
 
-        mcpClient
-                .when()
-                .resourcesRead("switch-svc-b://switch-res-b")
-                .withAssert(r -> {
-                    LOG.debug("=== MCP resourcesRead response [1st switch-res-b]: {}", r.contents());
-                    assertThat(r.contents()).isNotEmpty();
-                    assertThat(r.contents().get(0).asText().text()).contains("Beta content");
-                })
-                .send()
-                .thenAssertResults();
+        assertResourceReadWithRetry("switch-svc-b://switch-res-b", () -> {
+            mcpClient
+                    .when()
+                    .resourcesRead("switch-svc-b://switch-res-b")
+                    .withAssert(r -> {
+                        LOG.debug("=== MCP resourcesRead response [1st switch-res-b]: {}", r.contents());
+                        assertThat(r.contents()).isNotEmpty();
+                        assertThat(r.contents().get(0).asText().text()).contains("Beta content");
+                    })
+                    .send()
+                    .thenAssertResults();
+        });
 
         // Re-read — must return original content, not stale or empty
         mcpClient
@@ -212,16 +219,18 @@ class CamelFileResourceITCase extends CamelCapabilityTestBase {
                 "datastore://test-res-rules.yaml",
                 "datastore://empty-deps.txt");
 
-        mcpClient
-                .when()
-                .resourcesRead(dsResourceUri)
-                .withAssert(response -> {
-                    LOG.debug("=== MCP resourcesRead response [DataStore resource]: {}", response.contents());
-                    assertThat(response.contents()).isNotEmpty();
-                    assertThat(response.contents().get(0).asText().text()).contains("DataStore resource content");
-                })
-                .send()
-                .thenAssertResults();
+        assertResourceReadWithRetry(dsResourceUri, () -> {
+            mcpClient
+                    .when()
+                    .resourcesRead(dsResourceUri)
+                    .withAssert(response -> {
+                        LOG.debug("=== MCP resourcesRead response [DataStore resource]: {}", response.contents());
+                        assertThat(response.contents()).isNotEmpty();
+                        assertThat(response.contents().get(0).asText().text()).contains("DataStore resource content");
+                    })
+                    .send()
+                    .thenAssertResults();
+        });
     }
 
     // -- Helpers --
