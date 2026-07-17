@@ -17,7 +17,7 @@ on:
 
 env:
   # Update when upstream development version changes
-  DEFAULT_SNAPSHOT_VERSION: '0.3.0-SNAPSHOT'
+  DEFAULT_SNAPSHOT_VERSION: '0.2.0-SNAPSHOT'
 
 jobs:
   integration-tests:

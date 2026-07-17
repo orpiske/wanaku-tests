@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 import io.quarkiverse.mcp.server.ToolResponse;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.DataStoreClient;
+import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.fixtures.TestFixtures;
@@ -167,25 +168,7 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        LOG.debug("Waiting for CIC '{}' to register with Router...", serviceName);
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(Duration.ofMillis(500))
-                .until(() -> routerClient.isCapabilityRegistered(serviceName));
-        LOG.info("CIC '{}' is registered with Router", serviceName);
-
-        // Wait for tools/resources to be registered
-        LOG.debug("Waiting for CIC '{}' tools/resources to appear in Router...", serviceName);
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(Duration.ofMillis(500))
-                .until(() -> {
-                    boolean hasTools = routerClient.listTools().stream().anyMatch(t -> serviceName.equals(t.getType()));
-                    boolean hasResources =
-                            routerClient.listResources().stream().anyMatch(r -> serviceName.equals(r.getType()));
-                    return hasTools || hasResources;
-                });
-        LOG.info("CIC '{}' tools/resources are available", serviceName);
+        waitForCapabilityReady(serviceName, manager);
 
         camelManagers.add(manager);
         return manager;
@@ -221,12 +204,24 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
+        waitForCapabilityReady(serviceName, manager);
+
+        camelManagers.add(manager);
+        return manager;
+    }
+
+    private void waitForCapabilityReady(String serviceName, CamelCapabilityManager manager) {
         // Wait for capability registration
         LOG.debug("Waiting for CIC '{}' to register with Router...", serviceName);
         Awaitility.await()
                 .atMost(Duration.ofSeconds(90))
                 .pollInterval(Duration.ofMillis(500))
-                .until(() -> routerClient.isCapabilityRegistered(serviceName));
+                .until(() -> {
+                    if (!manager.isRunning()) {
+                        LOG.warn("CIC '{}' process died before registration completed", serviceName);
+                    }
+                    return routerClient.isCapabilityRegistered(serviceName);
+                });
         LOG.info("CIC '{}' is registered with Router", serviceName);
 
         // Wait for tools/resources to be registered (CIC registers them asynchronously
@@ -236,6 +231,9 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 .atMost(Duration.ofSeconds(90))
                 .pollInterval(Duration.ofMillis(500))
                 .until(() -> {
+                    if (!manager.isRunning()) {
+                        LOG.warn("CIC '{}' process died before tools/resources registered", serviceName);
+                    }
                     boolean hasTools = routerClient.listTools().stream().anyMatch(t -> serviceName.equals(t.getType()));
                     boolean hasResources =
                             routerClient.listResources().stream().anyMatch(r -> serviceName.equals(r.getType()));
@@ -243,8 +241,32 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 });
         LOG.info("CIC '{}' tools/resources are available", serviceName);
 
-        camelManagers.add(manager);
-        return manager;
+        // Reconnect MCP client so it picks up newly registered tools/resources.
+        // The MCP Streamable HTTP transport may cache tool metadata from the
+        // initial connection; a fresh session ensures the client sees the latest state.
+        reconnectMcpClient();
+    }
+
+    private void reconnectMcpClient() {
+        if (mcpClient == null) {
+            return;
+        }
+        try {
+            mcpClient.disconnect();
+        } catch (Exception e) {
+            LOG.debug("MCP disconnect during reconnect: {}", e.getMessage());
+        }
+        try {
+            String accessToken = null;
+            if (keycloakManager != null && keycloakManager.isRunning()) {
+                accessToken = keycloakManager.getMcpToken();
+            }
+            mcpClient = new McpTestClient(routerManager.getBaseUrl(), accessToken);
+            mcpClient.connect();
+            LOG.debug("MCP client reconnected");
+        } catch (Exception e) {
+            LOG.warn("Failed to reconnect MCP client: {}", e.getMessage());
+        }
     }
 
     protected void assertToolCallWithRetry(
@@ -255,6 +277,13 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 .untilAsserted(() -> {
                     mcpClient.when().toolsCall(toolName, args, assertions).thenAssertResults();
                 });
+    }
+
+    protected void assertResourceReadWithRetry(String resourceUri, Runnable assertion) {
+        Awaitility.await()
+                .atMost(Duration.ofSeconds(90))
+                .pollInterval(Duration.ofSeconds(3))
+                .untilAsserted(assertion::run);
     }
 
     /**
