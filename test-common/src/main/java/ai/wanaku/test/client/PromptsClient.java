@@ -35,13 +35,12 @@ public class PromptsClient {
         this.objectMapper = new ObjectMapper();
     }
 
-    public void add(String name, String description, String template) {
+    public void add(String name, String description) {
         LOG.debug("Adding prompt: {}", name);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("description", description);
-        body.put("template", template);
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -138,10 +137,11 @@ public class PromptsClient {
         LOG.debug("Editing prompt: {}", name);
 
         try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            String json = objectMapper.writeValueAsString(updates);
+            Map<String, Object> body = new HashMap<>(updates);
+            body.put("name", name);
+            String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH)
                     .PUT(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();

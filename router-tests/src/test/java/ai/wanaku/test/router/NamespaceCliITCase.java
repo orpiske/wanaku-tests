@@ -29,13 +29,11 @@ class NamespaceCliITCase extends RouterTestBase {
     @DisplayName("Create a namespace via CLI and verify it exists via REST")
     @Test
     void shouldCreateNamespaceViaCli() {
-        // Given
         String name = "test-cli-ns";
 
-        // When
-        CLIResult result = executeWithAuth("namespaces", "create", "--host", getRouterHost(), "--name", name);
+        CLIResult result = executeWithAuth(
+                "namespaces", "create", "--host", getRouterHost(), "--name", name, "--path", "/" + name);
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())
                 .isTrue();
@@ -45,14 +43,11 @@ class NamespaceCliITCase extends RouterTestBase {
     @DisplayName("Create a namespace via REST and verify it appears in CLI list output")
     @Test
     void shouldListNamespacesViaCli() {
-        // Given
         String name = "cli-list-ns";
-        namespaceClient.create(name);
+        namespaceClient.create(name, "/" + name);
 
-        // When
         CLIResult result = executeWithAuth("namespaces", "list", "--host", getRouterHost());
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI list should succeed: %s", result.getCombinedOutput())
                 .isTrue();
@@ -64,15 +59,12 @@ class NamespaceCliITCase extends RouterTestBase {
     @DisplayName("Create a namespace via REST, delete via CLI, and verify removal")
     @Test
     void shouldDeleteNamespaceViaCli() {
-        // Given
         String name = "cli-delete-ns";
-        namespaceClient.create(name);
+        String id = namespaceClient.create(name, "/" + name);
         assertThat(namespaceClient.exists(name)).isTrue();
 
-        // When
         CLIResult result = executeWithAuth("namespaces", "delete", "--host", getRouterHost(), "--name", name);
 
-        // Then
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())
                 .isTrue();

@@ -26,7 +26,7 @@ class ForwardsCrudITCase extends RouterTestBase {
         String target = "http://example.com/mcp";
 
         // When
-        forwardsClient.add(name, target);
+        forwardsClient.add(name, target, "default");
 
         // Then
         assertThat(forwardsClient.exists(name)).isTrue();
@@ -36,9 +36,9 @@ class ForwardsCrudITCase extends RouterTestBase {
     @Test
     void shouldListForwards() {
         // Given
-        forwardsClient.add("fwd-alpha", "http://alpha.example.com/mcp");
-        forwardsClient.add("fwd-beta", "http://beta.example.com/mcp");
-        forwardsClient.add("fwd-gamma", "http://gamma.example.com/mcp");
+        forwardsClient.add("fwd-alpha", "http://alpha.example.com/mcp", "default");
+        forwardsClient.add("fwd-beta", "http://beta.example.com/mcp", "default");
+        forwardsClient.add("fwd-gamma", "http://gamma.example.com/mcp", "default");
 
         // When
         List<JsonNode> forwards = forwardsClient.list();
@@ -53,7 +53,7 @@ class ForwardsCrudITCase extends RouterTestBase {
     void shouldRemoveForward() {
         // Given
         String name = "fwd-to-remove";
-        forwardsClient.add(name, "http://example.com/mcp");
+        forwardsClient.add(name, "http://example.com/mcp", "default");
         assertThat(forwardsClient.exists(name)).isTrue();
 
         // When
@@ -78,9 +78,9 @@ class ForwardsCrudITCase extends RouterTestBase {
     @Test
     void shouldRefreshForwards() {
         // Given
-        forwardsClient.add("refresh-fwd", "http://example.com/mcp");
+        forwardsClient.add("refresh-fwd", "http://example.com/mcp", "default");
 
         // When / Then - no exception expected
-        forwardsClient.refresh();
+        forwardsClient.refresh("refresh-fwd");
     }
 }

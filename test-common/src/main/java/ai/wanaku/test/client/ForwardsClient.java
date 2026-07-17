@@ -35,12 +35,13 @@ public class ForwardsClient {
         this.objectMapper = new ObjectMapper();
     }
 
-    public void add(String name, String targetUrl) {
-        LOG.debug("Adding forward: {} -> {}", name, targetUrl);
+    public void add(String name, String address, String namespace) {
+        LOG.debug("Adding forward: {} -> {} (namespace: {})", name, address, namespace);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
-        body.put("target", targetUrl);
+        body.put("address", address);
+        body.put("namespace", namespace);
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -133,27 +134,29 @@ public class ForwardsClient {
         }
     }
 
-    public void refresh() {
-        LOG.debug("Refreshing forwards");
+    public void refresh(String name) {
+        LOG.debug("Refreshing forward: {}", name);
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_FORWARDS_PATH + "/refresh")
+            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
+            HttpRequest request = buildRequest(
+                            WanakuTestConstants.ROUTER_FORWARDS_PATH + "/" + encodedName + "/refreshes")
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200 || response.statusCode() == 204) {
-                LOG.debug("Forwards refreshed");
+                LOG.debug("Forward refreshed: {}", name);
             } else {
                 throw new ForwardsClientException(
-                        "Failed to refresh forwards: " + response.statusCode() + " - " + response.body());
+                        "Failed to refresh forward '" + name + "': " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new ForwardsClientException("Failed to refresh forwards", e);
+            throw new ForwardsClientException("Failed to refresh forward '" + name + "'", e);
         }
     }
 

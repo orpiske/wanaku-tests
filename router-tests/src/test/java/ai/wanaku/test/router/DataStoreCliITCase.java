@@ -1,7 +1,8 @@
 package ai.wanaku.test.router;
 
-import java.nio.charset.StandardCharsets;
-import java.util.Base64;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
@@ -30,20 +31,31 @@ class DataStoreCliITCase extends RouterTestBase {
 
     @DisplayName("Add a data store entry via CLI and verify it exists via REST")
     @Test
-    void shouldAddDataStoreEntryViaCli() {
+    void shouldAddDataStoreEntryViaCli() throws IOException {
         // Given
         String name = "cli-entry.txt";
-        String data = Base64.getEncoder().encodeToString("CLI content".getBytes(StandardCharsets.UTF_8));
+        Path tempFile = Files.createTempFile("cli-entry", ".txt");
+        Files.writeString(tempFile, "CLI content");
 
-        // When
-        CLIResult result =
-                executeWithAuth("data-store", "add", "--host", getRouterHost(), "--name", name, "--data", data);
+        try {
+            // When
+            CLIResult result = executeWithAuth(
+                    "data-store",
+                    "add",
+                    "--host",
+                    getRouterHost(),
+                    "--name",
+                    name,
+                    "--read-from-file=" + tempFile.toAbsolutePath());
 
-        // Then
-        assertThat(result.isSuccess())
-                .as("CLI command should succeed: %s", result.getCombinedOutput())
-                .isTrue();
-        assertThat(dataStoreClient.list()).contains(name);
+            // Then
+            assertThat(result.isSuccess())
+                    .as("CLI command should succeed: %s", result.getCombinedOutput())
+                    .isTrue();
+            assertThat(dataStoreClient.list()).contains(name);
+        } finally {
+            Files.deleteIfExists(tempFile);
+        }
     }
 
     @DisplayName("Upload 3 entries via REST and verify all appear in CLI list output")

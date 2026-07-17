@@ -34,8 +34,17 @@ class ForwardsCliITCase extends RouterTestBase {
         String target = "http://example.com/mcp";
 
         // When
-        CLIResult result =
-                executeWithAuth("forwards", "add", "--host", getRouterHost(), "--name", name, "--target", target);
+        CLIResult result = executeWithAuth(
+                "forwards",
+                "add",
+                "--host",
+                getRouterHost(),
+                "--name",
+                name,
+                "--service",
+                target,
+                "--namespace-name",
+                "default");
 
         // Then
         assertThat(result.isSuccess())
@@ -49,7 +58,7 @@ class ForwardsCliITCase extends RouterTestBase {
     void shouldListForwardsViaCli() {
         // Given
         String name = "cli-list-fwd";
-        forwardsClient.add(name, "http://example.com/mcp");
+        forwardsClient.add(name, "http://example.com/mcp", "default");
 
         // When
         CLIResult result = executeWithAuth("forwards", "list", "--host", getRouterHost());
@@ -68,7 +77,7 @@ class ForwardsCliITCase extends RouterTestBase {
     void shouldRemoveForwardViaCli() {
         // Given
         String name = "cli-remove-fwd";
-        forwardsClient.add(name, "http://example.com/mcp");
+        forwardsClient.add(name, "http://example.com/mcp", "default");
         assertThat(forwardsClient.exists(name)).isTrue();
 
         // When

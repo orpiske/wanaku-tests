@@ -35,11 +35,15 @@ public class NamespaceClient {
         this.objectMapper = new ObjectMapper();
     }
 
-    public void create(String name) {
-        LOG.debug("Creating namespace: {}", name);
+    /**
+     * Creates a namespace and returns its server-generated ID.
+     */
+    public String create(String name, String path) {
+        LOG.debug("Creating namespace: {} with path: {}", name, path);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
+        body.put("path", path);
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -53,6 +57,12 @@ public class NamespaceClient {
 
             if (response.statusCode() == 201 || response.statusCode() == 200) {
                 LOG.debug("Namespace created: {}", name);
+                JsonNode root = objectMapper.readTree(response.body());
+                JsonNode dataNode = root.has("data") ? root.get("data") : root;
+                if (dataNode != null && dataNode.has("id")) {
+                    return dataNode.get("id").asText();
+                }
+                return null;
             } else if (response.statusCode() == 409) {
                 throw new NamespaceExistsException("Namespace '" + name + "' already exists");
             } else {
@@ -104,12 +114,15 @@ public class NamespaceClient {
         }
     }
 
-    public JsonNode show(String name) {
-        LOG.debug("Showing namespace: {}", name);
+    /**
+     * Shows a namespace by its server-generated ID.
+     */
+    public JsonNode show(String id) {
+        LOG.debug("Showing namespace by id: {}", id);
 
         try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName)
+            String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
                     .GET()
                     .build();
 
@@ -121,11 +134,11 @@ public class NamespaceClient {
                 JsonNode dataNode = root.has("data") ? root.get("data") : root;
 
                 if (dataNode == null || dataNode.isNull()) {
-                    throw new NamespaceNotFoundException("Namespace '" + name + "' not found");
+                    throw new NamespaceNotFoundException("Namespace with id '" + id + "' not found");
                 }
                 return dataNode;
             } else if (response.statusCode() == 404) {
-                throw new NamespaceNotFoundException("Namespace '" + name + "' not found");
+                throw new NamespaceNotFoundException("Namespace with id '" + id + "' not found");
             } else {
                 throw new NamespaceClientException(
                         "Failed to show namespace: " + response.statusCode() + " - " + response.body());
@@ -138,12 +151,15 @@ public class NamespaceClient {
         }
     }
 
-    public boolean delete(String name) {
-        LOG.debug("Deleting namespace: {}", name);
+    /**
+     * Deletes a namespace by its server-generated ID.
+     */
+    public boolean delete(String id) {
+        LOG.debug("Deleting namespace by id: {}", id);
 
         try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName)
+            String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
                     .DELETE()
                     .build();
 
@@ -151,10 +167,10 @@ public class NamespaceClient {
             LOG.debug("Delete namespace response: {} - {}", response.statusCode(), response.body());
 
             if (response.statusCode() == 204 || response.statusCode() == 200) {
-                LOG.debug("Namespace deleted: {}", name);
+                LOG.debug("Namespace deleted: {}", id);
                 return true;
             } else if (response.statusCode() == 404) {
-                LOG.debug("Namespace not found: {}", name);
+                LOG.debug("Namespace not found: {}", id);
                 return false;
             } else {
                 throw new NamespaceClientException("Failed to delete namespace: " + response.statusCode());
@@ -167,14 +183,17 @@ public class NamespaceClient {
         }
     }
 
-    public void update(String name, Map<String, Object> updates) {
-        LOG.debug("Updating namespace: {}", name);
+    /**
+     * Updates a namespace by its server-generated ID.
+     */
+    public void update(String id, Map<String, Object> updates) {
+        LOG.debug("Updating namespace by id: {}", id);
 
         try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
+            String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
             String json = objectMapper.writeValueAsString(updates);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
                     .PUT(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -182,9 +201,9 @@ public class NamespaceClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200 || response.statusCode() == 204) {
-                LOG.debug("Namespace updated: {}", name);
+                LOG.debug("Namespace updated: {}", id);
             } else if (response.statusCode() == 404) {
-                throw new NamespaceNotFoundException("Namespace '" + name + "' not found");
+                throw new NamespaceNotFoundException("Namespace with id '" + id + "' not found");
             } else {
                 throw new NamespaceClientException(
                         "Failed to update namespace: " + response.statusCode() + " - " + response.body());
@@ -197,97 +216,52 @@ public class NamespaceClient {
         }
     }
 
-    public void cleanup(String name) {
-        LOG.debug("Cleaning up namespace: {}", name);
+    /**
+     * Cleans up stale namespaces via DELETE /namespaces/stale.
+     */
+    public void cleanupStale() {
+        LOG.debug("Cleaning up stale namespaces");
 
         try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(
-                            WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName + "/cleanup")
-                    .POST(HttpRequest.BodyPublishers.noBody())
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 200 || response.statusCode() == 204) {
-                LOG.debug("Namespace cleaned up: {}", name);
-            } else if (response.statusCode() == 404) {
-                throw new NamespaceNotFoundException("Namespace '" + name + "' not found");
-            } else {
-                throw new NamespaceClientException(
-                        "Failed to cleanup namespace: " + response.statusCode() + " - " + response.body());
-            }
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new NamespaceClientException("Failed to cleanup namespace", e);
-        }
-    }
-
-    public void addLabel(String name, String labelKey, String labelValue) {
-        LOG.debug("Adding label {}={} to namespace: {}", labelKey, labelValue, name);
-
-        Map<String, String> label = new HashMap<>();
-        label.put(labelKey, labelValue);
-
-        try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            String json = objectMapper.writeValueAsString(label);
-
-            HttpRequest request = buildRequest(
-                            WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName + "/labels")
-                    .POST(HttpRequest.BodyPublishers.ofString(json))
-                    .header("Content-Type", "application/json")
-                    .build();
-
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200 && response.statusCode() != 201 && response.statusCode() != 204) {
-                throw new NamespaceClientException(
-                        "Failed to add label: " + response.statusCode() + " - " + response.body());
-            }
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            throw new NamespaceClientException("Failed to add label", e);
-        }
-    }
-
-    public void removeLabel(String name, String labelKey) {
-        LOG.debug("Removing label {} from namespace: {}", labelKey, name);
-
-        try {
-            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            String encodedKey = URLEncoder.encode(labelKey, StandardCharsets.UTF_8);
-
-            HttpRequest request = buildRequest(
-                            WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedName + "/labels/" + encodedKey)
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/stale")
                     .DELETE()
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            if (response.statusCode() != 200 && response.statusCode() != 204) {
+            if (response.statusCode() == 200 || response.statusCode() == 204) {
+                LOG.debug("Stale namespaces cleaned up");
+            } else {
                 throw new NamespaceClientException(
-                        "Failed to remove label: " + response.statusCode() + " - " + response.body());
+                        "Failed to cleanup stale namespaces: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            throw new NamespaceClientException("Failed to remove label", e);
+            throw new NamespaceClientException("Failed to cleanup stale namespaces", e);
         }
     }
 
+    /**
+     * Checks whether a namespace with the given name exists by listing all namespaces.
+     */
     public boolean exists(String name) {
-        try {
-            show(name);
-            return true;
-        } catch (NamespaceNotFoundException e) {
-            return false;
-        }
+        List<JsonNode> namespaces = list();
+        return namespaces.stream()
+                .anyMatch(ns -> ns.has("name") && name.equals(ns.get("name").asText()));
+    }
+
+    /**
+     * Finds a namespace by name and returns its server-generated ID, or null if not found.
+     */
+    public String findIdByName(String name) {
+        List<JsonNode> namespaces = list();
+        return namespaces.stream()
+                .filter(ns -> ns.has("name") && name.equals(ns.get("name").asText()))
+                .findFirst()
+                .map(ns -> ns.has("id") ? ns.get("id").asText() : null)
+                .orElse(null);
     }
 
     private HttpRequest.Builder buildRequest(String path) {

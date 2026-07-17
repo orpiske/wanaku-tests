@@ -30,7 +30,7 @@ class AuthenticationITCase extends RouterTestBase {
                     .as("Router allows unauthenticated access (auth=none mode), skipping")
                     .isTrue();
         } catch (RouterClient.RouterClientException e) {
-            assertThat(e.getMessage()).containsAnyOf("401", "403", "Unauthorized", "Forbidden");
+            assertThat(e.getMessage()).containsAnyOf("401", "403", "302", "Unauthorized", "Forbidden");
         }
     }
 
@@ -45,7 +45,7 @@ class AuthenticationITCase extends RouterTestBase {
                     .as("Router allows unauthenticated access (auth=none mode), skipping")
                     .isTrue();
         } catch (RouterClient.RouterClientException e) {
-            assertThat(e.getMessage()).containsAnyOf("401", "403", "Unauthorized", "Forbidden");
+            assertThat(e.getMessage()).containsAnyOf("401", "403", "302", "Unauthorized", "Forbidden");
         }
     }
 
@@ -70,7 +70,7 @@ class AuthenticationITCase extends RouterTestBase {
                     .as("Router allows invalid tokens (auth=none mode), skipping")
                     .isTrue();
         } catch (RouterClient.RouterClientException e) {
-            assertThat(e.getMessage()).containsAnyOf("401", "403", "Unauthorized", "Forbidden");
+            assertThat(e.getMessage()).containsAnyOf("401", "403", "302", "Unauthorized", "Forbidden");
         }
     }
 

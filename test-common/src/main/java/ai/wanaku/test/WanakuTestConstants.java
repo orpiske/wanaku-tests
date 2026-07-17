@@ -35,7 +35,7 @@ public final class WanakuTestConstants {
     public static final String ROUTER_RESOURCES_PATH = ROUTER_API_BASE_PATH + "/resources";
     public static final String ROUTER_CAPABILITIES_PATH = ROUTER_API_BASE_PATH + "/capabilities";
     public static final String ROUTER_MANAGEMENT_DISCOVERY_PATH = ROUTER_API_BASE_PATH + "/management/discovery";
-    public static final String ROUTER_MANAGEMENT_INFO_PATH = ROUTER_API_BASE_PATH + "/management/info";
+    public static final String ROUTER_MANAGEMENT_INFO_PATH = ROUTER_API_BASE_PATH + "/management/info/version";
     public static final String ROUTER_MANAGEMENT_STATISTICS_PATH = ROUTER_API_BASE_PATH + "/management/statistics";
     public static final String ROUTER_DATA_STORE_PATH = ROUTER_API_BASE_PATH + "/data-store";
     public static final String ROUTER_NAMESPACES_PATH = ROUTER_API_BASE_PATH + "/namespaces";
