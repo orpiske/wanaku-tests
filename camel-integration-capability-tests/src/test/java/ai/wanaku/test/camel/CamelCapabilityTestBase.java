@@ -218,7 +218,9 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 .pollInterval(Duration.ofMillis(500))
                 .until(() -> {
                     if (!manager.isRunning()) {
-                        LOG.warn("CIC '{}' process died before registration completed", serviceName);
+                        throw new IllegalStateException(
+                                "CIC '" + serviceName + "' process exited before registration completed."
+                                        + " Check process logs for details.");
                     }
                     return routerClient.isCapabilityRegistered(serviceName);
                 });
@@ -232,7 +234,9 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 .pollInterval(Duration.ofMillis(500))
                 .until(() -> {
                     if (!manager.isRunning()) {
-                        LOG.warn("CIC '{}' process died before tools/resources registered", serviceName);
+                        throw new IllegalStateException(
+                                "CIC '" + serviceName + "' process exited before tools/resources registered."
+                                        + " Check process logs for details.");
                     }
                     boolean hasTools = routerClient.listTools().stream().anyMatch(t -> serviceName.equals(t.getType()));
                     boolean hasResources =
