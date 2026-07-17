@@ -57,8 +57,27 @@ jobs:
           chmod +x ./artifacts/download.sh
           ./artifacts/download.sh "${{ steps.version.outputs.version }}"
 
+      - name: Resolve CLI path
+        id: cli
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          CLI_DIR=$(ls -d artifacts/wanaku-cli-${VERSION}* 2>/dev/null | head -1)
+          if [ -z "$CLI_DIR" ]; then
+            echo "::warning::CLI directory not found for version ${VERSION}"
+            echo "path=" >> "$GITHUB_OUTPUT"
+          else
+            CLI_PATH="${CLI_DIR}/bin/wanaku"
+            chmod +x "${CLI_PATH}" 2>/dev/null || true
+            echo "path=$(pwd)/${CLI_PATH}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run integration tests
-        run: mvn -B verify --fail-at-end --file pom.xml
+        run: |
+          CLI_OPTS=""
+          if [ -n "${{ steps.cli.outputs.path }}" ]; then
+            CLI_OPTS="-Dwanaku.test.cli.path=${{ steps.cli.outputs.path }}"
+          fi
+          mvn -B verify --fail-at-end --file pom.xml ${CLI_OPTS}
 
       - name: Test summary
         if: always()
