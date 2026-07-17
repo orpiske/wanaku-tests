@@ -44,8 +44,7 @@ class ResourceCliExtendedITCase extends ResourceTestBase {
 
         routerClient.exposeResource(config);
 
-        CLIResult result =
-                executeWithAuth("resources", "show", "--host", getRouterHost(), "--name", "cli-show-resource");
+        CLIResult result = executeWithAuth("resources", "show", "--host", getRouterHost(), "cli-show-resource");
 
         assertThat(result.isSuccess())
                 .as("CLI show command should succeed: %s", result.getCombinedOutput())

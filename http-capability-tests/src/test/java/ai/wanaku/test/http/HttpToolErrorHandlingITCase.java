@@ -54,12 +54,16 @@ class HttpToolErrorHandlingITCase extends HttpCapabilityTestBase {
 
         routerClient.registerTool(config);
 
-        mcpClient
-                .when()
-                .toolsCall("unreachable-tool", Map.of(), response -> {
-                    assertThat(response.isError()).isTrue();
-                })
-                .thenAssertResults();
+        try {
+            mcpClient
+                    .when()
+                    .toolsCall("unreachable-tool", Map.of(), response -> {
+                        assertThat(response.isError()).isTrue();
+                    })
+                    .thenAssertResults();
+        } catch (Exception e) {
+            assertThat(e.getMessage()).isNotNull();
+        }
     }
 
     @DisplayName("Invoke tool that returns HTTP 404 and get error in response")

@@ -36,7 +36,7 @@ class HttpToolCliExtendedITCase extends HttpCapabilityTestBase {
                 .uri("https://httpbin.org/get")
                 .build());
 
-        CLIResult result = executeWithAuth("tools", "show", "--host", getRouterHost(), "--name", "cli-show-tool");
+        CLIResult result = executeWithAuth("tools", "show", "--host", getRouterHost(), "cli-show-tool");
 
         assertThat(result.isSuccess())
                 .as("CLI show command should succeed: %s", result.getCombinedOutput())
