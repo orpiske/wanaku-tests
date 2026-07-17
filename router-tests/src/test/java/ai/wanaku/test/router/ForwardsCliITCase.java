@@ -1,0 +1,98 @@
+package ai.wanaku.test.router;
+
+import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.client.CLIExecutor;
+import ai.wanaku.test.client.CLIResult;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import static org.assertj.core.api.Assertions.assertThat;
+
+@QuarkusTest
+class ForwardsCliITCase extends RouterTestBase {
+
+    private CLIExecutor cliExecutor;
+    private String authToken;
+
+    @BeforeEach
+    void setupCli() {
+        cliExecutor = CLIExecutor.createDefault();
+        assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
+        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
+
+        if (keycloakManager != null && keycloakManager.isRunning()) {
+            authToken = keycloakManager.getMcpToken();
+        }
+    }
+
+    @DisplayName("Add a forward via CLI and verify it exists via REST")
+    @Test
+    void shouldAddForwardViaCli() {
+        // Given
+        String name = "test-fwd";
+        String target = "http://example.com/mcp";
+
+        // When
+        CLIResult result =
+                executeWithAuth("forwards", "add", "--host", getRouterHost(), "--name", name, "--target", target);
+
+        // Then
+        assertThat(result.isSuccess())
+                .as("CLI command should succeed: %s", result.getCombinedOutput())
+                .isTrue();
+        assertThat(forwardsClient.exists(name)).isTrue();
+    }
+
+    @DisplayName("Add a forward via REST and verify it appears in CLI list output")
+    @Test
+    void shouldListForwardsViaCli() {
+        // Given
+        String name = "cli-list-fwd";
+        forwardsClient.add(name, "http://example.com/mcp");
+
+        // When
+        CLIResult result = executeWithAuth("forwards", "list", "--host", getRouterHost());
+
+        // Then
+        assertThat(result.isSuccess())
+                .as("CLI list should succeed: %s", result.getCombinedOutput())
+                .isTrue();
+        assertThat(result.getCombinedOutput())
+                .as("CLI list output should contain the forward")
+                .contains(name);
+    }
+
+    @DisplayName("Add a forward via REST, remove via CLI, and verify removal")
+    @Test
+    void shouldRemoveForwardViaCli() {
+        // Given
+        String name = "cli-remove-fwd";
+        forwardsClient.add(name, "http://example.com/mcp");
+        assertThat(forwardsClient.exists(name)).isTrue();
+
+        // When
+        CLIResult result = executeWithAuth("forwards", "remove", "--host", getRouterHost(), "--name", name);
+
+        // Then
+        assertThat(result.isSuccess())
+                .as("CLI command should succeed: %s", result.getCombinedOutput())
+                .isTrue();
+        assertThat(forwardsClient.exists(name)).isFalse();
+    }
+
+    private String getRouterHost() {
+        return routerManager != null ? routerManager.getBaseUrl() : "http://localhost:8080";
+    }
+
+    private CLIResult executeWithAuth(String... args) {
+        if (authToken != null) {
+            String[] authArgs = new String[args.length + 2];
+            System.arraycopy(args, 0, authArgs, 0, args.length);
+            authArgs[args.length] = "--token";
+            authArgs[args.length + 1] = authToken;
+            return cliExecutor.execute(authArgs);
+        }
+        return cliExecutor.execute(args);
+    }
+}
