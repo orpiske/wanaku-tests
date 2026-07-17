@@ -64,16 +64,6 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
                 && config.getRouterJarPath().toFile().exists()) {
             routerManager = new RouterManager(config);
             routerManager.prepare();
-
-            if (keycloakManager != null && keycloakManager.isRunning()) {
-                routerManager.addSystemProperty("wanaku.http.auth", "keycloak");
-                routerManager.addSystemProperty(
-                        "quarkus.oidc.auth-server-url", "http://localhost:8543/realms/" + KeycloakManager.REALM_NAME);
-                routerManager.addSystemProperty("quarkus.oidc.client-id", "wanaku-service");
-            } else {
-                routerManager.addSystemProperty("wanaku.http.auth", "none");
-            }
-
             routerManager.start("shared");
             LOG.info("Router started on port {}", routerManager.getHttpPort());
         } else {
