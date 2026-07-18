@@ -44,7 +44,6 @@ public class McpTestClient {
 
     private final McpStreamableTestClient client;
     private final String baseUrl;
-    private final String accessToken;
 
     /**
      * Creates a new MCP test client with optional bearer token authentication.
@@ -54,7 +53,6 @@ public class McpTestClient {
      */
     public McpTestClient(String baseUrl, String accessToken) {
         this.baseUrl = baseUrl;
-        this.accessToken = accessToken;
         try {
             String normalizedUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
 
