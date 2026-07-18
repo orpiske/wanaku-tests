@@ -44,7 +44,8 @@ public class ManagementClient {
                 JsonNode root = objectMapper.readTree(response.body());
                 return root.has("data") ? root.get("data") : root;
             } else {
-                throw new ManagementClientException("Failed to get info: " + response.statusCode());
+                throw new ManagementClientException(
+                        "Failed to get info: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
@@ -69,7 +70,8 @@ public class ManagementClient {
                 JsonNode root = objectMapper.readTree(response.body());
                 return root.has("data") ? root.get("data") : root;
             } else {
-                throw new ManagementClientException("Failed to get statistics: " + response.statusCode());
+                throw new ManagementClientException(
+                        "Failed to get statistics: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
