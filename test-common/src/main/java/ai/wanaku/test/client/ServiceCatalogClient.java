@@ -92,10 +92,13 @@ public class ServiceCatalogClient {
                     for (JsonNode catalog : dataNode) {
                         catalogs.add(catalog);
                     }
+                } else if (dataNode.isObject()) {
+                    catalogs.add(dataNode);
                 }
                 return catalogs;
             } else {
-                throw new ServiceCatalogClientException("Failed to list service catalogs: " + response.statusCode());
+                throw new ServiceCatalogClientException(
+                        "Failed to list service catalogs: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {

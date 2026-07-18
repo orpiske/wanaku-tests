@@ -101,10 +101,13 @@ public class NamespaceClient {
                     for (JsonNode ns : dataNode) {
                         namespaces.add(ns);
                     }
+                } else if (dataNode.isObject()) {
+                    namespaces.add(dataNode);
                 }
                 return namespaces;
             } else {
-                throw new NamespaceClientException("Failed to list namespaces: " + response.statusCode());
+                throw new NamespaceClientException(
+                        "Failed to list namespaces: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {

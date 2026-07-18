@@ -92,10 +92,13 @@ public class ForwardsClient {
                     for (JsonNode fwd : dataNode) {
                         forwards.add(fwd);
                     }
+                } else if (dataNode.isObject()) {
+                    forwards.add(dataNode);
                 }
                 return forwards;
             } else {
-                throw new ForwardsClientException("Failed to list forwards: " + response.statusCode());
+                throw new ForwardsClientException(
+                        "Failed to list forwards: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {

@@ -91,10 +91,13 @@ public class PromptsClient {
                     for (JsonNode prompt : dataNode) {
                         prompts.add(prompt);
                     }
+                } else if (dataNode.isObject()) {
+                    prompts.add(dataNode);
                 }
                 return prompts;
             } else {
-                throw new PromptsClientException("Failed to list prompts: " + response.statusCode());
+                throw new PromptsClientException(
+                        "Failed to list prompts: " + response.statusCode() + " - " + response.body());
             }
         } catch (IOException | InterruptedException e) {
             if (e instanceof InterruptedException) {
