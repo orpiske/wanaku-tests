@@ -3,6 +3,7 @@ package ai.wanaku.test.client;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -119,8 +120,10 @@ public class CLIExecutor {
             // Read stdout and stderr after process completes
             String stdout;
             String stderr;
-            try (BufferedReader stdoutReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                    BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+            try (BufferedReader stdoutReader = new BufferedReader(
+                            new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+                    BufferedReader stderrReader = new BufferedReader(
+                            new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
 
                 stdout = stdoutReader.lines().collect(Collectors.joining("\n"));
                 stderr = stderrReader.lines().collect(Collectors.joining("\n"));
