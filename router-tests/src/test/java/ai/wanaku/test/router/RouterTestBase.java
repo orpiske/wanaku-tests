@@ -1,5 +1,6 @@
 package ai.wanaku.test.router;
 
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.base.BaseIntegrationTest;
@@ -9,6 +10,7 @@ import ai.wanaku.test.client.ManagementClient;
 import ai.wanaku.test.client.NamespaceClient;
 import ai.wanaku.test.client.PromptsClient;
 import ai.wanaku.test.client.ServiceCatalogClient;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -73,7 +75,13 @@ public abstract class RouterTestBase extends BaseIntegrationTest {
             return null;
         }
         try {
-            return findOrAllocateNamespace(namespaceClient, name);
+            List<JsonNode> namespaces = namespaceClient.list();
+            for (JsonNode ns : namespaces) {
+                if (ns.has("name") && name.equals(ns.get("name").asText())) {
+                    return ns.has("id") ? ns.get("id").asText() : null;
+                }
+            }
+            return namespaceClient.create(name, name);
         } catch (Exception e) {
             LOG.warn("Failed to get/create namespace '{}': {}", name, e.getMessage());
             return null;
