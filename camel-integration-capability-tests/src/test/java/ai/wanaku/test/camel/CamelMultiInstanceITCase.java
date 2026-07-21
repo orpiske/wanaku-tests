@@ -47,29 +47,19 @@ class CamelMultiInstanceITCase extends CamelCapabilityTestBase {
                 .send()
                 .thenAssertResults();
 
-        mcpClient
-                .when()
-                .toolsCall("simple-greeting")
-                .withArguments(Map.of())
-                .withAssert(response -> {
-                    LOG.debug("=== MCP toolsCall response [simple-greeting]: {}", response.content());
-                    assertThat(response.isError()).isFalse();
-                    assertThat(response.content().get(0).asText().text()).contains("Hello from CIC!");
-                })
-                .send()
-                .thenAssertResults();
+        assertToolCallWithRetry("simple-greeting", Map.of(), response -> {
+            LOG.debug("=== MCP toolsCall response [simple-greeting]: {}", response.content());
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).isNotEmpty();
+            assertThat(response.content().get(0).asText().text()).contains("Hello from CIC!");
+        });
 
-        mcpClient
-                .when()
-                .toolsCall("multi-tool")
-                .withArguments(Map.of())
-                .withAssert(response -> {
-                    LOG.debug("=== MCP toolsCall response [multi-tool]: {}", response.content());
-                    assertThat(response.isError()).isFalse();
-                    assertThat(response.content().get(0).asText().text()).contains("Response from tool instance");
-                })
-                .send()
-                .thenAssertResults();
+        assertToolCallWithRetry("multi-tool", Map.of(), response -> {
+            LOG.debug("=== MCP toolsCall response [multi-tool]: {}", response.content());
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).isNotEmpty();
+            assertThat(response.content().get(0).asText().text()).contains("Response from tool instance");
+        });
     }
 
     @DisplayName("Run CIC tool and file resource simultaneously")
@@ -109,28 +99,27 @@ class CamelMultiInstanceITCase extends CamelCapabilityTestBase {
                 .send()
                 .thenAssertResults();
 
-        mcpClient
-                .when()
-                .toolsCall("simple-greeting")
-                .withArguments(Map.of())
-                .withAssert(response -> {
-                    LOG.debug("=== MCP toolsCall response [simple-greeting]: {}", response.content());
-                    assertThat(response.isError()).isFalse();
-                    assertThat(response.content().get(0).asText().text()).contains("Hello from CIC!");
-                })
-                .send()
-                .thenAssertResults();
+        assertToolCallWithRetry("simple-greeting", Map.of(), response -> {
+            LOG.debug("=== MCP toolsCall response [simple-greeting]: {}", response.content());
+            assertThat(response.isError()).isFalse();
+            assertThat(response.content()).isNotEmpty();
+            assertThat(response.content().get(0).asText().text()).contains("Hello from CIC!");
+        });
 
         String resourceUri = resourceServiceName + "://test-file-resource";
-        mcpClient
-                .when()
-                .resourcesRead(resourceUri)
-                .withAssert(response -> {
-                    LOG.debug("=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
-                    assertThat(response.contents()).isNotEmpty();
-                    assertThat(response.contents().get(0).asText().text()).contains("Multi-instance resource content");
-                })
-                .send()
-                .thenAssertResults();
+        assertResourceReadWithRetry(() -> {
+            mcpClient
+                    .when()
+                    .resourcesRead(resourceUri)
+                    .withAssert(response -> {
+                        LOG.debug(
+                                "=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
+                        assertThat(response.contents()).isNotEmpty();
+                        assertThat(response.contents().get(0).asText().text())
+                                .contains("Multi-instance resource content");
+                    })
+                    .send()
+                    .thenAssertResults();
+        });
     }
 }
