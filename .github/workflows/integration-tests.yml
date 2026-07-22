@@ -4,10 +4,6 @@ on:
   repository_dispatch:
     types: [wanaku-build-completed]
 
-  schedule:
-    # Nightly at 03:17 UTC
-    - cron: '17 3 * * *'
-
   workflow_dispatch:
     inputs:
       version:
