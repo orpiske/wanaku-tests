@@ -100,6 +100,7 @@ public abstract class BaseIntegrationTest {
                     testInfo.getTestClass().map(Class::getSimpleName).orElse("Unknown");
             httpCapabilityManager.setLogContext(profile, testClassName, testMethodName);
 
+            configureHttpCapability(httpCapabilityManager);
             httpCapabilityManager.start(testName);
 
             // Wait for HTTP Capability to register with Router
@@ -199,4 +200,6 @@ public abstract class BaseIntegrationTest {
     protected String getLogProfile() {
         return "default";
     }
+
+    protected void configureHttpCapability(HttpCapabilityManager manager) {}
 }

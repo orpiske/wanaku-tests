@@ -13,6 +13,7 @@ import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.fixtures.TestFixtures;
 import ai.wanaku.test.managers.CamelCapabilityManager;
+import ai.wanaku.test.managers.HttpCapabilityManager;
 import ai.wanaku.test.managers.ResourceProviderManager;
 
 import org.junit.jupiter.api.AfterEach;
@@ -49,6 +50,7 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
 
         resourceProviderManager = new ResourceProviderManager(config);
         resourceProviderManager.prepare(target);
+        enablePeriodicPing(resourceProviderManager);
         resourceProviderManager.setLogContext("file-provider", getClass().getSimpleName(), "file-provider");
         resourceProviderManager.start(getClass().getSimpleName());
 
@@ -75,6 +77,7 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
                 "file://" + routesRef.toAbsolutePath(),
                 rulesRef.toFile().exists() ? "file://" + rulesRef.toAbsolutePath() : null,
                 null);
+        enablePeriodicPing(camelCapabilityManager);
         camelCapabilityManager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         camelCapabilityManager.start(serviceName);
 
@@ -191,6 +194,18 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
             return keycloakManager.getMcpToken();
         }
         return null;
+    }
+
+    @Override
+    protected void configureHttpCapability(HttpCapabilityManager manager) {
+        enablePeriodicPing(manager);
+    }
+
+    protected static void enablePeriodicPing(ai.wanaku.test.managers.ProcessManager manager) {
+        manager.addSystemProperty("wanaku.service.registration.ping-enabled", "true");
+        manager.addSystemProperty("wanaku.service.registration.interval", "5s");
+        manager.addEnvironmentVariable("PING_ENABLED", "true");
+        manager.addEnvironmentVariable("PERIOD", "5");
     }
 
     @Override

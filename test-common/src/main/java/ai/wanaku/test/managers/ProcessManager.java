@@ -202,6 +202,10 @@ public abstract class ProcessManager {
         jvmArgs.add("-D" + key + "=" + value);
     }
 
+    public void addEnvironmentVariable(String key, String value) {
+        environment.put(key, value);
+    }
+
     /**
      * Gets the log file for this process.
      */
