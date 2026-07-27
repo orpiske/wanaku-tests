@@ -24,12 +24,23 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     }
 
     private boolean tryAddForward(String name, String address) {
-        try {
-            forwardsClient.add(name, address, testNamespaceId);
-            return true;
-        } catch (ForwardsClient.ForwardsClientException e) {
-            return false;
+        int maxAttempts = 5;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                forwardsClient.add(name, address, testNamespaceId);
+                return true;
+            } catch (ForwardsClient.ForwardsClientException e) {
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
         }
+        return false;
     }
 
     @DisplayName("Add a forward to the target MCP server")

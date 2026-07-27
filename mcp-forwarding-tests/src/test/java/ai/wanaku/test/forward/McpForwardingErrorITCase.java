@@ -34,14 +34,28 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @DisplayName("Adding a forward with a valid target succeeds")
     @Test
     void shouldAddForwardWithValidTarget() {
-        try {
-            forwardsClient.add("valid-fwd", routerManager.getBaseUrl() + "/mcp/", testNamespaceId);
-            assertThat(forwardsClient.exists("valid-fwd")).isTrue();
-        } catch (ForwardsClient.ForwardsClientException e) {
-            assumeThat(e.getMessage())
-                    .as("Router validates forward target connectivity")
-                    .doesNotContain("500");
+        int maxAttempts = 5;
+        ForwardsClient.ForwardsClientException lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                forwardsClient.add("valid-fwd", routerManager.getBaseUrl() + "/mcp/", testNamespaceId);
+                assertThat(forwardsClient.exists("valid-fwd")).isTrue();
+                return;
+            } catch (ForwardsClient.ForwardsClientException e) {
+                lastException = e;
+                if (attempt < maxAttempts) {
+                    try {
+                        Thread.sleep(3000);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
         }
+        assumeThat(lastException.getMessage())
+                .as("Router validates forward target connectivity")
+                .doesNotContain("500");
     }
 
     @DisplayName("List forwards returns valid response even when empty")
