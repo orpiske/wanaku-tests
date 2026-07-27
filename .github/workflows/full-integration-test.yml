@@ -35,6 +35,17 @@ on:
         description: 'Wanaku Examples branch'
         required: false
         default: 'main'
+      pr_number:
+        description: 'PR number to comment results on (empty = skip commenting)'
+        required: false
+        default: ''
+      source_repo:
+        description: 'Source repository for PR comment (owner/repo)'
+        required: false
+        default: 'wanaku-ai/wanaku'
+
+permissions:
+  contents: read
 
 jobs:
   full-integration-test:
@@ -49,6 +60,8 @@ jobs:
       CIC_BRANCH: ${{ inputs.cic_branch }}
       EXAMPLES_REPO: ${{ inputs.examples_repo }}
       EXAMPLES_BRANCH: ${{ inputs.examples_branch }}
+      PR_NUMBER: ${{ inputs.pr_number }}
+      SOURCE_REPO: ${{ inputs.source_repo }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
@@ -169,6 +182,56 @@ jobs:
       - name: Test summary
         if: always()
         run: ./.github/scripts/test-summary.sh
+
+      - name: Resolve source repo name
+        if: always() && env.PR_NUMBER != ''
+        id: source
+        run: |
+          REPO_NAME="${SOURCE_REPO#*/}"
+          if [ -z "$REPO_NAME" ] || [ "$REPO_NAME" = "$SOURCE_REPO" ]; then
+            echo "::error::Invalid source_repo format '${SOURCE_REPO}' — expected 'owner/repo'"
+            exit 1
+          fi
+          echo "repo_name=${REPO_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate GitHub App token
+        if: always() && env.PR_NUMBER != ''
+        id: app-token
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ secrets.INTEGRATION_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_APP_PRIVATE_KEY }}
+          owner: wanaku-ai
+          repositories: ${{ steps.source.outputs.repo_name }}
+
+      - name: Post test summary to PR
+        if: always() && env.PR_NUMBER != '' && steps.app-token.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          MARKER="<!-- integration-test-results -->"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          {
+            echo "${MARKER}"
+            echo "## Integration Test Results"
+            echo ""
+            echo "> **Run:** [${RUN_URL}](${RUN_URL})"
+            echo "> **Wanaku:** \`${WANAKU_REPO}\` @ \`${WANAKU_BRANCH}\`"
+            echo ""
+            cat "$GITHUB_STEP_SUMMARY"
+          } > pr-comment.md
+
+          EXISTING=$(gh api --paginate "repos/${SOURCE_REPO}/issues/${PR_NUMBER}/comments" \
+            --jq ".[] | select(.body | startswith(\"${MARKER}\")) | .id" | head -1)
+
+          if [ -n "$EXISTING" ]; then
+            gh api "repos/${SOURCE_REPO}/issues/comments/${EXISTING}" \
+              -X PATCH -F "body=@pr-comment.md"
+          else
+            gh api "repos/${SOURCE_REPO}/issues/${PR_NUMBER}/comments" \
+              -F "body=@pr-comment.md"
+          fi
 
       - name: Upload test reports
         if: always()
