@@ -55,9 +55,10 @@ fi
 # File Provider from wanaku-examples
 collect_quarkus_app "$SOURCE_DIR/wanaku-examples" "wanaku-provider-file" "wanaku-provider-file"
 
-# Camel Integration Capability (fat JAR — may use assembly-plugin or shade-plugin)
-CIC_JAR=$(find "$SOURCE_DIR/camel-integration-capability" -path "*/target/*" \
-    \( -name "*-jar-with-dependencies.jar" -o -name "*-shaded.jar" -o -name "*-runner.jar" \) \
+# Camel Integration Capability (fat JAR from the -main module, not the -plugin module)
+CIC_JAR=$(find "$SOURCE_DIR/camel-integration-capability" \
+    -path "*/camel-integration-capability-main/target/*" \
+    -name "*-jar-with-dependencies.jar" \
     2>/dev/null | head -1)
 
 if [ -n "$CIC_JAR" ]; then
