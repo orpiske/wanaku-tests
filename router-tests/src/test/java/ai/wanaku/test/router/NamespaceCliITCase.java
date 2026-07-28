@@ -32,8 +32,8 @@ class NamespaceCliITCase extends RouterTestBase {
     void shouldCreateNamespaceViaCli() {
         String name = "test-cli-ns";
 
-        CLIResult result = executeWithAuth(
-                "namespaces", "create", "--host", getRouterHost(), "--name", name, "--path", name);
+        CLIResult result =
+                executeWithAuth("namespaces", "create", "--host", getRouterHost(), "--name", name, "--path", name);
 
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())

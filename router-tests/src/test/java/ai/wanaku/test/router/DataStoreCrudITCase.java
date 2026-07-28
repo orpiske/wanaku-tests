@@ -2,7 +2,9 @@ package ai.wanaku.test.router;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import io.quarkus.test.junit.QuarkusTest;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -104,14 +106,29 @@ class DataStoreCrudITCase extends RouterTestBase {
                 .isEqualTo(textContent);
     }
 
-    @DisplayName("Upload with labels is not supported by client API - skip")
+    @DisplayName("Upload an entry with labels and verify labels are persisted")
     @Test
     void shouldUploadEntryWithLabels() {
-        // The DataStoreClient.upload() hardcodes empty labels.
-        // This test verifies basic upload still works (labels feature untested at client level).
-        assumeThat(false)
-                .as("DataStoreClient does not expose a labels parameter")
+        String name = "labeled-entry.txt";
+        Map<String, String> labels = Map.of("environment", "test", "component", "router");
+
+        dataStoreClient.upload(name, "labeled content", labels);
+
+        String downloaded = dataStoreClient.download(name);
+        assertThat(downloaded)
+                .as("Data content should survive labels round-trip")
+                .isEqualTo("labeled content");
+
+        JsonNode entry = dataStoreClient.downloadEntry(name);
+        assertThat(entry.has("labels"))
+                .as("Response should contain labels field")
                 .isTrue();
+
+        JsonNode labelsNode = entry.get("labels");
+        assertThat(labelsNode.has("environment")).isTrue();
+        assertThat(labelsNode.get("environment").asText()).isEqualTo("test");
+        assertThat(labelsNode.has("component")).isTrue();
+        assertThat(labelsNode.get("component").asText()).isEqualTo("router");
     }
 
     @DisplayName("DataStore rejects duplicate entry names with 409")

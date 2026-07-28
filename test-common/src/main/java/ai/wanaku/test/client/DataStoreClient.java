@@ -63,6 +63,17 @@ public class DataStoreClient {
     }
 
     /**
+     * Uploads a string content entry with labels to the data store.
+     *
+     * @param name the entry name (e.g., "routes.yaml")
+     * @param content the string content to upload
+     * @param labels the labels to attach to the entry
+     */
+    public void upload(String name, String content, Map<String, String> labels) {
+        upload(name, content.getBytes(StandardCharsets.UTF_8), labels);
+    }
+
+    /**
      * Uploads a byte array content entry to the data store.
      * The content is base64-encoded before sending.
      *
@@ -70,14 +81,27 @@ public class DataStoreClient {
      * @param content the byte array content to upload
      */
     public void upload(String name, byte[] content) {
-        LOG.debug("Uploading data store entry: {}", name);
+        upload(name, content, Map.of());
+    }
+
+    /**
+     * Uploads a byte array content entry with labels to the data store.
+     * The content is base64-encoded before sending.
+     *
+     * @param name the entry name (e.g., "routes.yaml")
+     * @param content the byte array content to upload
+     * @param labels the labels to attach to the entry
+     */
+    public void upload(String name, byte[] content, Map<String, String> labels) {
+        Map<String, String> safeLabels = labels != null ? labels : Map.of();
+        LOG.debug("Uploading data store entry: {} with {} labels", name, safeLabels.size());
 
         String encoded = Base64.getEncoder().encodeToString(content);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("data", encoded);
-        body.put("labels", Map.of());
+        body.put("labels", safeLabels);
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -100,6 +124,60 @@ public class DataStoreClient {
                 Thread.currentThread().interrupt();
             }
             throw new DataStoreClientException("Failed to upload data store entry", e);
+        }
+    }
+
+    /**
+     * Downloads an entry from the data store by name, returning data and labels.
+     *
+     * @param name the entry name to download
+     * @return the entry as a JsonNode containing data and labels fields
+     * @throws DataStoreEntryNotFoundException if no entry with the given name is found
+     */
+    public JsonNode downloadEntry(String name) {
+        LOG.debug("Downloading data store entry (full): {}", name);
+
+        try {
+            String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
+            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH + "?name=" + encodedName)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                JsonNode root = objectMapper.readTree(response.body());
+
+                if (root.has("error") && !root.get("error").isNull()) {
+                    String errorMsg = root.get("error").has("message")
+                            ? root.get("error").get("message").asText()
+                            : root.get("error").asText();
+                    throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found: " + errorMsg);
+                }
+
+                JsonNode dataNode = root.has("data") ? root.get("data") : root;
+                if (dataNode == null || dataNode.isNull()) {
+                    throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found");
+                }
+
+                if (dataNode.isArray()) {
+                    if (dataNode.isEmpty()) {
+                        throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found");
+                    }
+                    return dataNode.get(0);
+                }
+                return dataNode;
+            } else if (response.statusCode() == 404) {
+                throw new DataStoreEntryNotFoundException("Entry '" + name + "' not found");
+            } else {
+                throw new DataStoreClientException(
+                        "Failed to download data store entry: " + response.statusCode() + " - " + response.body());
+            }
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            throw new DataStoreClientException("Failed to download data store entry", e);
         }
     }
 
