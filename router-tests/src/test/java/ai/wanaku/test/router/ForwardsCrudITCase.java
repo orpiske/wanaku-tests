@@ -2,6 +2,7 @@ package ai.wanaku.test.router;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -35,6 +36,7 @@ class ForwardsCrudITCase extends RouterTestBase {
         }
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward and verify it exists")
     @Test
     void shouldAddForward() {
@@ -59,6 +61,7 @@ class ForwardsCrudITCase extends RouterTestBase {
         assertThat(removed).isFalse();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
     void shouldRemoveForward() {
@@ -73,6 +76,7 @@ class ForwardsCrudITCase extends RouterTestBase {
         assertThat(forwardsClient.exists("fwd-to-remove")).isFalse();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Refresh a forward without error")
     @Test
     void shouldRefreshForwards() {

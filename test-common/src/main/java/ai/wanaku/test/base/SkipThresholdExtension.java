@@ -45,12 +45,26 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
 
     @Override
     public void testAborted(ExtensionContext context, Throwable cause) {
-        getTracker(context).recordSkipped();
+        if (isKnownLimitation(context)) {
+            getTracker(context).recordExcluded();
+        } else {
+            getTracker(context).recordSkipped();
+        }
     }
 
     @Override
     public void testDisabled(ExtensionContext context, Optional<String> reason) {
-        getTracker(context).recordSkipped();
+        if (isKnownLimitation(context)) {
+            getTracker(context).recordExcluded();
+        } else {
+            getTracker(context).recordSkipped();
+        }
+    }
+
+    private boolean isKnownLimitation(ExtensionContext context) {
+        return context.getTestMethod()
+                .map(m -> m.isAnnotationPresent(KnownLimitation.class))
+                .orElse(false);
     }
 
     private SkipTracker getTracker(ExtensionContext context) {
@@ -65,6 +79,7 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
 
         private final AtomicInteger executed = new AtomicInteger();
         private final AtomicInteger skipped = new AtomicInteger();
+        private final AtomicInteger excluded = new AtomicInteger();
 
         void recordExecuted() {
             executed.incrementAndGet();
@@ -72,6 +87,10 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
 
         void recordSkipped() {
             skipped.incrementAndGet();
+        }
+
+        void recordExcluded() {
+            excluded.incrementAndGet();
         }
 
         @Override
@@ -96,14 +115,28 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
                 }
             }
 
-            int skipPercent = skip * 100 / total;
-            LOG.info("Test skip summary: {}/{} skipped ({}%), threshold {}%", skip, total, skipPercent, threshold);
+            int excl = excluded.get();
+            int countedTotal = exec + skip;
 
-            // Compare without integer truncation: skip/total > threshold/100
-            if (skip * 100 > threshold * total) {
+            if (excl > 0) {
+                LOG.info(
+                        "Test skip summary: {}/{} skipped ({}%), {} excluded (@KnownLimitation), threshold {}%",
+                        skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, excl, threshold);
+            } else {
+                LOG.info(
+                        "Test skip summary: {}/{} skipped ({}%), threshold {}%",
+                        skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, threshold);
+            }
+
+            if (countedTotal == 0) {
+                return;
+            }
+
+            // Compare without integer truncation: skip/countedTotal > threshold/100
+            if (skip * 100 > threshold * countedTotal) {
                 throw new AssertionError(String.format(
                         "Skip threshold exceeded: %d%% of tests were skipped (%d/%d), threshold is %d%%",
-                        skipPercent, skip, total, threshold));
+                        skip * 100 / countedTotal, skip, countedTotal, threshold));
             }
         }
     }

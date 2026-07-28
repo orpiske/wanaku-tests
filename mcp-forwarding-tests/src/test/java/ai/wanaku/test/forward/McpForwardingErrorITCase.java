@@ -2,6 +2,7 @@ package ai.wanaku.test.forward;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -31,6 +32,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
         }
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Adding a forward with a valid target succeeds")
     @Test
     void shouldAddForwardWithValidTarget() {

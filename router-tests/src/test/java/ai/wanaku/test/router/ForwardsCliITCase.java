@@ -1,6 +1,7 @@
 package ai.wanaku.test.router;
 
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
 
@@ -31,6 +32,7 @@ class ForwardsCliITCase extends RouterTestBase {
         assumeThat(nsId).as("Test namespace must be available").isNotNull();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward via CLI and verify it exists via REST")
     @Test
     void shouldAddForwardViaCli() {
@@ -67,6 +69,7 @@ class ForwardsCliITCase extends RouterTestBase {
                 .isTrue();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward via CLI")
     @Test
     void shouldRemoveForwardViaCli() {

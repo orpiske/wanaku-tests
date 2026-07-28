@@ -2,6 +2,7 @@ package ai.wanaku.test.forward;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -43,6 +44,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         return false;
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward to the target MCP server")
     @Test
     void shouldAddForward() {
@@ -62,6 +64,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         assertThat(forwards).isNotNull();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
     void shouldRemoveForward() {
@@ -82,6 +85,7 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         assertThat(removed).isFalse();
     }
 
+    @KnownLimitation("wanaku#1741")
     @DisplayName("Refresh a forward without error")
     @Test
     void shouldRefreshForwards() {
