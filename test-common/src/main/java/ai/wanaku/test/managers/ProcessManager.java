@@ -45,14 +45,42 @@ public abstract class ProcessManager {
     protected abstract String getProcessName();
 
     /**
-     * Gets the path to the JAR file to run.
+     * Gets the path to the executable (JAR or native binary) to run.
      */
-    protected abstract Path getJarPath();
+    protected abstract Path getExecutablePath();
 
     /**
      * Gets the command line arguments for the process.
      */
     protected abstract List<String> getProcessArguments();
+
+    /**
+     * Builds the full command to start the process.
+     * Default implementation launches a Java JAR. Override for native binaries.
+     *
+     * @return the command components
+     */
+    protected List<String> buildCommand() {
+        List<String> command = new ArrayList<>();
+        command.add("java");
+        command.addAll(jvmArgs);
+        command.add("-jar");
+        command.add(getExecutablePath().getFileName().toString());
+        command.addAll(getProcessArguments());
+        return command;
+    }
+
+    /**
+     * Gets the working directory for the process.
+     * Default returns the parent of the executable path (for Quarkus fast-jar).
+     * Override for processes that don't need a specific working directory.
+     *
+     * @return the working directory, or null to use the current directory
+     */
+    protected Path getWorkingDirectory() {
+        Path execPath = getExecutablePath();
+        return execPath != null ? execPath.getParent().toAbsolutePath().normalize() : null;
+    }
 
     /**
      * Performs health check after process starts.
@@ -84,52 +112,29 @@ public abstract class ProcessManager {
             throw new IllegalStateException("Process is already running: " + getProcessName());
         }
 
-        Path jarPath = getJarPath();
-        if (jarPath == null || !jarPath.toFile().exists()) {
-            throw new IllegalStateException("JAR not found: " + jarPath);
+        Path execPath = getExecutablePath();
+        if (execPath == null || !execPath.toFile().exists()) {
+            throw new IllegalStateException("Executable not found: " + execPath);
         }
 
         state = ProcessState.STARTING;
 
-        // Isolate all Wanaku data to a unique temp directory per process instance.
-        // Without this, processes write to ~/.wanaku/ which conflicts with
-        // local Wanaku usage and causes stale data between runs.
-        // Each property is used by different process types:
-        //   - infinispan.base-folder: Router (Infinispan .dat files)
-        //   - service-home: Capabilities (provisioning .properties files)
-        // Unused properties are harmlessly ignored by the receiving process.
-        Path dataDir = Path.of("target", "wanaku-data", getProcessName() + "-" + System.nanoTime());
-        addSystemProperty(
-                "wanaku.persistence.infinispan.base-folder",
-                dataDir.resolve("router").toAbsolutePath().toString());
-        addSystemProperty(
-                "wanaku.service.service-home",
-                dataDir.resolve("services").toAbsolutePath().toString());
+        configureDataIsolation();
 
         LOG.debug("Starting {}", getProcessName());
 
-        // Create log file
         logFile = createLogFile(testName);
 
-        // Build command
-        List<String> command = new ArrayList<>();
-        command.add("java");
-        command.addAll(jvmArgs);
-        command.add("-jar");
-
-        // For Quarkus fast-jar format, we need to run from the directory containing quarkus-run.jar
-        // Resolve to absolute path so relative paths work correctly in CI
-        Path workingDir = jarPath.getParent().toAbsolutePath().normalize();
-        String jarName = jarPath.getFileName().toString();
-        command.add(jarName);
-        command.addAll(getProcessArguments());
+        List<String> command = buildCommand();
+        Path workingDir = getWorkingDirectory();
 
         LOG.debug("Working directory: {}", workingDir);
         LOG.debug("Command: {}", String.join(" ", command));
 
-        // Start process
         ProcessBuilder pb = new ProcessBuilder(command);
-        pb.directory(workingDir.toFile());
+        if (workingDir != null) {
+            pb.directory(workingDir.toFile());
+        }
 
         if (!environment.isEmpty()) {
             pb.environment().putAll(environment);
@@ -141,7 +146,6 @@ public abstract class ProcessManager {
         process = pb.start();
         LOG.debug("{} started with PID: {}", getProcessName(), process.pid());
 
-        // Wait for health check
         if (performHealthCheck()) {
             state = ProcessState.RUNNING;
             LOG.debug("{} is healthy", getProcessName());
@@ -150,6 +154,19 @@ public abstract class ProcessManager {
             throw new IllegalStateException(
                     getProcessName() + " failed health check. Check logs: " + logFile.getAbsolutePath());
         }
+    }
+
+    /**
+     * Sets up isolated data directories. Override to change or skip for non-Java processes.
+     */
+    protected void configureDataIsolation() {
+        Path dataDir = Path.of("target", "wanaku-data", getProcessName() + "-" + System.nanoTime());
+        addSystemProperty(
+                "wanaku.persistence.infinispan.base-folder",
+                dataDir.resolve("router").toAbsolutePath().toString());
+        addSystemProperty(
+                "wanaku.service.service-home",
+                dataDir.resolve("services").toAbsolutePath().toString());
     }
 
     /**
@@ -200,6 +217,13 @@ public abstract class ProcessManager {
      */
     public void addSystemProperty(String key, String value) {
         jvmArgs.add("-D" + key + "=" + value);
+    }
+
+    /**
+     * Adds an environment variable for the process.
+     */
+    public void addEnvironmentVariable(String key, String value) {
+        environment.put(key, value);
     }
 
     /**

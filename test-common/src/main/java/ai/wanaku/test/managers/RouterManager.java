@@ -66,7 +66,7 @@ public class RouterManager extends ProcessManager {
     }
 
     @Override
-    protected Path getJarPath() {
+    protected Path getExecutablePath() {
         return config.getRouterJarPath();
     }
 
@@ -97,9 +97,24 @@ public class RouterManager extends ProcessManager {
     }
 
     /**
-     * Gets the base URL for HTTP access.
+     * Gets the base URL for HTTP access (management API).
      */
     public String getBaseUrl() {
         return "http://localhost:" + httpPort;
+    }
+
+    /**
+     * Gets the base URL for MCP protocol access.
+     * For the Java router, MCP runs on the same port as HTTP.
+     */
+    public String getMcpBaseUrl() {
+        return getBaseUrl();
+    }
+
+    /**
+     * Returns the test configuration.
+     */
+    public TestConfiguration getConfig() {
+        return config;
     }
 }

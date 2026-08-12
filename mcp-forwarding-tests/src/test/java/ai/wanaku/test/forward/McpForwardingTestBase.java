@@ -8,7 +8,6 @@ import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.ForwardsClient;
 import ai.wanaku.test.client.NamespaceClient;
 import ai.wanaku.test.client.RouterClient;
-import com.fasterxml.jackson.databind.JsonNode;
 import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.managers.HttpCapabilityManager;

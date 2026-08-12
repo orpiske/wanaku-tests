@@ -10,6 +10,7 @@ import org.slf4j.LoggerFactory;
 import ai.wanaku.test.WanakuTestConstants;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.RouterClient;
+import ai.wanaku.test.client.ServiceClient;
 import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.managers.ResourceProviderManager;
@@ -19,11 +20,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.TestInfo;
 
-/**
- * Base class for resource provider integration tests.
- * Adds file provider lifecycle management on top of {@link BaseIntegrationTest}.
- * File provider is suite-scoped (started once, shared across all tests).
- */
 public abstract class ResourceTestBase extends BaseIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(ResourceTestBase.class);
@@ -37,30 +33,52 @@ public abstract class ResourceTestBase extends BaseIntegrationTest {
             return;
         }
 
-        if (routerManager == null || !routerManager.isRunning()) {
+        boolean praxis = config != null && config.isPraxisMode();
+
+        if (!praxis && (routerManager == null || !routerManager.isRunning())) {
             LOG.warn("Router not running, skipping file provider startup");
             return;
         }
 
-        OidcCredentials oidcCredentials = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            oidcCredentials = keycloakManager.getServiceCredentials();
+        if (praxis && (praxisManager == null || !praxisManager.isRunning())) {
+            LOG.warn("Praxis not running, skipping file provider startup");
+            return;
         }
 
         String testClassName = testInfo.getTestClass().map(Class::getSimpleName).orElse("Unknown");
 
         resourceProviderManager = new ResourceProviderManager(config);
-        resourceProviderManager.prepare(new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
+
+        if (praxis) {
+            resourceProviderManager.prepareStandalone();
+        } else {
+            OidcCredentials oidcCredentials = null;
+            if (keycloakManager != null && keycloakManager.isRunning()) {
+                oidcCredentials = keycloakManager.getServiceCredentials();
+            }
+            resourceProviderManager.prepare(new TargetConfiguration(
+                    "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
+        }
+
         resourceProviderManager.setLogContext("file-provider", testClassName, "file-provider");
         resourceProviderManager.start(testClassName);
 
-        LOG.debug("Waiting for file provider registration...");
+        String baseUrl;
         String accessToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            accessToken = keycloakManager.getMcpToken();
+        if (praxis) {
+            baseUrl = praxisManager.getBaseUrl();
+            ServiceClient svcClient = new ServiceClient(baseUrl, null);
+            svcClient.register("file", "localhost:" + resourceProviderManager.getGrpcPort(), "resource-provider");
+            LOG.debug("Registered file provider service with praxis");
+        } else {
+            baseUrl = routerManager.getBaseUrl();
+            if (keycloakManager != null && keycloakManager.isRunning()) {
+                accessToken = keycloakManager.getMcpToken();
+            }
         }
-        RouterClient client = new RouterClient(routerManager.getBaseUrl(), accessToken);
+
+        LOG.debug("Waiting for file provider registration...");
+        RouterClient client = new RouterClient(baseUrl, accessToken);
         Awaitility.await()
                 .atMost(Duration.ofSeconds(10))
                 .pollInterval(WanakuTestConstants.DEFAULT_REGISTRATION_POLL_INTERVAL)
@@ -71,6 +89,15 @@ public abstract class ResourceTestBase extends BaseIntegrationTest {
     @AfterAll
     static void stopFileProvider() {
         if (resourceProviderManager != null) {
+            boolean praxis = config != null && config.isPraxisMode();
+            if (praxis && praxisManager != null && praxisManager.isRunning()) {
+                try {
+                    ServiceClient svcClient = new ServiceClient(praxisManager.getBaseUrl(), null);
+                    svcClient.remove("file");
+                } catch (Exception e) {
+                    LOG.warn("Failed to deregister file provider service: {}", e.getMessage());
+                }
+            }
             resourceProviderManager.stop();
             resourceProviderManager = null;
         }
@@ -92,13 +119,6 @@ public abstract class ResourceTestBase extends BaseIntegrationTest {
         return "file-provider";
     }
 
-    /**
-     * Creates a test file in the temp data directory.
-     *
-     * @param filename the file name
-     * @param content the file content
-     * @return the absolute path to the created file
-     */
     protected Path createTestFile(String filename, String content) throws IOException {
         Path file = tempDataDir.resolve(filename);
         Files.writeString(file, content);
@@ -114,20 +134,15 @@ public abstract class ResourceTestBase extends BaseIntegrationTest {
         return isFileAvailable(config.getFileProviderJarPath());
     }
 
-    /**
-     * Checks if the file exists and is available.
-     */
     protected static boolean isFileAvailable(Path path) {
         if (path == null) {
             LOG.warn("Couldn't determine the path to the jar (config returned null)");
-
             return false;
         }
 
         final boolean exists = path.toFile().exists();
         if (!exists) {
             LOG.warn("The expected file doesn't exist at the location {}", path);
-
             return false;
         }
 

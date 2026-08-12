@@ -3,7 +3,6 @@ package ai.wanaku.test.router;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
 
@@ -11,8 +10,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
-@QuarkusTest
 class DataStoreCliITCase extends RouterTestBase {
 
     private CLIExecutor cliExecutor;
@@ -20,6 +19,9 @@ class DataStoreCliITCase extends RouterTestBase {
 
     @BeforeEach
     void setupCli() {
+        assumeThat(isPraxisMode())
+                .as("DataStore is not natively available in praxis mode")
+                .isFalse();
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
         assertThat(isRouterAvailable()).as("Router must be available").isTrue();

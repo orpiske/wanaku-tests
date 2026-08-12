@@ -8,11 +8,13 @@ import org.slf4j.LoggerFactory;
 import ai.wanaku.test.WanakuTestConstants;
 import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.client.RouterClient;
+import ai.wanaku.test.client.ServiceClient;
 import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.managers.HttpCapabilityManager;
 import ai.wanaku.test.managers.KeycloakManager;
+import ai.wanaku.test.managers.PraxisManager;
 import ai.wanaku.test.managers.RouterManager;
 
 import org.junit.jupiter.api.AfterEach;
@@ -21,27 +23,21 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.extension.ExtendWith;
 
-/**
- * Abstract base class for Wanaku integration tests.
- * Provides layered lifecycle management:
- * - Module-scoped: Keycloak, Router (shared across all test classes via {@link SharedInfrastructureExtension})
- * - Test-scoped: HttpToolService, McpClient (fresh per test)
- */
 @ExtendWith({SharedInfrastructureExtension.class, SkipThresholdExtension.class})
 public abstract class BaseIntegrationTest {
 
     private static Logger LOG = LoggerFactory.getLogger(BaseIntegrationTest.class);
 
-    // Module-scoped resources (populated by SharedInfrastructureExtension, shared across all test classes)
     protected static TestConfiguration config;
     protected static KeycloakManager keycloakManager;
     protected static RouterManager routerManager;
+    protected static PraxisManager praxisManager;
     protected static Path tempDataDir;
 
-    // Test-scoped resources (fresh per test)
     protected HttpCapabilityManager httpCapabilityManager;
     protected McpTestClient mcpClient;
     protected RouterClient routerClient;
+    protected ServiceClient serviceClient;
     protected String testName;
 
     @BeforeAll
@@ -57,44 +53,46 @@ public abstract class BaseIntegrationTest {
         String testMethodName = testInfo.getTestMethod().map(m -> m.getName()).orElse("unknown");
         LOG.info("[{}] >>> {}", testMethodName, testName);
 
-        // Create RouterClient and McpClient
-        if (routerManager != null && routerManager.isRunning()) {
+        if (isServerRunning()) {
+            String baseUrl = getServerBaseUrl();
+            String mcpBaseUrl = getServerMcpBaseUrl();
+
             String accessToken = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
+            if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
                 accessToken = keycloakManager.getMcpToken();
                 LOG.debug("Obtained MCP access token with wanaku-mcp-client scope");
             }
 
-            routerClient = new RouterClient(routerManager.getBaseUrl(), accessToken);
+            routerClient = new RouterClient(baseUrl, accessToken);
+            serviceClient = new ServiceClient(baseUrl, accessToken);
 
-            // Create MCP client with authentication token (requires wanaku-mcp-client scope)
             try {
-                mcpClient = new McpTestClient(routerManager.getBaseUrl(), accessToken);
+                mcpClient = new McpTestClient(mcpBaseUrl, accessToken);
                 mcpClient.connect();
-                LOG.debug("MCP client connected");
+                LOG.debug("MCP client connected to {}", mcpBaseUrl);
             } catch (Exception e) {
                 LOG.warn("Failed to connect MCP client: {}", e.getMessage());
                 mcpClient = null;
             }
         }
 
-        // Start HTTP Capability (test-scoped by default)
         if (config.getHttpToolServiceJarPath() != null
                 && config.getHttpToolServiceJarPath().toFile().exists()
-                && routerManager != null
-                && routerManager.isRunning()) {
-
-            // Get OIDC credentials from Keycloak for capability registration
-            OidcCredentials oidcCredentials = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
-                oidcCredentials = keycloakManager.getServiceCredentials();
-            }
+                && isServerRunning()) {
 
             httpCapabilityManager = new HttpCapabilityManager(config);
-            httpCapabilityManager.prepare(new TargetConfiguration(
-                    "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
 
-            // Set log context for structured logging
+            if (isPraxisMode()) {
+                httpCapabilityManager.prepareStandalone();
+            } else {
+                OidcCredentials oidcCredentials = null;
+                if (keycloakManager != null && keycloakManager.isRunning()) {
+                    oidcCredentials = keycloakManager.getServiceCredentials();
+                }
+                httpCapabilityManager.prepare(new TargetConfiguration(
+                        "localhost", getServerHttpPort(), getServerGrpcPort(), oidcCredentials));
+            }
+
             String profile = getLogProfile();
             String testClassName =
                     testInfo.getTestClass().map(Class::getSimpleName).orElse("Unknown");
@@ -102,7 +100,11 @@ public abstract class BaseIntegrationTest {
 
             httpCapabilityManager.start(testName);
 
-            // Wait for HTTP Capability to register with Router
+            if (isPraxisMode()) {
+                serviceClient.register("http", "localhost:" + httpCapabilityManager.getGrpcPort(), "tool-invoker");
+                LOG.debug("Registered HTTP capability service with praxis");
+            }
+
             LOG.debug("Waiting for HTTP Capability registration...");
             Awaitility.await()
                     .pollInterval(WanakuTestConstants.DEFAULT_REGISTRATION_POLL_INTERVAL)
@@ -117,13 +119,18 @@ public abstract class BaseIntegrationTest {
     void teardownTestInfrastructure() throws IOException {
         LOG.debug("Tearing down test: {}", testName);
 
-        // Stop HTTP Capability
         if (httpCapabilityManager != null) {
+            if (isPraxisMode() && serviceClient != null) {
+                try {
+                    serviceClient.remove("http");
+                } catch (Exception e) {
+                    LOG.warn("Failed to deregister HTTP service: {}", e.getMessage());
+                }
+            }
             httpCapabilityManager.stop();
             httpCapabilityManager = null;
         }
 
-        // Disconnect MCP client
         if (mcpClient != null) {
             try {
                 mcpClient.disconnect();
@@ -133,7 +140,6 @@ public abstract class BaseIntegrationTest {
             mcpClient = null;
         }
 
-        // Clear all tools from Router
         if (routerClient != null) {
             try {
                 routerClient.clearAllTools();
@@ -145,57 +151,79 @@ public abstract class BaseIntegrationTest {
         LOG.debug("Test teardown complete: {}", testName);
     }
 
-    /**
-     * Checks if the Router is available for testing.
-     */
+    protected boolean isPraxisMode() {
+        return config != null && config.isPraxisMode();
+    }
+
     protected boolean isRouterAvailable() {
+        return isServerRunning();
+    }
+
+    protected boolean isServerRunning() {
+        if (praxisManager != null && praxisManager.isRunning()) {
+            return true;
+        }
         return routerManager != null && routerManager.isRunning();
     }
 
-    /**
-     * Checks if the HTTP Capability is available for testing.
-     * This checks preconditions (JAR exists + Router running) since the actual
-     * httpCapabilityManager is created in @BeforeEach which runs after @EnabledIf.
-     */
+    protected String getServerBaseUrl() {
+        if (praxisManager != null && praxisManager.isRunning()) {
+            return praxisManager.getBaseUrl();
+        }
+        if (routerManager != null && routerManager.isRunning()) {
+            return routerManager.getBaseUrl();
+        }
+        return null;
+    }
+
+    protected String getServerMcpBaseUrl() {
+        if (praxisManager != null && praxisManager.isRunning()) {
+            return praxisManager.getMcpBaseUrl();
+        }
+        if (routerManager != null && routerManager.isRunning()) {
+            return routerManager.getMcpBaseUrl();
+        }
+        return null;
+    }
+
+    protected int getServerHttpPort() {
+        if (praxisManager != null && praxisManager.isRunning()) {
+            return praxisManager.getHttpPort();
+        }
+        if (routerManager != null && routerManager.isRunning()) {
+            return routerManager.getHttpPort();
+        }
+        return -1;
+    }
+
+    protected int getServerGrpcPort() {
+        if (routerManager != null && routerManager.isRunning()) {
+            return routerManager.getGrpcPort();
+        }
+        return -1;
+    }
+
     protected boolean isHttpToolServiceAvailable() {
-        // Check if already running (for tests that run after @BeforeEach)
         if (httpCapabilityManager != null && httpCapabilityManager.isRunning()) {
             return true;
         }
-        // Check preconditions (for @EnabledIf which runs before @BeforeEach)
-        return isRouterAvailable()
+        return isServerRunning()
                 && config != null
                 && config.getHttpToolServiceJarPath() != null
                 && config.getHttpToolServiceJarPath().toFile().exists();
     }
 
-    /**
-     * Checks if the full stack (Router + HTTP Capability) is available for testing.
-     */
     protected boolean isFullStackAvailable() {
-        return isRouterAvailable() && isHttpToolServiceAvailable();
+        return isServerRunning() && isHttpToolServiceAvailable();
     }
 
-    /**
-     * Checks if the MCP client can be connected for testing.
-     * This checks preconditions (Router running) since the actual mcpClient
-     * is created in @BeforeEach which runs after @EnabledIf.
-     */
     protected boolean isMcpClientAvailable() {
-        // Check if already connected (for tests that run after @BeforeEach)
         if (mcpClient != null) {
             return true;
         }
-        // Check preconditions (for @EnabledIf which runs before @BeforeEach)
-        return isRouterAvailable();
+        return isServerRunning();
     }
 
-    /**
-     * Gets the log profile name for structured logging.
-     * Override in subclasses to provide capability-specific profile names.
-     *
-     * @return the profile name (e.g., "http-capability")
-     */
     protected String getLogProfile() {
         return "default";
     }

@@ -83,10 +83,15 @@ public class ManagementClient {
 
     public boolean isAvailable() {
         try {
-            getInfo();
+            getStatistics();
             return true;
         } catch (ManagementClientException e) {
-            return false;
+            try {
+                getInfo();
+                return true;
+            } catch (ManagementClientException e2) {
+                return false;
+            }
         }
     }
 

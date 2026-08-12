@@ -14,6 +14,7 @@ public final class WanakuTestConstants {
     // System property keys
     public static final String PROP_ARTIFACTS_DIR = "wanaku.test.artifacts.dir";
     public static final String PROP_ROUTER_JAR = "wanaku.test.router.jar";
+    public static final String PROP_PRAXIS_BINARY = "wanaku.test.praxis.binary";
     public static final String PROP_HTTP_SERVICE_JAR = "wanaku.test.http-service.jar";
     public static final String PROP_CLI_PATH = "wanaku.test.cli.path";
     public static final String PROP_FILE_PROVIDER_JAR = "wanaku.test.file-provider.jar";
@@ -31,6 +32,7 @@ public final class WanakuTestConstants {
 
     // Health check endpoints
     public static final String ROUTER_HEALTH_PATH = "/q/health/ready";
+    public static final String PRAXIS_HEALTH_PATH = "/healthz";
 
     // API paths
     public static final String ROUTER_API_BASE_PATH = "/api/v1";
@@ -45,6 +47,9 @@ public final class WanakuTestConstants {
     public static final String ROUTER_PROMPTS_PATH = ROUTER_API_BASE_PATH + "/prompts";
     public static final String ROUTER_FORWARDS_PATH = ROUTER_API_BASE_PATH + "/forwards";
     public static final String ROUTER_SERVICE_CATALOG_PATH = ROUTER_API_BASE_PATH + "/service-catalog";
+
+    // Praxis-specific API paths
+    public static final String PRAXIS_SERVICES_PATH = ROUTER_API_BASE_PATH + "/services";
 
     // Port allocation
     public static final int PORT_ALLOCATION_RETRIES = 5;

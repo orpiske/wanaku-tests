@@ -70,13 +70,31 @@ public class ResourceProviderManager extends ProcessManager {
         addSystemProperty("wanaku.service.registration.delay-seconds", "0");
     }
 
+    /**
+     * Prepares the File Resource Provider as a standalone gRPC server (praxis mode).
+     */
+    public void prepareStandalone() {
+        this.grpcPort = PortUtils.findAvailablePort();
+
+        LOG.debug("File Provider prepared standalone with gRPC port {}", grpcPort);
+
+        addSystemProperty("quarkus.http.port", "0");
+        addSystemProperty("quarkus.grpc.server.use-separate-server", "true");
+        addSystemProperty("quarkus.grpc.server.port", String.valueOf(grpcPort));
+        addSystemProperty("wanaku.service.registration.enabled", "false");
+    }
+
+    public int getGrpcPort() {
+        return grpcPort;
+    }
+
     @Override
     protected String getProcessName() {
         return "file-provider";
     }
 
     @Override
-    protected Path getJarPath() {
+    protected Path getExecutablePath() {
         return config.getFileProviderJarPath();
     }
 

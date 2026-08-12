@@ -77,13 +77,30 @@ public class HttpCapabilityManager extends ProcessManager {
         addSystemProperty("wanaku.service.registration.delay-seconds", "0");
     }
 
+    /**
+     * Prepares the HTTP Capability as a standalone gRPC server (praxis mode).
+     * No registration config, no OIDC — the test harness handles registration.
+     */
+    public void prepareStandalone() {
+        this.grpcPort = PortUtils.findAvailablePort();
+
+        LOG.debug("HTTP Capability prepared standalone with gRPC port {}", grpcPort);
+
+        addSystemProperty("quarkus.http.port", "0");
+        addSystemProperty("quarkus.grpc.server.use-separate-server", "true");
+        addSystemProperty("quarkus.grpc.server.port", String.valueOf(grpcPort));
+
+        // Disable auto-registration — the test harness registers via REST
+        addSystemProperty("wanaku.service.registration.enabled", "false");
+    }
+
     @Override
     protected String getProcessName() {
         return "http-capability";
     }
 
     @Override
-    protected Path getJarPath() {
+    protected Path getExecutablePath() {
         return config.getHttpToolServiceJarPath();
     }
 

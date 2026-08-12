@@ -73,5 +73,29 @@ download_jar() {
 
 download_jar "${CIC_URL}" "camel-integration-capability" "camel-integration-capability-main-${VERSION}-jar-with-dependencies.jar"
 
+# Praxis binary (optional — downloaded from wanaku-praxis releases)
+download_praxis_binary() {
+    local os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+    local arch="$(uname -m)"
+    case "$arch" in
+        arm64) arch="aarch64" ;;
+        x86_64) arch="x86_64" ;;
+    esac
+
+    local praxis_tag="${TAG}"
+    local binary_name="wanaku-praxis-${os}-${arch}"
+    local praxis_url="https://github.com/wanaku-ai/wanaku-praxis/releases/download/${praxis_tag}/${binary_name}"
+
+    echo "Downloading praxis binary (${binary_name})..."
+    if curl -fSL -o "${SCRIPT_DIR}/${binary_name}" "${praxis_url}" 2>/dev/null; then
+        chmod +x "${SCRIPT_DIR}/${binary_name}"
+        echo "Praxis binary ready: ${binary_name}"
+    else
+        echo "Praxis binary not available at ${praxis_url} (this is optional)"
+    fi
+}
+
+download_praxis_binary
+
 echo ""
 echo "All artifacts downloaded to ${SCRIPT_DIR}"

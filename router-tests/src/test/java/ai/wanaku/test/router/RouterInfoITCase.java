@@ -1,6 +1,5 @@
 package ai.wanaku.test.router;
 
-import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.client.ManagementClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -10,7 +9,6 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
-@QuarkusTest
 class RouterInfoITCase extends RouterTestBase {
 
     @BeforeEach
@@ -22,6 +20,10 @@ class RouterInfoITCase extends RouterTestBase {
     @DisplayName("Return router info from management endpoint")
     @Test
     void shouldReturnRouterInfo() {
+        assumeThat(isPraxisMode())
+                .as("Info endpoint not available in praxis mode")
+                .isFalse();
+
         try {
             JsonNode info = managementClient.getInfo();
             assertThat(info).isNotNull();
@@ -48,6 +50,6 @@ class RouterInfoITCase extends RouterTestBase {
     @DisplayName("Router health endpoint is accessible")
     @Test
     void shouldHaveAccessibleHealthEndpoint() {
-        assertThat(routerManager.isRunning()).isTrue();
+        assertThat(isServerRunning()).isTrue();
     }
 }

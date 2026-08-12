@@ -5,7 +5,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
-import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.WanakuTestConstants;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -15,7 +14,6 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
-@QuarkusTest
 class ServiceDiscoveryITCase extends RouterTestBase {
 
     @BeforeEach
@@ -28,7 +26,7 @@ class ServiceDiscoveryITCase extends RouterTestBase {
     @Test
     void shouldListCapabilities() throws Exception {
         String accessToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
+        if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
             accessToken = keycloakManager.getMcpToken();
         }
 
@@ -36,7 +34,7 @@ class ServiceDiscoveryITCase extends RouterTestBase {
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(routerManager.getBaseUrl() + WanakuTestConstants.ROUTER_CAPABILITIES_PATH))
+                .uri(URI.create(getServerBaseUrl() + WanakuTestConstants.ROUTER_CAPABILITIES_PATH))
                 .GET()
                 .timeout(Duration.ofSeconds(30));
 
@@ -74,6 +72,9 @@ class ServiceDiscoveryITCase extends RouterTestBase {
     @Disabled("Blocked on wanaku-ai/wanaku#1702: deregistration endpoint needs identity verification")
     @Test
     void shouldDeregisterCapability() {
+        assumeThat(isPraxisMode())
+                .as("Discovery deregistration endpoint not available in praxis mode")
+                .isFalse();
         assumeThat(isHttpToolServiceAvailable())
                 .as("HTTP tool service must be available")
                 .isTrue();

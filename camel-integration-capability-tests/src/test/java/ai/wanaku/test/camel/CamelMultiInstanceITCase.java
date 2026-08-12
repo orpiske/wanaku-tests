@@ -112,8 +112,7 @@ class CamelMultiInstanceITCase extends CamelCapabilityTestBase {
                     .when()
                     .resourcesRead(resourceUri)
                     .withAssert(response -> {
-                        LOG.debug(
-                                "=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
+                        LOG.debug("=== MCP resourcesRead response [test-file-resource]: {}", response.contents());
                         assertThat(response.contents()).isNotEmpty();
                         assertThat(response.contents().get(0).asText().text())
                                 .contains("Multi-instance resource content");

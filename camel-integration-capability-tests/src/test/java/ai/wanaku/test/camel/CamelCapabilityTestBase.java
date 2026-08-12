@@ -49,12 +49,12 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
     @BeforeEach
     void setupCamelTestInfrastructure(TestInfo testInfo) throws IOException {
         Files.createDirectories(FIXTURES_TARGET_DIR);
-        if (routerClient != null) {
+        if (routerClient != null && !isPraxisMode()) {
             String dsToken = null;
             if (keycloakManager != null && keycloakManager.isRunning()) {
                 dsToken = keycloakManager.getMcpToken();
             }
-            dataStoreClient = new DataStoreClient(routerManager.getBaseUrl(), dsToken);
+            dataStoreClient = new DataStoreClient(getServerBaseUrl(), dsToken);
         }
     }
 
@@ -63,18 +63,18 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         // Deregister all CIC instances from Router before stopping processes.
         // CIC does not deregister itself on SIGTERM (no JVM shutdown hook),
         // so without this the Router keeps pinging dead processes.
-        String deregToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            try {
-                deregToken = keycloakManager.getMcpToken();
-            } catch (Exception e) {
-                LOG.warn("Failed to get token for deregistration: {}", e.getMessage());
-            }
-        }
         for (CamelCapabilityManager manager : camelManagers) {
-            if (routerClient != null && manager.getName() != null) {
+            if (manager.getName() != null) {
                 try {
-                    routerClient.deregisterCapability(manager.getName(), deregToken);
+                    if (isPraxisMode() && serviceClient != null) {
+                        serviceClient.remove(manager.getName());
+                    } else if (routerClient != null) {
+                        String deregToken = null;
+                        if (keycloakManager != null && keycloakManager.isRunning()) {
+                            deregToken = keycloakManager.getMcpToken();
+                        }
+                        routerClient.deregisterCapability(manager.getName(), deregToken);
+                    }
                 } catch (Exception e) {
                     LOG.warn("Failed to deregister CIC '{}': {}", manager.getName(), e.getMessage());
                 }
@@ -153,52 +153,27 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
     protected CamelCapabilityManager startCapabilityFromDataStore(
             String serviceName, String routesRef, String rulesRef, String depsRef) throws IOException {
 
-        OidcCredentials oidcCredentials = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            oidcCredentials = keycloakManager.getServiceCredentials();
-        }
-
         CamelCapabilityManager manager = new CamelCapabilityManager(config);
-        manager.prepare(
-                serviceName,
-                new TargetConfiguration(
-                        "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials),
-                routesRef,
-                rulesRef,
-                depsRef);
+        prepareCamelManager(manager, serviceName, routesRef, rulesRef, depsRef);
 
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        waitForCapabilityReady(serviceName, manager);
+        registerAndWaitForCapability(serviceName, manager);
 
         camelManagers.add(manager);
         return manager;
     }
 
-    /**
-     * Starts a CIC instance from an already-resolved fixture directory.
-     * Can be used with TestFixtures output or with custom directories (e.g., for invalid syntax tests).
-     *
-     * @param serviceName the service name for Router registration
-     * @param fixtureDir  directory containing routes.camel.yaml, rules.yaml, and optionally dependencies.txt
-     * @return the started CamelCapabilityManager
-     */
     protected CamelCapabilityManager startCapabilityFromDir(String serviceName, Path fixtureDir) throws IOException {
         Path routesRef = fixtureDir.resolve("routes.camel.yaml");
         Path rulesRef = fixtureDir.resolve("rules.yaml");
         Path depsRef = fixtureDir.resolve("dependencies.txt");
 
-        OidcCredentials oidcCredentials = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            oidcCredentials = keycloakManager.getServiceCredentials();
-        }
-
         CamelCapabilityManager manager = new CamelCapabilityManager(config);
-        manager.prepare(
+        prepareCamelManager(
+                manager,
                 serviceName,
-                new TargetConfiguration(
-                        "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials),
                 "file://" + routesRef.toAbsolutePath(),
                 rulesRef.toFile().exists() ? "file://" + rulesRef.toAbsolutePath() : null,
                 depsRef.toFile().exists() ? "file://" + depsRef.toAbsolutePath() : null);
@@ -206,10 +181,36 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        waitForCapabilityReady(serviceName, manager);
+        registerAndWaitForCapability(serviceName, manager);
 
         camelManagers.add(manager);
         return manager;
+    }
+
+    private void prepareCamelManager(
+            CamelCapabilityManager manager, String serviceName, String routesRef, String rulesRef, String depsRef) {
+        if (isPraxisMode()) {
+            manager.prepareStandalone(serviceName, routesRef, rulesRef, depsRef);
+        } else {
+            OidcCredentials oidcCredentials = null;
+            if (keycloakManager != null && keycloakManager.isRunning()) {
+                oidcCredentials = keycloakManager.getServiceCredentials();
+            }
+            manager.prepare(
+                    serviceName,
+                    new TargetConfiguration("localhost", getServerHttpPort(), getServerGrpcPort(), oidcCredentials),
+                    routesRef,
+                    rulesRef,
+                    depsRef);
+        }
+    }
+
+    private void registerAndWaitForCapability(String serviceName, CamelCapabilityManager manager) {
+        if (isPraxisMode() && serviceClient != null) {
+            serviceClient.register(serviceName, "localhost:" + manager.getGrpcPort(), "tool-invoker");
+            LOG.debug("Registered CIC '{}' service with praxis", serviceName);
+        }
+        waitForCapabilityReady(serviceName, manager);
     }
 
     private void waitForCapabilityReady(String serviceName, CamelCapabilityManager manager) {
@@ -270,10 +271,10 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         }
         mcpClient = null;
         String accessToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
+        if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
             accessToken = keycloakManager.getMcpToken();
         }
-        mcpClient = new McpTestClient(routerManager.getBaseUrl(), accessToken);
+        mcpClient = new McpTestClient(getServerMcpBaseUrl(), accessToken);
         mcpClient.connect();
         LOG.debug("MCP client reconnected");
     }

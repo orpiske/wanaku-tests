@@ -35,6 +35,18 @@ on:
         description: 'Wanaku Examples branch'
         required: false
         default: 'main'
+      praxis_repo:
+        description: 'Wanaku Praxis repository (owner/repo)'
+        required: false
+        default: 'wanaku-ai/wanaku-praxis'
+      praxis_branch:
+        description: 'Wanaku Praxis branch'
+        required: false
+        default: 'main'
+      use_praxis:
+        description: 'Use praxis instead of Java router (true/false)'
+        required: false
+        default: 'false'
       pr_number:
         description: 'PR number to comment results on (empty = skip commenting)'
         required: false
@@ -60,6 +72,9 @@ jobs:
       CIC_BRANCH: ${{ inputs.cic_branch }}
       EXAMPLES_REPO: ${{ inputs.examples_repo }}
       EXAMPLES_BRANCH: ${{ inputs.examples_branch }}
+      PRAXIS_REPO: ${{ inputs.praxis_repo }}
+      PRAXIS_BRANCH: ${{ inputs.praxis_branch }}
+      USE_PRAXIS: ${{ inputs.use_praxis }}
       PR_NUMBER: ${{ inputs.pr_number }}
       SOURCE_REPO: ${{ inputs.source_repo }}
     steps:
@@ -96,6 +111,13 @@ jobs:
             "https://github.com/${EXAMPLES_REPO}.git" source/wanaku-examples
           echo "::endgroup::"
 
+          if [ "$USE_PRAXIS" = "true" ]; then
+            echo "::group::Cloning Praxis (${PRAXIS_REPO}@${PRAXIS_BRANCH})"
+            git clone --depth 1 --branch "${PRAXIS_BRANCH}" \
+              "https://github.com/${PRAXIS_REPO}.git" source/wanaku-praxis
+            echo "::endgroup::"
+          fi
+
       - name: Build sources summary
         run: |
           {
@@ -107,6 +129,9 @@ jobs:
             echo "| Wanaku | \`${WANAKU_REPO}\` | \`${WANAKU_BRANCH}\` |"
             echo "| CIC | \`${CIC_REPO}\` | \`${CIC_BRANCH}\` |"
             echo "| Examples | \`${EXAMPLES_REPO}\` | \`${EXAMPLES_BRANCH}\` |"
+            if [ "$USE_PRAXIS" = "true" ]; then
+              echo "| Praxis | \`${PRAXIS_REPO}\` | \`${PRAXIS_BRANCH}\` |"
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build SDK
@@ -141,6 +166,19 @@ jobs:
             mvn -B -DskipTests package -f source/wanaku-examples/pom.xml
           fi
 
+      - name: Set up Rust toolchain
+        if: inputs.use_praxis == 'true'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Praxis
+        if: inputs.use_praxis == 'true'
+        run: |
+          cd source/wanaku-praxis
+          cargo build --release
+          cp target/release/wanaku-praxis ../../artifacts/wanaku-praxis
+          chmod +x ../../artifacts/wanaku-praxis
+          echo "Praxis binary ready"
+
       - name: Collect artifacts
         run: |
           chmod +x ./.github/scripts/collect-from-source-artifacts.sh
@@ -173,11 +211,14 @@ jobs:
         env:
           CLI_PATH: ${{ steps.cli.outputs.path }}
         run: |
-          CLI_OPTS=""
+          EXTRA_OPTS=""
           if [ -n "$CLI_PATH" ]; then
-            CLI_OPTS="-Dwanaku.test.cli.path=$CLI_PATH"
+            EXTRA_OPTS="-Dwanaku.test.cli.path=$CLI_PATH"
           fi
-          mvn -B verify --fail-at-end --file pom.xml $CLI_OPTS
+          if [ "$USE_PRAXIS" = "true" ] && [ -f "artifacts/wanaku-praxis" ]; then
+            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.praxis.binary=$(pwd)/artifacts/wanaku-praxis"
+          fi
+          mvn -B verify --fail-at-end --file pom.xml $EXTRA_OPTS
 
       - name: Test summary
         if: always()

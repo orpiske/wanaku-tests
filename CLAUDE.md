@@ -1,6 +1,6 @@
 # wanaku-tests
 
-Integration test framework for Wanaku (MCP Router). Tests run against real processes (Router, capability providers, Keycloak) managed via ProcessManager lifecycle.
+Integration test framework for Wanaku (MCP Router). Tests run against real processes (Router or Praxis, capability providers, Keycloak) managed via ProcessManager lifecycle. Supports two modes: **Router mode** (Java Quarkus) and **Praxis mode** (Rust native binary).
 
 ## Build & Run
 
@@ -35,8 +35,8 @@ wanaku-tests/
 ### test-common layout
 
 - `base/` - BaseIntegrationTest (layered lifecycle: suite-scoped infra, test-scoped capabilities)
-- `managers/` - ProcessManager hierarchy (RouterManager, HttpCapabilityManager, ResourceProviderManager, CamelCapabilityManager, KeycloakManager)
-- `client/` - RouterClient (REST), McpTestClient (MCP protocol), CLIExecutor, DataStoreClient
+- `managers/` - ProcessManager hierarchy (RouterManager, PraxisManager, HttpCapabilityManager, ResourceProviderManager, CamelCapabilityManager, KeycloakManager)
+- `client/` - RouterClient (REST), McpTestClient (MCP protocol), ServiceClient (praxis services), CLIExecutor, DataStoreClient
 - `config/` - TestConfiguration (system-properties-driven, builder pattern), TargetConfiguration, OidcCredentials
 - `model/` - HttpToolConfig, ResourceConfig, ToolInfo, ResourceReference
 - `utils/` - PortUtils, HealthCheckUtils, LogUtils
@@ -44,7 +44,8 @@ wanaku-tests/
 ## Key System Properties
 
 - `wanaku.test.artifacts.dir` - path to artifacts directory (default: "artifacts")
-- `wanaku.test.router.jar` - router JAR path
+- `wanaku.test.router.jar` - router JAR path (Router mode)
+- `wanaku.test.praxis.binary` - praxis binary path (Praxis mode, takes precedence over router JAR)
 - `wanaku.test.http-service.jar` - HTTP tool service JAR path
 - `wanaku.test.file-provider.jar` - file provider JAR path
 - `wanaku.test.camel-capability.jar` - CIC JAR path
@@ -61,6 +62,17 @@ wanaku-tests/
 5. `@AfterAll`: Router + Keycloak shutdown
 
 Tests gracefully skip when required JARs are missing (check `isRouterAvailable()`, `isFileProviderAvailable()`, etc.).
+
+### Praxis Mode Differences
+
+When `wanaku.test.praxis.binary` is set and the binary exists, the framework runs in **praxis mode**:
+- PraxisManager starts a Rust binary instead of a Java JAR
+- Two ports: management API (dynamic) + MCP server (dynamic, separate port)
+- No Keycloak/OIDC — all clients use null access tokens
+- Capability providers start as standalone gRPC servers; the test harness registers them via `POST /api/v1/services`
+- DataStore, ServiceCatalog, and Authentication tests are skipped (not native in praxis)
+- Health check uses `/healthz` instead of `/q/health/ready`
+- Use `isPraxisMode()` in test classes to conditionally skip or adapt tests
 
 ## Code Style & Conventions
 

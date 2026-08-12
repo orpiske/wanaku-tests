@@ -1,0 +1,217 @@
+package ai.wanaku.test.managers;
+
+import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.config.TestConfiguration;
+import ai.wanaku.test.utils.HealthCheckUtils;
+import ai.wanaku.test.utils.LogUtils;
+import ai.wanaku.test.utils.PortUtils;
+
+public class PraxisManager extends ProcessManager {
+
+    private static final Logger LOG = LoggerFactory.getLogger(PraxisManager.class);
+
+    private final TestConfiguration config;
+    private int mgmtPort;
+    private int mcpPort;
+    private Path praxisConfigFile;
+    private Path wanakuConfigFile;
+    private Path persistDir;
+
+    public PraxisManager(TestConfiguration config) {
+        this.config = config;
+    }
+
+    public void prepare() {
+        this.mgmtPort = PortUtils.findAvailablePort();
+        this.mcpPort = PortUtils.findAvailablePort();
+
+        LOG.debug("Praxis prepared with management port {} and MCP port {}", mgmtPort, mcpPort);
+
+        addEnvironmentVariable("WANAKU_MGMT_LISTEN", "0.0.0.0:" + mgmtPort);
+        addEnvironmentVariable("WANAKU_PERSIST_BACKEND", "file");
+
+        try {
+            persistDir = Files.createTempDirectory("wanaku-praxis-data-");
+            addEnvironmentVariable(
+                    "WANAKU_PERSIST_PATH", persistDir.toAbsolutePath().toString());
+            praxisConfigFile = generatePraxisConfig();
+            wanakuConfigFile = generateWanakuConfig();
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to generate praxis config files", e);
+        }
+    }
+
+    @Override
+    protected String getProcessName() {
+        return "praxis";
+    }
+
+    @Override
+    protected Path getExecutablePath() {
+        return config.getPraxisBinaryPath();
+    }
+
+    @Override
+    protected List<String> buildCommand() {
+        List<String> command = new ArrayList<>();
+        command.add(getExecutablePath().toAbsolutePath().toString());
+        command.add("--praxis-config");
+        command.add(praxisConfigFile.toAbsolutePath().toString());
+        command.add("--wanaku-config");
+        command.add(wanakuConfigFile.toAbsolutePath().toString());
+        return command;
+    }
+
+    @Override
+    protected Path getWorkingDirectory() {
+        return null;
+    }
+
+    @Override
+    protected void configureDataIsolation() {
+        // Praxis uses env vars, not JVM system properties
+    }
+
+    @Override
+    protected List<String> getProcessArguments() {
+        return new ArrayList<>();
+    }
+
+    @Override
+    protected boolean performHealthCheck() {
+        String healthUrl = "http://localhost:" + mgmtPort + WanakuTestConstants.PRAXIS_HEALTH_PATH;
+        return HealthCheckUtils.waitForHealthy(healthUrl, config.getDefaultTimeout());
+    }
+
+    @Override
+    protected File createLogFile(String testName) throws IOException {
+        return LogUtils.createLogFile(testName, "praxis");
+    }
+
+    @Override
+    public void stop() {
+        super.stop();
+        cleanupTempFiles();
+    }
+
+    public int getHttpPort() {
+        return mgmtPort;
+    }
+
+    public int getMcpPort() {
+        return mcpPort;
+    }
+
+    public String getBaseUrl() {
+        return "http://localhost:" + mgmtPort;
+    }
+
+    public String getMcpBaseUrl() {
+        return "http://localhost:" + mcpPort;
+    }
+
+    public int getGrpcPort() {
+        return -1;
+    }
+
+    public TestConfiguration getConfig() {
+        return config;
+    }
+
+    private Path generatePraxisConfig() throws IOException {
+        String yaml = String.join(
+                "\n",
+                "listeners:",
+                "  - name: mcp",
+                "    address: \"0.0.0.0:" + mcpPort + "\"",
+                "    filter_chains: [mcp_router]",
+                "",
+                "filter_chains:",
+                "  - name: mcp_router",
+                "    filters:",
+                "      - filter: cors",
+                "        allow_origins: [\"*\"]",
+                "        allow_methods: [\"GET\", \"POST\", \"OPTIONS\"]",
+                "        allow_headers: [\"Content-Type\", \"Accept\", \"Mcp-Session-Id\","
+                        + " \"Mcp-Protocol-Version\", \"Authorization\"]",
+                "      - filter: mcp",
+                "        on_invalid: continue",
+                "      - filter: wanaku_namespace",
+                "      - filter: wanaku_well_known",
+                "      - filter: wanaku_mcp_init",
+                "      - filter: wanaku_tool_list",
+                "      - filter: wanaku_tool_call",
+                "      - filter: wanaku_resource_list",
+                "      - filter: wanaku_resource_read",
+                "      - filter: wanaku_prompt_list",
+                "      - filter: wanaku_prompt_get",
+                "      - filter: static_response",
+                "        status: 200",
+                "        headers:",
+                "          - name: content-type",
+                "            value: application/json",
+                "        body: '{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,"
+                        + "\"message\":\"method not supported\"},\"id\":null}'",
+                "",
+                "insecure_options:",
+                "  skip_pipeline_validation: true",
+                "");
+
+        Path configFile = Files.createTempFile("praxis-config-", ".yaml");
+        Files.writeString(configFile, yaml);
+        LOG.debug("Generated praxis config at {}", configFile);
+        return configFile;
+    }
+
+    private Path generateWanakuConfig() throws IOException {
+        Path configFile = Files.createTempFile("wanaku-config-", ".yaml");
+        Files.writeString(configFile, "# empty bootstrap config for testing\n");
+        LOG.debug("Generated wanaku config at {}", configFile);
+        return configFile;
+    }
+
+    private void cleanupTempFiles() {
+        deleteSilently(praxisConfigFile);
+        deleteSilently(wanakuConfigFile);
+        if (persistDir != null) {
+            try {
+                deleteRecursively(persistDir);
+            } catch (IOException e) {
+                LOG.warn("Failed to cleanup praxis persist dir: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void deleteSilently(Path path) {
+        if (path != null) {
+            try {
+                Files.deleteIfExists(path);
+            } catch (IOException e) {
+                LOG.warn("Failed to delete {}: {}", path, e.getMessage());
+            }
+        }
+    }
+
+    private void deleteRecursively(Path path) throws IOException {
+        if (Files.isDirectory(path)) {
+            try (var stream = Files.list(path)) {
+                stream.forEach(p -> {
+                    try {
+                        deleteRecursively(p);
+                    } catch (IOException e) {
+                        LOG.warn("Failed to delete: {}", p);
+                    }
+                });
+            }
+        }
+        Files.deleteIfExists(path);
+    }
+}

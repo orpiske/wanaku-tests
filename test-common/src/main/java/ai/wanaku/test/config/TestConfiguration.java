@@ -6,13 +6,10 @@ import java.nio.file.Path;
 import java.time.Duration;
 import ai.wanaku.test.WanakuTestConstants;
 
-/**
- * Configuration holder for the entire test framework.
- * Created once per test suite and immutable after initialization.
- */
 public class TestConfiguration {
 
     private final Path routerJarPath;
+    private final Path praxisBinaryPath;
     private final Path httpToolServiceJarPath;
     private final Path fileProviderJarPath;
     private final Path camelCapabilityJarPath;
@@ -22,6 +19,7 @@ public class TestConfiguration {
 
     private TestConfiguration(Builder builder) {
         this.routerJarPath = builder.routerJarPath;
+        this.praxisBinaryPath = builder.praxisBinaryPath;
         this.httpToolServiceJarPath = builder.httpToolServiceJarPath;
         this.fileProviderJarPath = builder.fileProviderJarPath;
         this.camelCapabilityJarPath = builder.camelCapabilityJarPath;
@@ -34,9 +32,6 @@ public class TestConfiguration {
         return new Builder();
     }
 
-    /**
-     * Creates a configuration with sensible defaults from system properties.
-     */
     public static TestConfiguration fromSystemProperties() {
         String artifactsDirStr =
                 System.getProperty(WanakuTestConstants.PROP_ARTIFACTS_DIR, WanakuTestConstants.DEFAULT_ARTIFACTS_DIR);
@@ -48,6 +43,7 @@ public class TestConfiguration {
         return builder()
                 .artifactsDir(artifactsDir)
                 .routerJarPath(findJar(artifactsDir, "wanaku-router"))
+                .praxisBinaryPath(findPraxisBinary(artifactsDir))
                 .httpToolServiceJarPath(findJar(artifactsDir, "wanaku-tool-service-http"))
                 .fileProviderJarPath(findJar(artifactsDir, "wanaku-provider-file"))
                 .camelCapabilityJarPath(findJar(artifactsDir, "camel-integration-capability"))
@@ -55,8 +51,19 @@ public class TestConfiguration {
                 .build();
     }
 
+    public boolean isPraxisMode() {
+        return praxisBinaryPath != null && praxisBinaryPath.toFile().exists();
+    }
+
+    private static Path findPraxisBinary(Path artifactsDir) {
+        String explicitPath = System.getProperty(WanakuTestConstants.PROP_PRAXIS_BINARY);
+        if (explicitPath == null) {
+            return null;
+        }
+        return Path.of(explicitPath).toAbsolutePath().normalize();
+    }
+
     private static Path findJar(Path artifactsDir, String prefix) {
-        // Check system property first
         String propKey;
         if (prefix.contains("router")) {
             propKey = WanakuTestConstants.PROP_ROUTER_JAR;
@@ -72,10 +79,8 @@ public class TestConfiguration {
             return Path.of(explicitPath).toAbsolutePath().normalize();
         }
 
-        // Search in artifacts directory
         if (Files.exists(artifactsDir)) {
             try {
-                // First try: look for Quarkus app directory (fast-jar format)
                 Path quarkusAppDir = Files.list(artifactsDir)
                         .filter(Files::isDirectory)
                         .filter(p -> p.getFileName().toString().startsWith(prefix))
@@ -83,13 +88,11 @@ public class TestConfiguration {
                         .orElse(null);
 
                 if (quarkusAppDir != null) {
-                    // Try Quarkus fast-jar format (quarkus-run.jar)
                     Path quarkusRunJar = quarkusAppDir.resolve("quarkus-run.jar");
                     if (Files.exists(quarkusRunJar)) {
                         return quarkusRunJar;
                     }
 
-                    // Try standalone JAR inside the directory (fat JAR format, e.g., CIC)
                     Path fatJar = Files.list(quarkusAppDir)
                             .filter(p -> p.getFileName().toString().endsWith(".jar"))
                             .findFirst()
@@ -99,7 +102,6 @@ public class TestConfiguration {
                     }
                 }
 
-                // Last try: look for standalone JAR file directly in artifacts/
                 return Files.list(artifactsDir)
                         .filter(p -> p.getFileName().toString().startsWith(prefix))
                         .filter(p -> p.getFileName().toString().endsWith(".jar"))
@@ -114,6 +116,10 @@ public class TestConfiguration {
 
     public Path getRouterJarPath() {
         return routerJarPath;
+    }
+
+    public Path getPraxisBinaryPath() {
+        return praxisBinaryPath;
     }
 
     public Path getHttpToolServiceJarPath() {
@@ -142,6 +148,7 @@ public class TestConfiguration {
 
     public static class Builder {
         private Path routerJarPath;
+        private Path praxisBinaryPath;
         private Path httpToolServiceJarPath;
         private Path fileProviderJarPath;
         private Path camelCapabilityJarPath;
@@ -151,6 +158,11 @@ public class TestConfiguration {
 
         public Builder routerJarPath(Path routerJarPath) {
             this.routerJarPath = routerJarPath;
+            return this;
+        }
+
+        public Builder praxisBinaryPath(Path praxisBinaryPath) {
+            this.praxisBinaryPath = praxisBinaryPath;
             return this;
         }
 

@@ -82,61 +82,38 @@ public class CamelCapabilityManager extends ProcessManager {
     }
 
     /**
-     * Starts the process.
-     * <p>
-     * Overrides the base class to handle fat JAR packaging: uses the absolute
-     * JAR path directly without setting a working directory, since CIC does not
-     * use the Quarkus fast-jar layout.
-     *
-     * @param testName the name of the test for log file naming
-     * @throws IOException if the process cannot be started
+     * Prepares CIC as a standalone gRPC server (praxis mode).
+     * No registration config or OIDC — the test harness handles registration.
      */
+    public void prepareStandalone(String serviceName, String routesRef, String rulesRef, String dependenciesRef) {
+        this.grpcPort = PortUtils.findAvailablePort();
+        this.name = serviceName;
+        this.routesRef = routesRef;
+        this.rulesRef = rulesRef;
+        this.dependenciesRef = dependenciesRef;
+
+        LOG.debug("Camel Capability prepared standalone with gRPC port {}", grpcPort);
+    }
+
     @Override
-    public void start(String testName) throws IOException {
-        if (state != ProcessState.STOPPED) {
-            throw new IllegalStateException("Process is already running: " + getProcessName());
-        }
-
-        Path jarPath = getJarPath();
-        if (jarPath == null || !jarPath.toFile().exists()) {
-            throw new IllegalStateException("JAR not found: " + jarPath);
-        }
-
-        state = ProcessState.STARTING;
-
-        LOG.debug("Starting {}", getProcessName());
-
-        // Create log file
-        logFile = createLogFile(testName);
-
-        // Build command — fat JAR uses absolute path, no working directory change
+    protected List<String> buildCommand() {
         List<String> command = new ArrayList<>();
         command.add("java");
         command.addAll(jvmArgs);
         command.add("-jar");
-        command.add(jarPath.toAbsolutePath().toString());
+        command.add(getExecutablePath().toAbsolutePath().toString());
         command.addAll(getProcessArguments());
+        return command;
+    }
 
-        LOG.debug("Command: {}", String.join(" ", command));
+    @Override
+    protected Path getWorkingDirectory() {
+        return null;
+    }
 
-        // Start process — no pb.directory() for fat JAR
-        ProcessBuilder pb = new ProcessBuilder(command);
-        pb.environment().putAll(environment);
-        pb.redirectOutput(logFile);
-        pb.redirectErrorStream(true);
-
-        process = pb.start();
-        LOG.debug("{} started with PID: {}", getProcessName(), process.pid());
-
-        // Wait for health check
-        if (performHealthCheck()) {
-            state = ProcessState.RUNNING;
-            LOG.debug("{} is healthy", getProcessName());
-        } else {
-            stop();
-            throw new IllegalStateException(
-                    getProcessName() + " failed health check. Check logs: " + logFile.getAbsolutePath());
-        }
+    @Override
+    protected void configureDataIsolation() {
+        // CIC does not use Infinispan or service-home directories
     }
 
     @Override
@@ -145,7 +122,7 @@ public class CamelCapabilityManager extends ProcessManager {
     }
 
     @Override
-    protected Path getJarPath() {
+    protected Path getExecutablePath() {
         return config.getCamelCapabilityJarPath();
     }
 

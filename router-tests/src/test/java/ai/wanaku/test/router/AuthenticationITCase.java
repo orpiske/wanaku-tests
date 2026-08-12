@@ -17,6 +17,9 @@ class AuthenticationITCase extends RouterTestBase {
     @BeforeEach
     void assumeRouterAvailable() {
         assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isPraxisMode())
+                .as("Authentication tests require built-in OIDC (not available in praxis)")
+                .isFalse();
     }
 
     @DisplayName("Reject unauthenticated tools list request")
