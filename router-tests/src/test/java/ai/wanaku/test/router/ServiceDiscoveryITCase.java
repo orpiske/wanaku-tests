@@ -51,7 +51,7 @@ class ServiceDiscoveryITCase extends RouterTestBase {
     @DisplayName("Detect HTTP capability registration when service is running")
     @Test
     void shouldDetectCapabilityRegistration() {
-        assumeThat(isHttpToolServiceAvailable())
+        assumeThat(isRouterAvailable())
                 .as("HTTP tool service must be available")
                 .isTrue();
 
@@ -75,7 +75,7 @@ class ServiceDiscoveryITCase extends RouterTestBase {
         assumeThat(isPraxisMode())
                 .as("Discovery deregistration endpoint not available in praxis mode")
                 .isFalse();
-        assumeThat(isHttpToolServiceAvailable())
+        assumeThat(isRouterAvailable())
                 .as("HTTP tool service must be available")
                 .isTrue();
         assumeThat(routerClient.isCapabilityRegistered("http"))

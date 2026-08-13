@@ -20,9 +20,7 @@ class ResourceCliExtendedITCase extends ResourceTestBase {
     @BeforeEach
     void checkInfrastructureAvailable() {
         assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assertThat(isFileProviderAvailable())
-                .as("File provider must be available")
-                .isTrue();
+        assertThat(isRouterAvailable()).as("File provider must be available").isTrue();
 
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();

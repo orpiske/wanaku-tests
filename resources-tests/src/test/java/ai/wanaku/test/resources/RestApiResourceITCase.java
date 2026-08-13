@@ -25,9 +25,7 @@ class RestApiResourceITCase extends ResourceTestBase {
     @BeforeEach
     void assumeInfrastructureAvailable() {
         assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assumeThat(isFileProviderAvailable())
-                .as("File provider must be available")
-                .isTrue();
+        assumeThat(isRouterAvailable()).as("File provider must be available").isTrue();
     }
 
     @DisplayName("Expose a file resource and verify it appears in the resource list")

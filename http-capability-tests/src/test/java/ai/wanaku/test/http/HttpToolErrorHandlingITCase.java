@@ -37,8 +37,8 @@ class HttpToolErrorHandlingITCase extends HttpCapabilityTestBase {
 
     @BeforeEach
     void assumeFullStackAndMcpAvailable() {
-        assumeThat(isFullStackAvailable())
-                .as("Full stack required for error handling tests")
+        assumeThat(isRouterAvailable())
+                .as("Router required for error handling tests")
                 .isTrue();
         assumeThat(isMcpClientAvailable()).as("MCP client must be connected").isTrue();
     }
