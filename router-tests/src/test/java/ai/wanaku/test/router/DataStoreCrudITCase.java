@@ -7,12 +7,14 @@ import io.quarkus.test.junit.QuarkusTest;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
 @QuarkusTest
+@Disabled("Not applicable to praxis")
 class DataStoreCrudITCase extends RouterTestBase {
 
     @BeforeEach
