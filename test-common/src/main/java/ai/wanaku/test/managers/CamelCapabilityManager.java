@@ -7,92 +7,50 @@ import java.util.ArrayList;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ai.wanaku.test.config.OidcCredentials;
-import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.utils.HealthCheckUtils;
 import ai.wanaku.test.utils.PortUtils;
 
 /**
  * Manages the Camel Integration Capability (CIC) process lifecycle.
- * <p>
- * Unlike Quarkus-based capabilities, CIC is packaged as a fat JAR and
- * accepts configuration via CLI arguments rather than system properties.
+ * CIC is the single capability provider — different capabilities are CIC instances
+ * launched with different Camel route files. CIC exposes an MCP endpoint on its
+ * HTTP port, which praxis registers as a forward.
  */
 public class CamelCapabilityManager extends ProcessManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(CamelCapabilityManager.class);
 
     private final TestConfiguration config;
-    private int grpcPort;
+    private int httpPort;
 
-    // CLI argument values set during prepare()
     private String name;
-    private String registrationUrl;
-    private String registrationAnnounceAddress;
     private String routesRef;
     private String rulesRef;
     private String dependenciesRef;
-    private String tokenEndpoint;
-    private String clientId;
-    private String clientSecret;
 
-    /**
-     * Creates a new CamelCapabilityManager.
-     *
-     * @param config the test configuration
-     */
     public CamelCapabilityManager(TestConfiguration config) {
         this.config = config;
     }
 
     /**
-     * Prepares the Camel Integration Capability with the router connection info.
+     * Prepares CIC with route and config references.
      *
-     * @param serviceName the service name for Router registration (used as --name)
-     * @param target the target/router connection configuration
+     * @param serviceName the service name (used as --name)
      * @param routesRef routes reference (e.g., "file:///path/to/routes.yaml")
      * @param rulesRef rules reference (can be null)
      * @param dependenciesRef dependencies reference (can be null)
      */
-    public void prepare(
-            String serviceName, TargetConfiguration target, String routesRef, String rulesRef, String dependenciesRef) {
-        this.grpcPort = PortUtils.findAvailablePort();
-        this.name = serviceName;
-        this.registrationUrl = target.registrationUri();
-        this.registrationAnnounceAddress = target.routerHost();
-        this.routesRef = routesRef;
-        this.rulesRef = rulesRef;
-        this.dependenciesRef = dependenciesRef;
-
-        LOG.debug(
-                "Camel Capability prepared with gRPC port {}, connecting to Router HTTP:{} gRPC:{}",
-                grpcPort,
-                target.routerHttpPort(),
-                target.routerGrpcPort());
-        LOG.debug("Camel Capability will register at {}", registrationUrl);
-
-        OidcCredentials oidcCredentials = target.oidcCredentials();
-        if (oidcCredentials != null) {
-            this.tokenEndpoint = oidcCredentials.tokenEndpoint();
-            this.clientId = oidcCredentials.clientId();
-            this.clientSecret = oidcCredentials.clientSecret();
-            LOG.debug("Camel Capability configured with OIDC credentials");
-        }
-    }
-
-    /**
-     * Prepares CIC as a standalone gRPC server (praxis mode).
-     * No registration config or OIDC — the test harness handles registration.
-     */
-    public void prepareStandalone(String serviceName, String routesRef, String rulesRef, String dependenciesRef) {
-        this.grpcPort = PortUtils.findAvailablePort();
+    public void prepare(String serviceName, String routesRef, String rulesRef, String dependenciesRef) {
+        this.httpPort = PortUtils.findAvailablePort();
         this.name = serviceName;
         this.routesRef = routesRef;
         this.rulesRef = rulesRef;
         this.dependenciesRef = dependenciesRef;
 
-        LOG.debug("Camel Capability prepared standalone with gRPC port {}", grpcPort);
+        addSystemProperty("quarkus.http.port", String.valueOf(httpPort));
+
+        LOG.debug("Camel Capability '{}' prepared with HTTP port {}", name, httpPort);
     }
 
     @Override
@@ -133,9 +91,6 @@ public class CamelCapabilityManager extends ProcessManager {
         args.add("--name");
         args.add(name);
 
-        args.add("--grpc-port");
-        args.add(String.valueOf(grpcPort));
-
         args.add("--routes-ref");
         args.add(routesRef);
 
@@ -151,52 +106,24 @@ public class CamelCapabilityManager extends ProcessManager {
             args.add("file://" + getOrCreateEmptyDepsFile().toAbsolutePath());
         }
 
-        args.add("--registration-url");
-        args.add(registrationUrl);
-
-        args.add("--registration-announce-address");
-        args.add(registrationAnnounceAddress);
-
-        if (tokenEndpoint != null) {
-            args.add("--token-endpoint");
-            args.add(tokenEndpoint);
-        }
-
-        if (clientId != null) {
-            args.add("--client-id");
-            args.add(clientId);
-        }
-
-        if (clientSecret != null) {
-            args.add("--client-secret");
-            args.add(clientSecret);
-        }
-
         return args;
     }
 
     @Override
     protected boolean performHealthCheck() {
-        // Wait for the gRPC port to be listening
-        return HealthCheckUtils.waitForPort("localhost", grpcPort, config.getDefaultTimeout());
+        return HealthCheckUtils.waitForPort("localhost", httpPort, config.getDefaultTimeout());
     }
 
-    /**
-     * Gets the service name used for Router registration.
-     *
-     * @return the service name
-     */
     public String getName() {
         return name;
     }
 
-    /**
-     * Gets the gRPC port allocated for this capability.
-     *
-     * @return the gRPC port
-     */
-    public int getGrpcPort() {
-        return grpcPort;
+    public int getHttpPort() {
+        return httpPort;
+    }
+
+    public String getMcpUrl() {
+        return "http://localhost:" + httpPort + "/mcp";
     }
 
     private static Path getOrCreateEmptyDepsFile() {

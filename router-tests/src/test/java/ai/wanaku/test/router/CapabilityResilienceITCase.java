@@ -2,11 +2,8 @@ package ai.wanaku.test.router;
 
 import java.time.Duration;
 import org.awaitility.Awaitility;
-import io.quarkus.test.junit.QuarkusTest;
 import ai.wanaku.test.WanakuTestConstants;
-import ai.wanaku.test.config.OidcCredentials;
-import ai.wanaku.test.config.TargetConfiguration;
-import ai.wanaku.test.managers.HttpCapabilityManager;
+import ai.wanaku.test.managers.CamelCapabilityManager;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -15,17 +12,16 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
 
-@QuarkusTest
 class CapabilityResilienceITCase extends RouterTestBase {
 
-    private HttpCapabilityManager resilienceCapability;
+    private CamelCapabilityManager resilienceCapability;
 
     @BeforeEach
-    void assumeFullStackAvailable() {
+    void assumeRouterModeAvailable() {
+        assumeThat(isPraxisMode())
+                .as("Capability resilience tests require router mode")
+                .isFalse();
         assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assumeThat(isHttpToolServiceAvailable())
-                .as("HTTP tool service JAR must be available")
-                .isTrue();
     }
 
     @AfterEach
@@ -43,22 +39,16 @@ class CapabilityResilienceITCase extends RouterTestBase {
     @DisplayName("Detect that a capability is no longer registered after it stops")
     @Test
     void shouldDetectCapabilityStoppage() throws Exception {
-        OidcCredentials oidcCredentials = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            oidcCredentials = keycloakManager.getServiceCredentials();
-        }
-
-        resilienceCapability = new HttpCapabilityManager(config);
-        resilienceCapability.prepare(new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
+        resilienceCapability = new CamelCapabilityManager(config);
+        resilienceCapability.prepare("resilience-test", "file:///dev/null", null, null);
         resilienceCapability.start("resilience-test");
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(30))
                 .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> routerClient.isCapabilityRegistered("http"));
+                .until(() -> routerClient.isCapabilityRegistered("resilience-test"));
 
-        assertThat(routerClient.isCapabilityRegistered("http")).isTrue();
+        assertThat(routerClient.isCapabilityRegistered("resilience-test")).isTrue();
 
         resilienceCapability.stop();
         resilienceCapability = null;
@@ -67,31 +57,25 @@ class CapabilityResilienceITCase extends RouterTestBase {
         if (keycloakManager != null && keycloakManager.isRunning()) {
             serviceToken = keycloakManager.getMcpToken();
         }
-        routerClient.deregisterCapability("http", serviceToken);
+        routerClient.deregisterCapability("resilience-test", serviceToken);
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(30))
                 .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> !routerClient.isCapabilityRegistered("http"));
+                .until(() -> !routerClient.isCapabilityRegistered("resilience-test"));
     }
 
     @DisplayName("Capability can re-register after being stopped and restarted")
     @Test
     void shouldReRegisterAfterRestart() throws Exception {
-        OidcCredentials oidcCredentials = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            oidcCredentials = keycloakManager.getServiceCredentials();
-        }
-
-        resilienceCapability = new HttpCapabilityManager(config);
-        resilienceCapability.prepare(new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
+        resilienceCapability = new CamelCapabilityManager(config);
+        resilienceCapability.prepare("resilience-restart", "file:///dev/null", null, null);
         resilienceCapability.start("resilience-restart-test");
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(30))
                 .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> routerClient.isCapabilityRegistered("http"));
+                .until(() -> routerClient.isCapabilityRegistered("resilience-restart"));
 
         resilienceCapability.stop();
 
@@ -99,18 +83,17 @@ class CapabilityResilienceITCase extends RouterTestBase {
         if (keycloakManager != null && keycloakManager.isRunning()) {
             serviceToken = keycloakManager.getMcpToken();
         }
-        routerClient.deregisterCapability("http", serviceToken);
+        routerClient.deregisterCapability("resilience-restart", serviceToken);
 
-        resilienceCapability = new HttpCapabilityManager(config);
-        resilienceCapability.prepare(new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials));
+        resilienceCapability = new CamelCapabilityManager(config);
+        resilienceCapability.prepare("resilience-restart-2", "file:///dev/null", null, null);
         resilienceCapability.start("resilience-restart-test-2");
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(30))
                 .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> routerClient.isCapabilityRegistered("http"));
+                .until(() -> routerClient.isCapabilityRegistered("resilience-restart-2"));
 
-        assertThat(routerClient.isCapabilityRegistered("http")).isTrue();
+        assertThat(routerClient.isCapabilityRegistered("resilience-restart-2")).isTrue();
     }
 }

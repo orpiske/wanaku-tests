@@ -18,8 +18,6 @@ import ai.wanaku.test.WanakuTestConstants;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.DataStoreClient;
 import ai.wanaku.test.client.McpTestClient;
-import ai.wanaku.test.config.OidcCredentials;
-import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.fixtures.TestFixtures;
 import ai.wanaku.test.managers.CamelCapabilityManager;
 
@@ -27,16 +25,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
 
-/**
- * Base class for Camel Integration Capability (CIC) tests.
- * Extends BaseIntegrationTest with CIC-specific lifecycle management.
- *
- * <p>Unlike HTTP capability tests where the capability starts automatically in @BeforeEach,
- * CIC tests start capabilities explicitly via {@link #startCapability} because each test
- * may need different route/rules configurations.
- *
- * <p>All CIC instances started during a test are automatically stopped in @AfterEach.
- */
 public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(CamelCapabilityTestBase.class);
@@ -60,28 +48,20 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
 
     @AfterEach
     void teardownCamelInfrastructure() {
-        // Deregister all CIC instances from Router before stopping processes.
-        // CIC does not deregister itself on SIGTERM (no JVM shutdown hook),
-        // so without this the Router keeps pinging dead processes.
         for (CamelCapabilityManager manager : camelManagers) {
-            if (manager.getName() != null) {
+            if (manager.getName() != null && routerClient != null) {
                 try {
-                    if (isPraxisMode() && serviceClient != null) {
-                        serviceClient.remove(manager.getName());
-                    } else if (routerClient != null) {
-                        String deregToken = null;
-                        if (keycloakManager != null && keycloakManager.isRunning()) {
-                            deregToken = keycloakManager.getMcpToken();
-                        }
-                        routerClient.deregisterCapability(manager.getName(), deregToken);
+                    String deregToken = null;
+                    if (keycloakManager != null && keycloakManager.isRunning()) {
+                        deregToken = keycloakManager.getMcpToken();
                     }
+                    routerClient.deregisterCapability(manager.getName(), deregToken);
                 } catch (Exception e) {
                     LOG.warn("Failed to deregister CIC '{}': {}", manager.getName(), e.getMessage());
                 }
             }
         }
 
-        // Stop all CIC instances
         for (CamelCapabilityManager manager : camelManagers) {
             try {
                 manager.stop();
@@ -91,7 +71,6 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         }
         camelManagers.clear();
 
-        // Clear Data Store entries
         if (dataStoreClient != null) {
             try {
                 dataStoreClient.clearAll();
@@ -100,7 +79,6 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
             }
         }
 
-        // Clear all tools and resources
         if (routerClient != null) {
             try {
                 routerClient.clearAllTools();
@@ -115,51 +93,27 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         }
     }
 
-    /**
-     * Starts a CIC instance with the given fixture directory (no variable substitution).
-     *
-     * @param serviceName  the service name for Router registration
-     * @param fixtureName  the fixture directory name under src/test/resources/fixtures/
-     * @return the started CamelCapabilityManager
-     */
     protected CamelCapabilityManager startCapability(String serviceName, String fixtureName) throws Exception {
         Path fixtureDir = TestFixtures.load(fixtureName, FIXTURES_TARGET_DIR);
         return startCapabilityFromDir(serviceName, fixtureDir);
     }
 
-    /**
-     * Starts a CIC instance with the given fixture directory and variable substitution.
-     *
-     * @param serviceName  the service name for Router registration
-     * @param fixtureName  the fixture directory name under src/test/resources/fixtures/
-     * @param vars         placeholder variables to substitute (e.g., ${JDBC_URL})
-     * @return the started CamelCapabilityManager
-     */
     protected CamelCapabilityManager startCapability(String serviceName, String fixtureName, Map<String, String> vars)
             throws Exception {
         Path fixtureDir = TestFixtures.load(fixtureName, FIXTURES_TARGET_DIR, vars);
         return startCapabilityFromDir(serviceName, fixtureDir);
     }
 
-    /**
-     * Starts a CIC instance with datastore:// references (no local files needed).
-     *
-     * @param serviceName the service name for Router registration
-     * @param routesRef   datastore:// URI for routes (e.g., "datastore://routes.camel.yaml")
-     * @param rulesRef    datastore:// URI for rules (nullable)
-     * @param depsRef     datastore:// URI for dependencies (nullable)
-     * @return the started CamelCapabilityManager
-     */
     protected CamelCapabilityManager startCapabilityFromDataStore(
             String serviceName, String routesRef, String rulesRef, String depsRef) throws IOException {
 
         CamelCapabilityManager manager = new CamelCapabilityManager(config);
-        prepareCamelManager(manager, serviceName, routesRef, rulesRef, depsRef);
+        manager.prepare(serviceName, routesRef, rulesRef, depsRef);
 
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        registerAndWaitForCapability(serviceName, manager);
+        waitForCapabilityReady(serviceName, manager);
 
         camelManagers.add(manager);
         return manager;
@@ -171,8 +125,7 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         Path depsRef = fixtureDir.resolve("dependencies.txt");
 
         CamelCapabilityManager manager = new CamelCapabilityManager(config);
-        prepareCamelManager(
-                manager,
+        manager.prepare(
                 serviceName,
                 "file://" + routesRef.toAbsolutePath(),
                 rulesRef.toFile().exists() ? "file://" + rulesRef.toAbsolutePath() : null,
@@ -181,40 +134,13 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        registerAndWaitForCapability(serviceName, manager);
+        waitForCapabilityReady(serviceName, manager);
 
         camelManagers.add(manager);
         return manager;
     }
 
-    private void prepareCamelManager(
-            CamelCapabilityManager manager, String serviceName, String routesRef, String rulesRef, String depsRef) {
-        if (isPraxisMode()) {
-            manager.prepareStandalone(serviceName, routesRef, rulesRef, depsRef);
-        } else {
-            OidcCredentials oidcCredentials = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
-                oidcCredentials = keycloakManager.getServiceCredentials();
-            }
-            manager.prepare(
-                    serviceName,
-                    new TargetConfiguration("localhost", getServerHttpPort(), getServerGrpcPort(), oidcCredentials),
-                    routesRef,
-                    rulesRef,
-                    depsRef);
-        }
-    }
-
-    private void registerAndWaitForCapability(String serviceName, CamelCapabilityManager manager) {
-        if (isPraxisMode() && serviceClient != null) {
-            serviceClient.register(serviceName, "localhost:" + manager.getGrpcPort(), "tool-invoker");
-            LOG.debug("Registered CIC '{}' service with praxis", serviceName);
-        }
-        waitForCapabilityReady(serviceName, manager);
-    }
-
     private void waitForCapabilityReady(String serviceName, CamelCapabilityManager manager) {
-        // Wait for capability registration
         LOG.debug("Waiting for CIC '{}' to register with Router...", serviceName);
         Awaitility.await()
                 .atMost(Duration.ofSeconds(90))
@@ -232,8 +158,6 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 });
         LOG.info("CIC '{}' is registered with Router", serviceName);
 
-        // Wait for tools/resources to be registered (CIC registers them asynchronously
-        // after the capability service itself is registered)
         LOG.debug("Waiting for CIC '{}' tools/resources to appear in Router...", serviceName);
         Awaitility.await()
                 .atMost(Duration.ofSeconds(90))
@@ -254,9 +178,6 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 });
         LOG.info("CIC '{}' tools/resources are available", serviceName);
 
-        // Reconnect MCP client so it picks up newly registered tools/resources.
-        // The MCP Streamable HTTP transport may cache tool metadata from the
-        // initial connection; a fresh session ensures the client sees the latest state.
         reconnectMcpClient();
     }
 
@@ -318,18 +239,12 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
                 .untilAsserted(assertion::run);
     }
 
-    /**
-     * Checks if the CIC JAR is available for testing.
-     */
     protected boolean isCamelCapabilityAvailable() {
         return config != null
                 && config.getCamelCapabilityJarPath() != null
                 && config.getCamelCapabilityJarPath().toFile().exists();
     }
 
-    /**
-     * Checks if the Data Store API is accessible.
-     */
     protected boolean isDataStoreAvailable() {
         return dataStoreClient != null && dataStoreClient.isAvailable();
     }

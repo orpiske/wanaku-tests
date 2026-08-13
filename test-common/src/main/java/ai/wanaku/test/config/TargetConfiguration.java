@@ -5,11 +5,9 @@ package ai.wanaku.test.config;
  *
  * @param routerHost the Router host
  * @param routerHttpPort the Router HTTP port used for registration
- * @param routerGrpcPort the Router gRPC port used for capability communication
  * @param oidcCredentials optional OIDC credentials, or null if authentication is disabled
  */
-public record TargetConfiguration(
-        String routerHost, int routerHttpPort, int routerGrpcPort, OidcCredentials oidcCredentials) {
+public record TargetConfiguration(String routerHost, int routerHttpPort, OidcCredentials oidcCredentials) {
 
     /**
      * Builds the Router registration URI from the configured host and HTTP port.

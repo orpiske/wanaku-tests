@@ -23,7 +23,6 @@ public class RouterManager extends ProcessManager {
 
     private final TestConfiguration config;
     private int httpPort;
-    private int grpcPort;
 
     /**
      * Creates a new RouterManager.
@@ -39,14 +38,10 @@ public class RouterManager extends ProcessManager {
      */
     public void prepare() {
         this.httpPort = PortUtils.findAvailablePort();
-        this.grpcPort = PortUtils.findAvailablePort();
 
-        LOG.debug("Router prepared with HTTP port {} and gRPC port {}", httpPort, grpcPort);
+        LOG.debug("Router prepared with HTTP port {}", httpPort);
 
-        // Configure Quarkus properties
         addSystemProperty("quarkus.http.port", String.valueOf(httpPort));
-        addSystemProperty("quarkus.grpc.server.use-separate-server", "true");
-        addSystemProperty("quarkus.grpc.server.port", String.valueOf(grpcPort));
 
         Path dataDir = config.getTempDataDir();
         if (dataDir != null) {
@@ -87,13 +82,6 @@ public class RouterManager extends ProcessManager {
      */
     public int getHttpPort() {
         return httpPort;
-    }
-
-    /**
-     * Gets the gRPC port the router is listening on.
-     */
-    public int getGrpcPort() {
-        return grpcPort;
     }
 
     /**

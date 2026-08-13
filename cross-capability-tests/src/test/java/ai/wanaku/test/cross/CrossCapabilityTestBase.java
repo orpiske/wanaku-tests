@@ -9,24 +9,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.config.OidcCredentials;
-import ai.wanaku.test.config.TargetConfiguration;
 import ai.wanaku.test.fixtures.TestFixtures;
 import ai.wanaku.test.managers.CamelCapabilityManager;
-import ai.wanaku.test.managers.ResourceProviderManager;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 
-/**
- * Base class for tests that exercise more than one capability at a time.
- * Manages the extra capability lifecycles and shared cleanup on top of {@link BaseIntegrationTest}.
- */
 public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(CrossCapabilityTestBase.class);
     private static final Path FIXTURES_TARGET_DIR = Path.of("target", "test-fixtures");
 
-    protected ResourceProviderManager resourceProviderManager;
     protected CamelCapabilityManager camelCapabilityManager;
 
     @BeforeEach
@@ -37,25 +30,7 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
     @AfterEach
     void teardownCrossCapabilityInfrastructure() {
         stopCamelCapability();
-        stopResourceProvider();
         clearRouterState();
-    }
-
-    protected ResourceProviderManager startResourceProvider() throws Exception {
-        OidcCredentials oidcCredentials = getOidcCredentials();
-        TargetConfiguration target = new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials);
-
-        resourceProviderManager = new ResourceProviderManager(config);
-        resourceProviderManager.prepare(target);
-        resourceProviderManager.setLogContext("file-provider", getClass().getSimpleName(), "file-provider");
-        resourceProviderManager.start(getClass().getSimpleName());
-
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(10))
-                .pollInterval(Duration.ofMillis(200))
-                .until(() -> routerClient.isCapabilityRegistered("file"));
-        return resourceProviderManager;
     }
 
     protected CamelCapabilityManager startCamelCapability(String serviceName, String fixtureName) throws Exception {
@@ -63,14 +38,9 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
         Path routesRef = fixtureDir.resolve("routes.camel.yaml");
         Path rulesRef = fixtureDir.resolve("rules.yaml");
 
-        OidcCredentials oidcCredentials = getOidcCredentials();
-        TargetConfiguration target = new TargetConfiguration(
-                "localhost", routerManager.getHttpPort(), routerManager.getGrpcPort(), oidcCredentials);
-
         camelCapabilityManager = new CamelCapabilityManager(config);
         camelCapabilityManager.prepare(
                 serviceName,
-                target,
                 "file://" + routesRef.toAbsolutePath(),
                 rulesRef.toFile().exists() ? "file://" + rulesRef.toAbsolutePath() : null,
                 null);
@@ -106,32 +76,9 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
         }
     }
 
-    protected void stopResourceProvider() {
-        if (resourceProviderManager == null) {
-            return;
-        }
-
-        try {
-            resourceProviderManager.stop();
-        } catch (Exception e) {
-            LOG.warn("Failed to stop resource provider: {}", e.getMessage());
-        } finally {
-            resourceProviderManager = null;
-        }
-    }
-
     protected void stopCamelCapability() {
         if (camelCapabilityManager == null) {
             return;
-        }
-
-        try {
-            String deregToken = getMcpDeregistrationToken();
-            if (routerClient != null && camelCapabilityManager.getName() != null) {
-                routerClient.deregisterCapability(camelCapabilityManager.getName(), deregToken);
-            }
-        } catch (Exception e) {
-            LOG.warn("Failed to deregister Camel capability: {}", e.getMessage());
         }
 
         try {
@@ -149,12 +96,6 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
         return file;
     }
 
-    protected boolean isFileProviderAvailable() {
-        return config != null
-                && config.getFileProviderJarPath() != null
-                && config.getFileProviderJarPath().toFile().exists();
-    }
-
     protected boolean isCamelCapabilityAvailable() {
         return config != null
                 && config.getCamelCapabilityJarPath() != null
@@ -162,15 +103,8 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
     }
 
     protected OidcCredentials getOidcCredentials() {
-        if (keycloakManager != null && keycloakManager.isRunning()) {
+        if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
             return keycloakManager.getServiceCredentials();
-        }
-        return null;
-    }
-
-    private String getMcpDeregistrationToken() {
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            return keycloakManager.getMcpToken();
         }
         return null;
     }

@@ -118,10 +118,6 @@ public class PraxisManager extends ProcessManager {
         return "http://localhost:" + mcpPort;
     }
 
-    public int getGrpcPort() {
-        return -1;
-    }
-
     public TestConfiguration getConfig() {
         return config;
     }

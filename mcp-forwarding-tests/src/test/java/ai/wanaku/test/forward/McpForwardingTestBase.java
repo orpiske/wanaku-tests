@@ -8,9 +8,6 @@ import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.ForwardsClient;
 import ai.wanaku.test.client.NamespaceClient;
 import ai.wanaku.test.client.RouterClient;
-import ai.wanaku.test.config.OidcCredentials;
-import ai.wanaku.test.config.TargetConfiguration;
-import ai.wanaku.test.managers.HttpCapabilityManager;
 import ai.wanaku.test.managers.RouterManager;
 import ai.wanaku.test.model.HttpToolConfig;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,7 +24,6 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
 
     protected static RouterManager targetRouterManager;
     protected static RouterClient targetRouterClient;
-    protected static HttpCapabilityManager targetHttpCapability;
     protected ForwardsClient forwardsClient;
     protected NamespaceClient namespaceClient;
     protected String testNamespaceId;
@@ -50,38 +46,23 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
 
         targetRouterClient = new RouterClient(targetRouterManager.getBaseUrl(), accessToken);
 
-        if (config.getHttpToolServiceJarPath() != null
-                && config.getHttpToolServiceJarPath().toFile().exists()) {
-            OidcCredentials oidcCredentials = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
-                oidcCredentials = keycloakManager.getServiceCredentials();
-            }
-
-            targetHttpCapability = new HttpCapabilityManager(config);
-            targetHttpCapability.prepare(new TargetConfiguration(
-                    "localhost",
-                    targetRouterManager.getHttpPort(),
-                    targetRouterManager.getGrpcPort(),
-                    oidcCredentials));
-            targetHttpCapability.start("forwarding-target-http");
-
-            targetRouterClient.registerTool(HttpToolConfig.builder()
-                    .name("forwarded-tool")
-                    .description("A tool available via forwarding")
-                    .uri("https://httpbin.org/get")
-                    .build());
-        }
+        targetRouterClient.registerTool(HttpToolConfig.builder()
+                .name("forwarded-tool")
+                .description("A tool available via forwarding")
+                .uri("https://httpbin.org/get")
+                .build());
     }
 
     @BeforeEach
     void setupForwardingClients(TestInfo testInfo) {
-        if (routerManager != null && routerManager.isRunning()) {
+        if (isServerRunning()) {
             String accessToken = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
+            if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
                 accessToken = keycloakManager.getMcpToken();
             }
-            forwardsClient = new ForwardsClient(routerManager.getBaseUrl(), accessToken);
-            namespaceClient = new NamespaceClient(routerManager.getBaseUrl(), accessToken);
+            String baseUrl = getServerBaseUrl();
+            forwardsClient = new ForwardsClient(baseUrl, accessToken);
+            namespaceClient = new NamespaceClient(baseUrl, accessToken);
             try {
                 List<JsonNode> namespaces = namespaceClient.list();
                 for (JsonNode ns : namespaces) {
@@ -112,14 +93,6 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
 
     @AfterAll
     static void stopTargetRouter() {
-        if (targetHttpCapability != null) {
-            try {
-                targetHttpCapability.stop();
-            } catch (Exception e) {
-                LOG.warn("Failed to stop target HTTP capability: {}", e.getMessage());
-            }
-            targetHttpCapability = null;
-        }
         if (targetRouterManager != null) {
             try {
                 targetRouterManager.stop();

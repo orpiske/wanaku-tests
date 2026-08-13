@@ -171,13 +171,6 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
         return -1;
     }
 
-    public int getGrpcPort() {
-        if (routerManager != null) {
-            return routerManager.getGrpcPort();
-        }
-        return -1;
-    }
-
     public boolean isServerRunning() {
         if (praxisManager != null) {
             return praxisManager.isRunning();
