@@ -26,15 +26,11 @@ class CliResourceITCase extends ResourceTestBase {
 
     @BeforeEach
     void checkInfrastructureAvailable() {
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assertThat(isRouterAvailable()).as("File provider must be available").isTrue();
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
+        assertThat(isServerRunning()).as("File provider must be available").isTrue();
 
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
-
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            authToken = keycloakManager.getMcpToken();
-        }
     }
 
     private CLIResult executeWithAuth(String... args) {
@@ -52,7 +48,7 @@ class CliResourceITCase extends ResourceTestBase {
     @Test
     void shouldExposeResourceViaCli() throws Exception {
         // Given
-        String routerHost = routerManager.getBaseUrl();
+        String routerHost = getServerBaseUrl();
 
         // When
         CLIResult result = executeWithAuth(
@@ -88,7 +84,7 @@ class CliResourceITCase extends ResourceTestBase {
     @DisplayName("Expose a resource via CLI with a named namespace")
     @Test
     void shouldExposeResourceWithNamespace() throws Exception {
-        String routerHost = routerManager.getBaseUrl();
+        String routerHost = getServerBaseUrl();
 
         CLIResult result = executeWithAuth(
                 "resources",
@@ -127,7 +123,7 @@ class CliResourceITCase extends ResourceTestBase {
         }
 
         // When
-        String routerHost = routerManager.getBaseUrl();
+        String routerHost = getServerBaseUrl();
         CLIResult result = executeWithAuth("resources", "list", "--host", routerHost);
 
         // Then - verify output was captured via subprocess
@@ -160,7 +156,7 @@ class CliResourceITCase extends ResourceTestBase {
         assertThat(routerClient.resourceExists("cli-remove-resource")).isTrue();
 
         // When
-        String routerHost = routerManager.getBaseUrl();
+        String routerHost = getServerBaseUrl();
         CLIResult result =
                 executeWithAuth("resources", "remove", "--host", routerHost, "--name", "cli-remove-resource");
 

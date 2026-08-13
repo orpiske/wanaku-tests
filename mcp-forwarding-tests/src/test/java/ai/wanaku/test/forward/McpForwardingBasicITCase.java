@@ -17,8 +17,8 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
 
     @BeforeEach
     void assumeInfrastructureAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assumeThat(isTargetRouterAvailable())
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning())
                 .as("Target router must be available for forwarding tests")
                 .isTrue();
         assumeThat(testNamespaceId).as("Test namespace must be available").isNotNull();

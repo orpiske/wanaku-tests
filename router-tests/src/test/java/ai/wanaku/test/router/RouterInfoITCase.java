@@ -13,16 +13,14 @@ class RouterInfoITCase extends RouterTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
         assumeThat(managementClient).as("ManagementClient must be available").isNotNull();
     }
 
     @DisplayName("Return router info from management endpoint")
     @Test
     void shouldReturnRouterInfo() {
-        assumeThat(isPraxisMode())
-                .as("Info endpoint not available in praxis mode")
-                .isFalse();
+        assumeThat(false).as("Info endpoint not available in praxis mode").isFalse();
 
         try {
             JsonNode info = managementClient.getInfo();

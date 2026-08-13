@@ -77,7 +77,7 @@ public class RouterClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.TOOLS_PATH)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -110,7 +110,7 @@ public class RouterClient {
 
         try {
             HttpRequest request =
-                    buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH).GET().build();
+                    buildRequest(WanakuTestConstants.TOOLS_PATH).GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List response: {} - {}", response.statusCode(), response.body());
@@ -149,7 +149,7 @@ public class RouterClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.TOOLS_PATH + "/" + encodedName)
                     .GET()
                     .build();
 
@@ -202,7 +202,7 @@ public class RouterClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.TOOLS_PATH + "/" + encodedName)
                     .DELETE()
                     .build();
 
@@ -282,7 +282,7 @@ public class RouterClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_TOOLS_PATH + "/payloads")
+            HttpRequest request = buildRequest(WanakuTestConstants.TOOLS_PATH + "/payloads")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -323,7 +323,7 @@ public class RouterClient {
         try {
             String json = objectMapper.writeValueAsString(config.toMap());
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_RESOURCES_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.RESOURCES_PATH)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -353,9 +353,8 @@ public class RouterClient {
         LOG.debug("Listing resources");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_RESOURCES_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request =
+                    buildRequest(WanakuTestConstants.RESOURCES_PATH).GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List resources response: {} - {}", response.statusCode(), response.body());
@@ -393,7 +392,7 @@ public class RouterClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_RESOURCES_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.RESOURCES_PATH + "/" + encodedName)
                     .DELETE()
                     .build();
 
@@ -473,7 +472,7 @@ public class RouterClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_RESOURCES_PATH + "/payloads")
+            HttpRequest request = buildRequest(WanakuTestConstants.RESOURCES_PATH + "/payloads")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -513,9 +512,8 @@ public class RouterClient {
 
         try {
             // Find the ServiceTarget by service name
-            HttpRequest listRequest = buildRequest(WanakuTestConstants.ROUTER_CAPABILITIES_PATH)
-                    .GET()
-                    .build();
+            HttpRequest listRequest =
+                    buildRequest(WanakuTestConstants.CAPABILITIES_PATH).GET().build();
             HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
 
             if (listResponse.statusCode() != 200) {
@@ -540,7 +538,7 @@ public class RouterClient {
             // Call deregister endpoint with the full ServiceTarget
             String serviceTargetJson = objectMapper.writeValueAsString(targetNode);
 
-            HttpRequest.Builder deregBuilder = buildRequest(WanakuTestConstants.ROUTER_MANAGEMENT_DISCOVERY_PATH)
+            HttpRequest.Builder deregBuilder = buildRequest("/api/v1/management/discovery")
                     .method("DELETE", HttpRequest.BodyPublishers.ofString(serviceTargetJson))
                     .header("Content-Type", "application/json");
 
@@ -601,9 +599,8 @@ public class RouterClient {
          * }
          */
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_CAPABILITIES_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request =
+                    buildRequest(WanakuTestConstants.CAPABILITIES_PATH).GET().build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() != 200) return false;

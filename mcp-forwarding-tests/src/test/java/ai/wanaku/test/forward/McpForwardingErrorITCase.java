@@ -17,7 +17,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
 
     @BeforeEach
     void assumeInfrastructureAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
         assumeThat(testNamespaceId).as("Test namespace must be available").isNotNull();
     }
 
@@ -40,7 +40,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
         ForwardsClient.ForwardsClientException lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                forwardsClient.add("valid-fwd", routerManager.getBaseUrl() + "/mcp/", testNamespaceId);
+                forwardsClient.add("valid-fwd", getServerBaseUrl() + "/mcp/", testNamespaceId);
                 assertThat(forwardsClient.exists("valid-fwd")).isTrue();
                 return;
             } catch (ForwardsClient.ForwardsClientException e) {

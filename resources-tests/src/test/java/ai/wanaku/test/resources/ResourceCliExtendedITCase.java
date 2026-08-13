@@ -19,15 +19,11 @@ class ResourceCliExtendedITCase extends ResourceTestBase {
 
     @BeforeEach
     void checkInfrastructureAvailable() {
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assertThat(isRouterAvailable()).as("File provider must be available").isTrue();
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
+        assertThat(isServerRunning()).as("File provider must be available").isTrue();
 
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
-
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            authToken = keycloakManager.getMcpToken();
-        }
     }
 
     @DisplayName("Show details of a registered resource via CLI")
@@ -61,7 +57,7 @@ class ResourceCliExtendedITCase extends ResourceTestBase {
     }
 
     private String getRouterHost() {
-        return routerManager != null ? routerManager.getBaseUrl() : "http://localhost:8080";
+        return getServerBaseUrl();
     }
 
     private CLIResult executeWithAuth(String... args) {

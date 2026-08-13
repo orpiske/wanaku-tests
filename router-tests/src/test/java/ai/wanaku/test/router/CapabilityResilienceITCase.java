@@ -18,10 +18,8 @@ class CapabilityResilienceITCase extends RouterTestBase {
 
     @BeforeEach
     void assumeRouterModeAvailable() {
-        assumeThat(isPraxisMode())
-                .as("Capability resilience tests require router mode")
-                .isFalse();
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(false).as("Capability resilience tests require router mode").isFalse();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
     }
 
     @AfterEach
@@ -53,11 +51,7 @@ class CapabilityResilienceITCase extends RouterTestBase {
         resilienceCapability.stop();
         resilienceCapability = null;
 
-        String serviceToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            serviceToken = keycloakManager.getMcpToken();
-        }
-        routerClient.deregisterCapability("resilience-test", serviceToken);
+        routerClient.deregisterCapability("resilience-test", null);
 
         Awaitility.await()
                 .atMost(Duration.ofSeconds(30))
@@ -79,11 +73,7 @@ class CapabilityResilienceITCase extends RouterTestBase {
 
         resilienceCapability.stop();
 
-        String serviceToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            serviceToken = keycloakManager.getMcpToken();
-        }
-        routerClient.deregisterCapability("resilience-restart", serviceToken);
+        routerClient.deregisterCapability("resilience-restart", null);
 
         resilienceCapability = new CamelCapabilityManager(config);
         resilienceCapability.prepare("resilience-restart-2", "file:///dev/null", null, null);

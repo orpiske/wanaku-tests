@@ -1,20 +1,14 @@
 package ai.wanaku.test.forward;
 
-import java.io.IOException;
 import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.base.BaseIntegrationTest;
 import ai.wanaku.test.client.ForwardsClient;
 import ai.wanaku.test.client.NamespaceClient;
-import ai.wanaku.test.client.RouterClient;
-import ai.wanaku.test.managers.RouterManager;
-import ai.wanaku.test.model.HttpToolConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInfo;
 
@@ -22,47 +16,16 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(McpForwardingTestBase.class);
 
-    protected static RouterManager targetRouterManager;
-    protected static RouterClient targetRouterClient;
     protected ForwardsClient forwardsClient;
     protected NamespaceClient namespaceClient;
     protected String testNamespaceId;
 
-    @BeforeAll
-    static void startTargetRouter() throws IOException {
-        if (config == null || config.getRouterJarPath() == null) {
-            LOG.warn("Router JAR not available, skipping target router setup");
-            return;
-        }
-
-        targetRouterManager = new RouterManager(config);
-        targetRouterManager.prepare();
-        targetRouterManager.start("forwarding-target");
-
-        String accessToken = null;
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            accessToken = keycloakManager.getMcpToken();
-        }
-
-        targetRouterClient = new RouterClient(targetRouterManager.getBaseUrl(), accessToken);
-
-        targetRouterClient.registerTool(HttpToolConfig.builder()
-                .name("forwarded-tool")
-                .description("A tool available via forwarding")
-                .uri("https://httpbin.org/get")
-                .build());
-    }
-
     @BeforeEach
     void setupForwardingClients(TestInfo testInfo) {
         if (isServerRunning()) {
-            String accessToken = null;
-            if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
-                accessToken = keycloakManager.getMcpToken();
-            }
             String baseUrl = getServerBaseUrl();
-            forwardsClient = new ForwardsClient(baseUrl, accessToken);
-            namespaceClient = new NamespaceClient(baseUrl, accessToken);
+            forwardsClient = new ForwardsClient(baseUrl, null);
+            namespaceClient = new NamespaceClient(baseUrl, null);
             try {
                 List<JsonNode> namespaces = namespaceClient.list();
                 for (JsonNode ns : namespaces) {
@@ -91,25 +54,8 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
         }
     }
 
-    @AfterAll
-    static void stopTargetRouter() {
-        if (targetRouterManager != null) {
-            try {
-                targetRouterManager.stop();
-            } catch (Exception e) {
-                LOG.warn("Failed to stop target router: {}", e.getMessage());
-            }
-            targetRouterManager = null;
-        }
-        targetRouterClient = null;
-    }
-
-    protected boolean isTargetRouterAvailable() {
-        return targetRouterManager != null && targetRouterManager.isRunning();
-    }
-
     protected String getTargetMcpUrl() {
-        return targetRouterManager.getBaseUrl() + "/mcp/";
+        return getServerMcpBaseUrl() + "/mcp";
     }
 
     @Override

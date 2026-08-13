@@ -1,0 +1,14 @@
+- route:
+    id: echo-tool
+    from:
+      uri: ai-tool:echo
+      parameters:
+        tags: wanaku
+        description: "Echo back the input message duplicated with a separator"
+        parameter.message: string
+        parameter.message.description: "The message to echo back"
+      steps:
+        - setBody:
+            expression:
+              simple:
+                expression: "${header.message}{{echo.separator}}${header.message}"

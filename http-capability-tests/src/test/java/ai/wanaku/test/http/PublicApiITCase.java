@@ -48,7 +48,7 @@ class PublicApiITCase extends HttpCapabilityTestBase {
 
     @BeforeEach
     void assumeFullStackAndMcpAvailable() {
-        assumeThat(isRouterAvailable())
+        assumeThat(isServerRunning())
                 .as("Router required for MCP invocation tests")
                 .isTrue();
         assumeThat(isMcpClientAvailable()).as("MCP client must be connected").isTrue();

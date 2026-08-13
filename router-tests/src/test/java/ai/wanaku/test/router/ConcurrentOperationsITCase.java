@@ -22,7 +22,7 @@ class ConcurrentOperationsITCase extends RouterTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
     }
 
     @DisplayName("Register multiple tools concurrently without errors")

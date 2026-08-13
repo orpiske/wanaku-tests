@@ -15,7 +15,6 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ai.wanaku.test.WanakuTestConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -106,7 +105,7 @@ public class DataStoreClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH)
+            HttpRequest request = buildRequest("/api/v1/data-store")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -139,7 +138,7 @@ public class DataStoreClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH + "?name=" + encodedName)
+            HttpRequest request = buildRequest("/api/v1/data-store" + "?name=" + encodedName)
                     .GET()
                     .build();
 
@@ -194,7 +193,7 @@ public class DataStoreClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH + "?name=" + encodedName)
+            HttpRequest request = buildRequest("/api/v1/data-store" + "?name=" + encodedName)
                     .GET()
                     .build();
 
@@ -263,9 +262,7 @@ public class DataStoreClient {
         LOG.debug("Listing data store entries");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request = buildRequest("/api/v1/data-store").GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List response: {} - {}", response.statusCode(), response.body());
@@ -309,7 +306,7 @@ public class DataStoreClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH + "?name=" + encodedName)
+            HttpRequest request = buildRequest("/api/v1/data-store" + "?name=" + encodedName)
                     .DELETE()
                     .build();
 
@@ -357,9 +354,7 @@ public class DataStoreClient {
      */
     public boolean isAvailable() {
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_DATA_STORE_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request = buildRequest("/api/v1/data-store").GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             return response.statusCode() == 200;

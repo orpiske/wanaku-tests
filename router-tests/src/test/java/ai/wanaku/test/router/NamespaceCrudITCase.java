@@ -15,7 +15,7 @@ class NamespaceCrudITCase extends RouterTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
     }
 
     @DisplayName("Create a namespace and verify it exists")

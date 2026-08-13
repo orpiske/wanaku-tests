@@ -17,8 +17,8 @@ class DataStoreCrudITCase extends RouterTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assumeThat(isPraxisMode())
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
+        assumeThat(false)
                 .as("DataStore is not natively available in praxis mode")
                 .isFalse();
     }

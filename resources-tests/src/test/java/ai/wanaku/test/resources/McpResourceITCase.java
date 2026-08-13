@@ -22,8 +22,8 @@ class McpResourceITCase extends ResourceTestBase {
 
     @BeforeEach
     void checkInfrastructureAvailable() {
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-        assertThat(isRouterAvailable()).as("File provider must be available").isTrue();
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
+        assertThat(isServerRunning()).as("File provider must be available").isTrue();
         assertThat(isMcpClientAvailable()).as("MCP client must be available").isTrue();
     }
 

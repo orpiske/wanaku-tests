@@ -30,18 +30,13 @@ public abstract class RouterTestBase extends BaseIntegrationTest {
     @BeforeEach
     void setupRouterClients(TestInfo testInfo) {
         if (isServerRunning()) {
-            String accessToken = null;
-            if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
-                accessToken = keycloakManager.getMcpToken();
-            }
-
             String baseUrl = getServerBaseUrl();
-            dataStoreClient = new DataStoreClient(baseUrl, accessToken);
-            namespaceClient = new NamespaceClient(baseUrl, accessToken);
-            promptsClient = new PromptsClient(baseUrl, accessToken);
-            forwardsClient = new ForwardsClient(baseUrl, accessToken);
-            managementClient = new ManagementClient(baseUrl, accessToken);
-            serviceCatalogClient = new ServiceCatalogClient(baseUrl, accessToken);
+            dataStoreClient = new DataStoreClient(baseUrl, null);
+            namespaceClient = new NamespaceClient(baseUrl, null);
+            promptsClient = new PromptsClient(baseUrl, null);
+            forwardsClient = new ForwardsClient(baseUrl, null);
+            managementClient = new ManagementClient(baseUrl, null);
+            serviceCatalogClient = new ServiceCatalogClient(baseUrl, null);
         }
     }
 
@@ -61,7 +56,7 @@ public abstract class RouterTestBase extends BaseIntegrationTest {
                 LOG.warn("Failed to clear forwards: {}", e.getMessage());
             }
         }
-        if (!isPraxisMode() && dataStoreClient != null) {
+        if (dataStoreClient != null) {
             try {
                 dataStoreClient.clearAll();
             } catch (Exception e) {

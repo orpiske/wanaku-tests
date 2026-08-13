@@ -37,31 +37,11 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
     @BeforeEach
     void setupCamelTestInfrastructure(TestInfo testInfo) throws IOException {
         Files.createDirectories(FIXTURES_TARGET_DIR);
-        if (routerClient != null && !isPraxisMode()) {
-            String dsToken = null;
-            if (keycloakManager != null && keycloakManager.isRunning()) {
-                dsToken = keycloakManager.getMcpToken();
-            }
-            dataStoreClient = new DataStoreClient(getServerBaseUrl(), dsToken);
-        }
+        // DataStore not available in praxis
     }
 
     @AfterEach
     void teardownCamelInfrastructure() {
-        for (CamelCapabilityManager manager : camelManagers) {
-            if (manager.getName() != null && routerClient != null) {
-                try {
-                    String deregToken = null;
-                    if (keycloakManager != null && keycloakManager.isRunning()) {
-                        deregToken = keycloakManager.getMcpToken();
-                    }
-                    routerClient.deregisterCapability(manager.getName(), deregToken);
-                } catch (Exception e) {
-                    LOG.warn("Failed to deregister CIC '{}': {}", manager.getName(), e.getMessage());
-                }
-            }
-        }
-
         for (CamelCapabilityManager manager : camelManagers) {
             try {
                 manager.stop();
@@ -191,11 +171,7 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
             LOG.debug("MCP disconnect during reconnect: {}", e.getMessage());
         }
         mcpClient = null;
-        String accessToken = null;
-        if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
-            accessToken = keycloakManager.getMcpToken();
-        }
-        mcpClient = new McpTestClient(getServerMcpBaseUrl(), accessToken);
+        mcpClient = new McpTestClient(getServerMcpBaseUrl(), null);
         mcpClient.connect();
         LOG.debug("MCP client reconnected");
     }

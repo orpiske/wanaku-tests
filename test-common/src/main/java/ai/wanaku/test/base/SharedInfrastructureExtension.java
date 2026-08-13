@@ -3,11 +3,6 @@ package ai.wanaku.test.base;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
-/**
- * JUnit 5 extension that starts shared infrastructure (Keycloak + Router) once per JVM.
- * Uses the global extension store so the infrastructure is created exactly once and
- * cleaned up via {@link SharedInfrastructure#close()} when the store is closed.
- */
 public class SharedInfrastructureExtension implements BeforeAllCallback {
 
     @Override
@@ -28,8 +23,6 @@ public class SharedInfrastructureExtension implements BeforeAllCallback {
                         SharedInfrastructure.class);
 
         BaseIntegrationTest.config = infra.getConfig();
-        BaseIntegrationTest.keycloakManager = infra.getKeycloakManager();
-        BaseIntegrationTest.routerManager = infra.getRouterManager();
         BaseIntegrationTest.praxisManager = infra.getPraxisManager();
         BaseIntegrationTest.tempDataDir = infra.getTempDataDir();
     }

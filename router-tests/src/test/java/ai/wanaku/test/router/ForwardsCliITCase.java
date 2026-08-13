@@ -22,11 +22,7 @@ class ForwardsCliITCase extends RouterTestBase {
     void setupCli() {
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            authToken = keycloakManager.getMcpToken();
-        }
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
 
         nsId = getOrCreateNamespaceId("fwd-cli-test-ns");
         assumeThat(nsId).as("Test namespace must be available").isNotNull();
@@ -46,7 +42,7 @@ class ForwardsCliITCase extends RouterTestBase {
                 "--name",
                 name,
                 "--service",
-                routerManager.getBaseUrl() + "/mcp/",
+                getServerBaseUrl() + "/mcp/",
                 "--namespace-name",
                 "fwd-cli-test-ns");
 
@@ -74,7 +70,7 @@ class ForwardsCliITCase extends RouterTestBase {
     @Test
     void shouldRemoveForwardViaCli() {
         try {
-            forwardsClient.add("cli-remove-fwd", routerManager.getBaseUrl() + "/mcp/", nsId);
+            forwardsClient.add("cli-remove-fwd", getServerBaseUrl() + "/mcp/", nsId);
         } catch (Exception e) {
             assumeThat(false)
                     .as("Cannot add forward for removal test (Router validates target): %s", e.getMessage())
@@ -91,7 +87,7 @@ class ForwardsCliITCase extends RouterTestBase {
     }
 
     private String getRouterHost() {
-        return routerManager != null ? routerManager.getBaseUrl() : "http://localhost:8080";
+        return getServerBaseUrl();
     }
 
     private CLIResult executeWithAuth(String... args) {

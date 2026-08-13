@@ -22,7 +22,7 @@ class HttpToolRegistrationITCase extends HttpCapabilityTestBase {
 
     @BeforeEach
     void assumeRouterAvailable() {
-        assumeThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assumeThat(isServerRunning()).as("Router must be available").isTrue();
     }
 
     @DisplayName("Register HTTP tool via REST API and verify it appears in tool list")

@@ -46,7 +46,7 @@ public class ForwardsClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_FORWARDS_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.FORWARDS_PATH)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -74,7 +74,7 @@ public class ForwardsClient {
 
         try {
             HttpRequest request =
-                    buildRequest(WanakuTestConstants.ROUTER_FORWARDS_PATH).GET().build();
+                    buildRequest(WanakuTestConstants.FORWARDS_PATH).GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List forwards response: {} - {}", response.statusCode(), response.body());
@@ -113,7 +113,7 @@ public class ForwardsClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_FORWARDS_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.FORWARDS_PATH + "/" + encodedName)
                     .DELETE()
                     .build();
 
@@ -142,8 +142,7 @@ public class ForwardsClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(
-                            WanakuTestConstants.ROUTER_FORWARDS_PATH + "/" + encodedName + "/refreshes")
+            HttpRequest request = buildRequest(WanakuTestConstants.FORWARDS_PATH + "/" + encodedName + "/refreshes")
                     .POST(HttpRequest.BodyPublishers.noBody())
                     .build();
 

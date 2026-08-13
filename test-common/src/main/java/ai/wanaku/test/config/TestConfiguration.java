@@ -8,20 +8,14 @@ import ai.wanaku.test.WanakuTestConstants;
 
 public class TestConfiguration {
 
-    private final Path routerJarPath;
     private final Path praxisBinaryPath;
-    private final Path httpToolServiceJarPath;
-    private final Path fileProviderJarPath;
     private final Path camelCapabilityJarPath;
     private final Path artifactsDir;
     private final Path tempDataDir;
     private final Duration defaultTimeout;
 
     private TestConfiguration(Builder builder) {
-        this.routerJarPath = builder.routerJarPath;
         this.praxisBinaryPath = builder.praxisBinaryPath;
-        this.httpToolServiceJarPath = builder.httpToolServiceJarPath;
-        this.fileProviderJarPath = builder.fileProviderJarPath;
         this.camelCapabilityJarPath = builder.camelCapabilityJarPath;
         this.artifactsDir = builder.artifactsDir;
         this.tempDataDir = builder.tempDataDir;
@@ -42,20 +36,13 @@ public class TestConfiguration {
 
         return builder()
                 .artifactsDir(artifactsDir)
-                .routerJarPath(findJar(artifactsDir, "wanaku-router"))
-                .praxisBinaryPath(findPraxisBinary(artifactsDir))
-                .httpToolServiceJarPath(findJar(artifactsDir, "wanaku-tool-service-http"))
-                .fileProviderJarPath(findJar(artifactsDir, "wanaku-provider-file"))
-                .camelCapabilityJarPath(findJar(artifactsDir, "camel-integration-capability"))
+                .praxisBinaryPath(findPraxisBinary())
+                .camelCapabilityJarPath(findCicJar(artifactsDir))
                 .defaultTimeout(timeout)
                 .build();
     }
 
-    public boolean isPraxisMode() {
-        return praxisBinaryPath != null && praxisBinaryPath.toFile().exists();
-    }
-
-    private static Path findPraxisBinary(Path artifactsDir) {
+    private static Path findPraxisBinary() {
         String explicitPath = System.getProperty(WanakuTestConstants.PROP_PRAXIS_BINARY);
         if (explicitPath == null) {
             return null;
@@ -63,50 +50,27 @@ public class TestConfiguration {
         return Path.of(explicitPath).toAbsolutePath().normalize();
     }
 
-    private static Path findJar(Path artifactsDir, String prefix) {
-        String propKey;
-        if (prefix.contains("router")) {
-            propKey = WanakuTestConstants.PROP_ROUTER_JAR;
-        } else if (prefix.contains("provider-file")) {
-            propKey = WanakuTestConstants.PROP_FILE_PROVIDER_JAR;
-        } else if (prefix.contains("camel-integration-capability")) {
-            propKey = WanakuTestConstants.PROP_CAMEL_CAPABILITY_JAR;
-        } else {
-            propKey = WanakuTestConstants.PROP_HTTP_SERVICE_JAR;
-        }
-        String explicitPath = System.getProperty(propKey);
+    private static Path findCicJar(Path artifactsDir) {
+        String explicitPath = System.getProperty(WanakuTestConstants.PROP_CAMEL_CAPABILITY_JAR);
         if (explicitPath != null) {
             return Path.of(explicitPath).toAbsolutePath().normalize();
         }
 
         if (Files.exists(artifactsDir)) {
-            try {
-                Path quarkusAppDir = Files.list(artifactsDir)
-                        .filter(Files::isDirectory)
-                        .filter(p -> p.getFileName().toString().startsWith(prefix))
+            try (var stream = Files.list(artifactsDir)) {
+                Path cicDir = stream.filter(Files::isDirectory)
+                        .filter(p -> p.getFileName().toString().startsWith("camel-integration-capability"))
                         .findFirst()
                         .orElse(null);
 
-                if (quarkusAppDir != null) {
-                    Path quarkusRunJar = quarkusAppDir.resolve("quarkus-run.jar");
-                    if (Files.exists(quarkusRunJar)) {
-                        return quarkusRunJar;
-                    }
-
-                    Path fatJar = Files.list(quarkusAppDir)
-                            .filter(p -> p.getFileName().toString().endsWith(".jar"))
-                            .findFirst()
-                            .orElse(null);
-                    if (fatJar != null) {
-                        return fatJar;
+                if (cicDir != null) {
+                    try (var jarStream = Files.list(cicDir)) {
+                        return jarStream
+                                .filter(p -> p.getFileName().toString().endsWith(".jar"))
+                                .findFirst()
+                                .orElse(null);
                     }
                 }
-
-                return Files.list(artifactsDir)
-                        .filter(p -> p.getFileName().toString().startsWith(prefix))
-                        .filter(p -> p.getFileName().toString().endsWith(".jar"))
-                        .findFirst()
-                        .orElse(null);
             } catch (IOException e) {
                 return null;
             }
@@ -114,20 +78,8 @@ public class TestConfiguration {
         return null;
     }
 
-    public Path getRouterJarPath() {
-        return routerJarPath;
-    }
-
     public Path getPraxisBinaryPath() {
         return praxisBinaryPath;
-    }
-
-    public Path getHttpToolServiceJarPath() {
-        return httpToolServiceJarPath;
-    }
-
-    public Path getFileProviderJarPath() {
-        return fileProviderJarPath;
     }
 
     public Path getCamelCapabilityJarPath() {
@@ -147,32 +99,14 @@ public class TestConfiguration {
     }
 
     public static class Builder {
-        private Path routerJarPath;
         private Path praxisBinaryPath;
-        private Path httpToolServiceJarPath;
-        private Path fileProviderJarPath;
         private Path camelCapabilityJarPath;
         private Path artifactsDir;
         private Path tempDataDir;
         private Duration defaultTimeout = WanakuTestConstants.DEFAULT_TIMEOUT;
 
-        public Builder routerJarPath(Path routerJarPath) {
-            this.routerJarPath = routerJarPath;
-            return this;
-        }
-
         public Builder praxisBinaryPath(Path praxisBinaryPath) {
             this.praxisBinaryPath = praxisBinaryPath;
-            return this;
-        }
-
-        public Builder httpToolServiceJarPath(Path httpToolServiceJarPath) {
-            this.httpToolServiceJarPath = httpToolServiceJarPath;
-            return this;
-        }
-
-        public Builder fileProviderJarPath(Path fileProviderJarPath) {
-            this.fileProviderJarPath = fileProviderJarPath;
             return this;
         }
 

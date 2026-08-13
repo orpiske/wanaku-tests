@@ -45,7 +45,7 @@ public class PromptsClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.PROMPTS_PATH)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -73,7 +73,7 @@ public class PromptsClient {
 
         try {
             HttpRequest request =
-                    buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH).GET().build();
+                    buildRequest(WanakuTestConstants.PROMPTS_PATH).GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List prompts response: {} - {}", response.statusCode(), response.body());
@@ -112,7 +112,7 @@ public class PromptsClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest(WanakuTestConstants.PROMPTS_PATH + "/" + encodedName)
                     .DELETE()
                     .build();
 
@@ -144,7 +144,7 @@ public class PromptsClient {
             body.put("name", name);
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_PROMPTS_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.PROMPTS_PATH)
                     .PUT(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();

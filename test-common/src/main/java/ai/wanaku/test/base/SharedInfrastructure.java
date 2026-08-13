@@ -6,9 +6,7 @@ import java.nio.file.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.config.TestConfiguration;
-import ai.wanaku.test.managers.KeycloakManager;
 import ai.wanaku.test.managers.PraxisManager;
-import ai.wanaku.test.managers.RouterManager;
 
 import org.junit.jupiter.api.extension.ExtensionContext;
 
@@ -17,8 +15,6 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
     private static final Logger LOG = LoggerFactory.getLogger(SharedInfrastructure.class);
 
     private TestConfiguration config;
-    private KeycloakManager keycloakManager;
-    private RouterManager routerManager;
     private PraxisManager praxisManager;
     private Path tempDataDir;
 
@@ -33,35 +29,19 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
         TestConfiguration baseConfig = TestConfiguration.fromSystemProperties();
         config = TestConfiguration.builder()
                 .artifactsDir(baseConfig.getArtifactsDir())
-                .routerJarPath(baseConfig.getRouterJarPath())
                 .praxisBinaryPath(baseConfig.getPraxisBinaryPath())
-                .httpToolServiceJarPath(baseConfig.getHttpToolServiceJarPath())
-                .fileProviderJarPath(baseConfig.getFileProviderJarPath())
                 .camelCapabilityJarPath(baseConfig.getCamelCapabilityJarPath())
                 .tempDataDir(tempDataDir)
                 .defaultTimeout(baseConfig.getDefaultTimeout())
                 .build();
 
-        LOG.debug("Router JAR: {}", config.getRouterJarPath());
         LOG.debug("Praxis binary: {}", config.getPraxisBinaryPath());
-        LOG.debug("HTTP Capability JAR: {}", config.getHttpToolServiceJarPath());
 
-        if (shouldSkipInfrastructure()) {
-            LOG.info("Skipping infrastructure setup (no JARs or binary available)");
+        if (config.getPraxisBinaryPath() == null
+                || !config.getPraxisBinaryPath().toFile().exists()) {
+            LOG.info("Praxis binary not available, skipping infrastructure setup");
             return;
         }
-
-        if (config.isPraxisMode()) {
-            startPraxisMode();
-        } else {
-            startRouterMode();
-        }
-
-        LOG.info("=== Shared infrastructure ready ===");
-    }
-
-    private void startPraxisMode() throws Exception {
-        LOG.info("Starting in PRAXIS mode");
 
         praxisManager = new PraxisManager(config);
         praxisManager.prepare();
@@ -70,28 +50,8 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
                 "Praxis started on management port {} and MCP port {}",
                 praxisManager.getHttpPort(),
                 praxisManager.getMcpPort());
-    }
 
-    private void startRouterMode() throws Exception {
-        LOG.info("Starting in ROUTER mode");
-
-        keycloakManager = new KeycloakManager();
-        try {
-            keycloakManager.start();
-        } catch (Exception e) {
-            LOG.warn("Keycloak startup failed, Router will run without authentication: {}", e.getMessage());
-            keycloakManager = null;
-        }
-
-        if (config.getRouterJarPath() != null
-                && config.getRouterJarPath().toFile().exists()) {
-            routerManager = new RouterManager(config);
-            routerManager.prepare();
-            routerManager.start("shared");
-            LOG.info("Router started on port {}", routerManager.getHttpPort());
-        } else {
-            LOG.warn("Router JAR not found at {}, skipping Router startup", config.getRouterJarPath());
-        }
+        LOG.info("=== Shared infrastructure ready ===");
     }
 
     @Override
@@ -100,14 +60,6 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
 
         if (praxisManager != null) {
             praxisManager.stop();
-        }
-
-        if (routerManager != null) {
-            routerManager.stop();
-        }
-
-        if (keycloakManager != null) {
-            keycloakManager.stop();
         }
 
         if (tempDataDir != null) {
@@ -125,14 +77,6 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
         return config;
     }
 
-    public KeycloakManager getKeycloakManager() {
-        return keycloakManager;
-    }
-
-    public RouterManager getRouterManager() {
-        return routerManager;
-    }
-
     public PraxisManager getPraxisManager() {
         return praxisManager;
     }
@@ -142,68 +86,19 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
     }
 
     public String getBaseUrl() {
-        if (praxisManager != null) {
-            return praxisManager.getBaseUrl();
-        }
-        if (routerManager != null) {
-            return routerManager.getBaseUrl();
-        }
-        return null;
+        return praxisManager != null ? praxisManager.getBaseUrl() : null;
     }
 
     public String getMcpBaseUrl() {
-        if (praxisManager != null) {
-            return praxisManager.getMcpBaseUrl();
-        }
-        if (routerManager != null) {
-            return routerManager.getMcpBaseUrl();
-        }
-        return null;
+        return praxisManager != null ? praxisManager.getMcpBaseUrl() : null;
     }
 
     public int getHttpPort() {
-        if (praxisManager != null) {
-            return praxisManager.getHttpPort();
-        }
-        if (routerManager != null) {
-            return routerManager.getHttpPort();
-        }
-        return -1;
+        return praxisManager != null ? praxisManager.getHttpPort() : -1;
     }
 
     public boolean isServerRunning() {
-        if (praxisManager != null) {
-            return praxisManager.isRunning();
-        }
-        if (routerManager != null) {
-            return routerManager.isRunning();
-        }
-        return false;
-    }
-
-    private boolean shouldSkipInfrastructure() {
-        if (config.isPraxisMode()) {
-            return false;
-        }
-        Path artifactsDir = Path.of(System.getProperty("wanaku.test.artifacts.dir", "artifacts"));
-        return !Files.exists(artifactsDir) || !hasJars(artifactsDir);
-    }
-
-    private boolean hasJars(Path dir) {
-        try {
-            return Files.list(dir).anyMatch(p -> {
-                if (p.toString().endsWith(".jar")) {
-                    return true;
-                }
-                if (Files.isDirectory(p)) {
-                    Path quarkusRunJar = p.resolve("quarkus-run.jar");
-                    return Files.exists(quarkusRunJar);
-                }
-                return false;
-            });
-        } catch (IOException e) {
-            return false;
-        }
+        return praxisManager != null && praxisManager.isRunning();
     }
 
     private void deleteRecursively(Path path) throws IOException {

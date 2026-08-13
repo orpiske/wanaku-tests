@@ -48,7 +48,7 @@ public class NamespaceClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.NAMESPACES_PATH)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -81,9 +81,8 @@ public class NamespaceClient {
         LOG.debug("Listing namespaces");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request =
+                    buildRequest(WanakuTestConstants.NAMESPACES_PATH).GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List namespaces response: {} - {}", response.statusCode(), response.body());
@@ -125,7 +124,7 @@ public class NamespaceClient {
 
         try {
             String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
+            HttpRequest request = buildRequest(WanakuTestConstants.NAMESPACES_PATH + "/" + encodedId)
                     .GET()
                     .build();
 
@@ -162,7 +161,7 @@ public class NamespaceClient {
 
         try {
             String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
+            HttpRequest request = buildRequest(WanakuTestConstants.NAMESPACES_PATH + "/" + encodedId)
                     .DELETE()
                     .build();
 
@@ -196,7 +195,7 @@ public class NamespaceClient {
             String encodedId = URLEncoder.encode(id, StandardCharsets.UTF_8);
             String json = objectMapper.writeValueAsString(updates);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/" + encodedId)
+            HttpRequest request = buildRequest(WanakuTestConstants.NAMESPACES_PATH + "/" + encodedId)
                     .PUT(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -226,7 +225,7 @@ public class NamespaceClient {
         LOG.debug("Cleaning up stale namespaces");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_NAMESPACES_PATH + "/stale")
+            HttpRequest request = buildRequest(WanakuTestConstants.NAMESPACES_PATH + "/stale")
                     .DELETE()
                     .build();
 

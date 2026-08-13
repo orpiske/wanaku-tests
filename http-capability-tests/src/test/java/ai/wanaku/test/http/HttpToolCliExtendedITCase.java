@@ -20,11 +20,9 @@ class HttpToolCliExtendedITCase extends HttpCapabilityTestBase {
     void setupCli() {
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
 
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            authToken = keycloakManager.getMcpToken();
-        }
+        authToken = null;
     }
 
     @DisplayName("Show details of a registered tool via CLI")
@@ -63,7 +61,7 @@ class HttpToolCliExtendedITCase extends HttpCapabilityTestBase {
     }
 
     private String getRouterHost() {
-        return routerManager != null ? routerManager.getBaseUrl() : "http://localhost:8080";
+        return getServerBaseUrl();
     }
 
     private CLIResult executeWithAuth(String... args) {

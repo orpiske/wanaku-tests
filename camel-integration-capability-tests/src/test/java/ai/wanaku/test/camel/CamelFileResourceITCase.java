@@ -34,7 +34,7 @@ class CamelFileResourceITCase extends CamelCapabilityTestBase {
 
     @BeforeEach
     void assertInfrastructureAvailable() {
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
         assertThat(isCamelCapabilityAvailable()).as("CIC JAR must be available").isTrue();
         assertThat(isMcpClientAvailable()).as("MCP client must be connected").isTrue();
     }

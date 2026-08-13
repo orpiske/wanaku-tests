@@ -19,16 +19,12 @@ class DataStoreCliITCase extends RouterTestBase {
 
     @BeforeEach
     void setupCli() {
-        assumeThat(isPraxisMode())
+        assumeThat(false)
                 .as("DataStore is not natively available in praxis mode")
                 .isFalse();
         cliExecutor = CLIExecutor.createDefault();
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
-        assertThat(isRouterAvailable()).as("Router must be available").isTrue();
-
-        if (keycloakManager != null && keycloakManager.isRunning()) {
-            authToken = keycloakManager.getMcpToken();
-        }
+        assertThat(isServerRunning()).as("Router must be available").isTrue();
     }
 
     @DisplayName("Add a data store entry via CLI and verify it exists via REST")
@@ -120,7 +116,7 @@ class DataStoreCliITCase extends RouterTestBase {
     }
 
     private String getRouterHost() {
-        return routerManager != null ? routerManager.getBaseUrl() : "http://localhost:8080";
+        return getServerBaseUrl();
     }
 
     private CLIResult executeWithAuth(String... args) {

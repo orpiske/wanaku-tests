@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import ai.wanaku.test.WanakuTestConstants;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -45,7 +44,7 @@ public class ServiceCatalogClient {
         try {
             String json = objectMapper.writeValueAsString(body);
 
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_SERVICE_CATALOG_PATH)
+            HttpRequest request = buildRequest("/api/v1/service-catalog")
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .header("Content-Type", "application/json")
                     .build();
@@ -72,9 +71,7 @@ public class ServiceCatalogClient {
         LOG.debug("Listing service catalogs");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_SERVICE_CATALOG_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request = buildRequest("/api/v1/service-catalog").GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("List service catalogs response: {} - {}", response.statusCode(), response.body());
@@ -113,7 +110,7 @@ public class ServiceCatalogClient {
 
         try {
             String encodedName = URLEncoder.encode(name, StandardCharsets.UTF_8);
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_SERVICE_CATALOG_PATH + "/" + encodedName)
+            HttpRequest request = buildRequest("/api/v1/service-catalog" + "/" + encodedName)
                     .DELETE()
                     .build();
 

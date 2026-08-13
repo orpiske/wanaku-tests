@@ -8,7 +8,6 @@ import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.base.BaseIntegrationTest;
-import ai.wanaku.test.config.OidcCredentials;
 import ai.wanaku.test.fixtures.TestFixtures;
 import ai.wanaku.test.managers.CamelCapabilityManager;
 
@@ -100,13 +99,6 @@ public abstract class CrossCapabilityTestBase extends BaseIntegrationTest {
         return config != null
                 && config.getCamelCapabilityJarPath() != null
                 && config.getCamelCapabilityJarPath().toFile().exists();
-    }
-
-    protected OidcCredentials getOidcCredentials() {
-        if (!isPraxisMode() && keycloakManager != null && keycloakManager.isRunning()) {
-            return keycloakManager.getServiceCredentials();
-        }
-        return null;
     }
 
     @Override

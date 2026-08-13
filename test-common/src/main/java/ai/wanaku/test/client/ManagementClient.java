@@ -33,9 +33,8 @@ public class ManagementClient {
         LOG.debug("Getting router info");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_MANAGEMENT_INFO_PATH)
-                    .GET()
-                    .build();
+            HttpRequest request =
+                    buildRequest("/api/v1/management/info/version").GET().build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             LOG.debug("Info response: {} - {}", response.statusCode(), response.body());
@@ -59,7 +58,7 @@ public class ManagementClient {
         LOG.debug("Getting router statistics");
 
         try {
-            HttpRequest request = buildRequest(WanakuTestConstants.ROUTER_MANAGEMENT_STATISTICS_PATH)
+            HttpRequest request = buildRequest(WanakuTestConstants.MANAGEMENT_STATISTICS_PATH)
                     .GET()
                     .build();
 
