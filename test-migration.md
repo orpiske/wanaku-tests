@@ -6,26 +6,42 @@ Wanaku's MCP routing engine is being replaced: Java/Quarkus router -> Rust `wana
 
 - **Rust binary** instead of Java JAR
 - **Two ports**: management (8080) + MCP (8081) instead of one
-- **No gRPC bridge**: capabilities are now MCP servers; praxis uses MCP forwarding to invoke tools (see [wanaku-barn#7](https://github.com/wanaku-ai/wanaku-barn/pull/7))
-- **No auto-registration**: capabilities don't self-register; tests register them as **MCP forwards**
+- **No gRPC bridge**: gRPC removed entirely ([wanaku-barn#7](https://github.com/wanaku-ai/wanaku-barn/pull/7)); praxis uses MCP forwarding
+- **Unified capability model**: no separate HTTP tool service / file provider processes. All capabilities run through **CIC** (Camel Integration Capability, a.k.a. KAMO) with different Camel route files
+- **No auto-registration**: tests register CIC instances as **MCP forwards** with praxis
 - **No built-in auth**: external goauth_proxy; CLI needs `--no-auth` for non-auth tests
 - **No DataStore / ServiceCatalog**: not native in praxis
 - **x-request-id enrichment**: tools get extra required arg in schema
 - **Dynamic namespaces**: CRUD via REST, path-based MCP routing (`/{ns}/mcp`)
 - **Different health endpoint**: `/healthz` vs `/q/health/ready`
 
-Capability providers (HTTP tool, file provider, CIC) remain Java-based but are now **MCP servers** -- praxis discovers and invokes their tools via MCP forwarding, not gRPC.
+### Capability Model Change
+
+Old: three separate Java processes (HTTP tool service, file provider, CIC), each with its own JAR and gRPC server.
+
+New: **CIC is the only capability provider**. Different "capabilities" are CIC instances launched with different Camel route files. Routes come from the barn catalog or are referenced as local files.
+
+Example -- an echo tool capability:
+```
+java -Decho.separator=- \
+  -jar camel-integration-capability-main-0.3.0-SNAPSHOT-jar-with-dependencies.jar \
+  --routes-ref file:///path/to/wanaku-echo-tool.camel.yaml
+```
+
+CIC exposes an MCP endpoint; praxis registers it as a forward and auto-discovers its tools.
 
 ### New Test Lifecycle
 
 ```
 Old (Java router):
-  start capability -> capability auto-registers via gRPC -> poll until registered -> test
+  start HTTP tool service -> auto-registers via gRPC -> poll -> test
+  start file provider    -> auto-registers via gRPC -> poll -> test
 
 New (praxis):
-  start praxis -> start capability (MCP server on HTTP port) ->
-  register as MCP forward via POST /api/v1/forwards ->
-  praxis auto-discovers tools from MCP endpoint -> test
+  start praxis ->
+  start CIC with route file (MCP server on HTTP port) ->
+  forwardsClient.add("name", cicInstance.getMcpUrl(), namespace) ->
+  praxis auto-discovers tools from CIC's MCP endpoint -> test
 ```
 
 ---
@@ -50,14 +66,15 @@ New (praxis):
 **File:** `test-common/.../config/TestConfiguration.java`
 
 - Add `praxisBinaryPath` field + `PROP_PRAXIS_BINARY = "wanaku.test.praxis.binary"`
-- Add `findPraxisBinary(artifactsDir)` -- looks for `wanaku-praxis` binary in artifacts
-- `isPraxisAvailable()` -> binary exists and is executable
+- Remove `httpToolServiceJarPath` and `fileProviderJarPath` (no longer separate processes)
+- Keep `camelCapabilityJarPath` -- this is the one JAR for all capabilities
+- `isPraxisMode()` -> praxis binary exists and is executable
 
-### 1c. `TargetConfiguration` changes
+### 1c. `TargetConfiguration` simplification
 
 **File:** `test-common/.../config/TargetConfiguration.java`
 
-- Remove `routerGrpcPort` entirely (no gRPC anywhere -- capabilities use MCP, praxis has no gRPC server)
+- Remove `routerGrpcPort` entirely (no gRPC anywhere)
 - Remove `oidcCredentials` (capabilities don't register, no OIDC needed)
 - Simplify to: `(routerHost, routerHttpPort)` -- or just pass the management URL directly
 
@@ -66,10 +83,9 @@ New (praxis):
 **File:** `test-common/.../base/SharedInfrastructure.java`
 
 - Create `PraxisManager` instead of `RouterManager` when praxis binary is available
-- **Drop Keycloak** for praxis mode (capabilities don't need OIDC, praxis doesn't enforce auth)
-- Keep Keycloak support conditional for auth-specific tests
-- Expose both mgmt and MCP base URLs
+- **Drop Keycloak** for praxis mode
 - Remove `getGrpcPort()` method
+- Expose both mgmt and MCP base URLs
 
 ### 1e. `WanakuTestConstants` updates
 
@@ -78,158 +94,179 @@ New (praxis):
 - `ROUTER_HEALTH_PATH`: `/q/health/ready` -> `/healthz` (or use `isPraxisMode()` to pick)
 - Add `PROP_PRAXIS_BINARY`
 - Remove: `ROUTER_MANAGEMENT_DISCOVERY_PATH`, `ROUTER_MANAGEMENT_INFO_PATH`, `ROUTER_DATA_STORE_PATH`, `ROUTER_SERVICE_CATALOG_PATH`
+- Remove: `PROP_HTTP_SERVICE_JAR`, `PROP_FILE_PROVIDER_JAR`
 
 ---
 
-## Phase 2: gRPC Removal & MCP Forwarding
+## Phase 2: Unified CIC Capability Manager
 
-The gRPC bridge has been removed from the capability SDK entirely ([wanaku-barn#7](https://github.com/wanaku-ai/wanaku-barn/pull/7)). Capability providers no longer expose gRPC servers. They are now **MCP servers** that expose tools via the MCP protocol over HTTP. Praxis invokes them via **MCP forwarding**.
+### 2a. Remove `HttpCapabilityManager` and `ResourceProviderManager`
 
-### 2a. Capability Managers: gRPC -> HTTP/MCP
+**Delete:** `test-common/.../managers/HttpCapabilityManager.java`
+**Delete:** `test-common/.../managers/ResourceProviderManager.java`
 
-All three capability managers need the same change: replace gRPC port with HTTP port.
+These are replaced by CIC instances with appropriate route files. No separate Java processes needed.
 
-**`HttpCapabilityManager`** (`test-common/.../managers/HttpCapabilityManager.java`):
-- `prepareStandalone()`: allocate **HTTP port** via `PortUtils.findAvailablePort()`, set `quarkus.http.port={httpPort}`
-- Remove all `quarkus.grpc.server.*` system properties
-- Health check: `HealthCheckUtils.waitForPort("localhost", httpPort, ...)` (or HTTP GET to `/q/health/ready`)
-- Rename `getGrpcPort()` -> `getHttpPort()`, add `getMcpUrl()` returning `http://localhost:{httpPort}/mcp`
-- `prepare(TargetConfiguration)` (router mode): remove `wanaku.router.host/port` gRPC properties, remove `quarkus.grpc.server.*`
+### 2b. Rework `CamelCapabilityManager` as the single capability manager
 
-**`ResourceProviderManager`** (`test-common/.../managers/ResourceProviderManager.java`):
-- Same changes as HttpCapabilityManager
-- `getGrpcPort()` -> `getHttpPort()`, add `getMcpUrl()`
+**File:** `test-common/.../managers/CamelCapabilityManager.java`
 
-**`CamelCapabilityManager`** (`test-common/.../managers/CamelCapabilityManager.java`):
-- `prepareStandalone()`: allocate HTTP port, remove `--grpc-port` CLI arg
-- Add HTTP port configuration (depends on CIC startup args -- may be `--http-port` or env var)
-- Health check on HTTP port instead of gRPC
-- `getGrpcPort()` -> `getHttpPort()`, add `getMcpUrl()`
+This becomes the **only** capability manager. Key changes:
 
-### 2b. Registration Model: Services -> Forwards
+- **HTTP port instead of gRPC port**: allocate via `PortUtils.findAvailablePort()`, pass to CIC (system property or CLI arg for `quarkus.http.port` or CIC-specific arg)
+- **Remove gRPC args**: no `--grpc-port`
+- **Remove registration args**: no `--registration-url`, `--registration-announce-address`, `--token-endpoint`, `--client-id`, `--client-secret`
+- **Keep route args**: `--routes-ref`, `--rules-ref`, `--dependencies`, `--name`
+- **System properties for service config**: e.g., `-Decho.separator=-` passed via `addSystemProperty()`
+- **Health check on HTTP port** instead of gRPC port
+- Add `getMcpUrl()` returning `http://localhost:{httpPort}/mcp` (or whatever path CIC exposes)
+- Add `getHttpPort()`, remove `getGrpcPort()`
 
-Capabilities are no longer registered as gRPC services. They are registered as **MCP forwards**.
+Route references can be:
+- `file:///absolute/path/to/route.camel.yaml` -- local file
+- Barn catalog reference (if CIC supports it)
+
+### 2c. Registration via MCP Forwards
 
 **`BaseIntegrationTest`** (`test-common/.../base/BaseIntegrationTest.java`):
+
+Major simplification -- remove the `httpCapabilityManager` field entirely. In praxis mode, capabilities are started explicitly per test (or suite) using `CamelCapabilityManager` with appropriate route files.
 
 New `@BeforeEach` flow (praxis mode):
 1. Create `RouterClient` with mgmt base URL (no auth token)
 2. Create `McpTestClient` with MCP base URL
-3. Start HTTP capability (MCP server on allocated HTTP port)
-4. Create `ForwardsClient` for the praxis management API
-5. **Register as forward**: `forwardsClient.add("http-capability", capabilityManager.getMcpUrl(), namespace)`
-6. Praxis auto-discovers tools from the MCP endpoint
-7. Wait for tools to appear: `Awaitility.await().until(() -> !routerClient.listTools().isEmpty())`
+3. Create `ForwardsClient` for the praxis management API
+4. (Capability startup moved to individual test bases or tests -- different routes per test module)
 
 New `@AfterEach` flow (praxis mode):
-1. `forwardsClient.remove("http-capability")` (also removes discovered tools)
-2. Stop HTTP capability
+1. `forwardsClient.remove(name)` (removes forward + discovered tools)
+2. Stop CIC instance
 3. Disconnect MCP client
 
-**`ResourceTestBase`** (`resources-tests/.../ResourceTestBase.java`):
-- Replace `svcClient.register("file", "localhost:{grpcPort}", "resource-provider")` -> `forwardsClient.add("file-provider", resourceProviderManager.getMcpUrl(), namespace)`
-- Cleanup: `forwardsClient.remove("file-provider")`
+**Registration helper** (add to `BaseIntegrationTest` or a utility):
+```java
+protected void registerCapabilityAsForward(String name, CamelCapabilityManager manager) {
+    forwardsClient.add(name, manager.getMcpUrl(), namespace);
+    Awaitility.await()
+        .pollInterval(DEFAULT_REGISTRATION_POLL_INTERVAL)
+        .until(() -> forwardsClient.exists(name));
+}
+```
 
-**`CamelCapabilityTestBase`** (`camel-integration-capability-tests/.../CamelCapabilityTestBase.java`):
-- Replace `serviceClient.register(serviceName, "localhost:{grpcPort}", "tool-invoker")` -> `forwardsClient.add(serviceName, manager.getMcpUrl(), namespace)`
-- Cleanup: `forwardsClient.remove(serviceName)`
+### 2d. Test base classes per module
 
-### 2c. Remove gRPC from Router-side code
+**`HttpCapabilityTestBase`** -> rework:
+- Instead of starting `HttpCapabilityManager`, start `CamelCapabilityManager` with an HTTP tool route file (e.g., `wanaku-http-tool.camel.yaml` from barn service templates)
+- Register as MCP forward
+- Same test assertions -- tools are invoked the same way via MCP
 
-- **`RouterManager`**: remove `grpcPort` field, `getGrpcPort()`, `quarkus.grpc.server.*` system properties (router mode may still need these until Java router is fully deprecated -- keep behind `isPraxisMode()` guard if needed)
-- **`PraxisManager`**: remove `getGrpcPort()` (returns -1 currently)
-- **`SharedInfrastructure`**: remove `getGrpcPort()` method
-- **`BaseIntegrationTest`**: remove `getServerGrpcPort()` helper
-- **`TargetConfiguration`**: remove `routerGrpcPort` field entirely
-- **`ServiceClient`**: keep for Services CRUD tests, but no longer used for capability registration
+**`ResourceTestBase`** -> rework:
+- Instead of starting `ResourceProviderManager`, start `CamelCapabilityManager` with a file resource route
+- Register as MCP forward
+- Same test assertions
 
-### 2d. `McpTestClient` updates
+**`CamelCapabilityTestBase`** -> simplify:
+- Already uses `CamelCapabilityManager` -- just remove gRPC port/registration logic
+- Register each CIC instance as an MCP forward after startup
+- `waitForCapabilityReady()`: wait for forwarded tools to appear
 
-**File:** `test-common/.../client/McpTestClient.java`
+### 2e. Route files as test fixtures
 
-- Constructor takes `mcpBaseUrl` (MCP port URL) instead of management URL
-- MCP path stays `mcp/`
-- Auth: keep optional Bearer token (for goauth_proxy scenarios)
-- Add namespace-aware constructor/method: path becomes `{namespace}/mcp` instead of `mcp/`
+Test route files (Camel YAML) need to be available for each capability type. Options:
+- Bundle barn service templates in `src/test/resources/routes/` of each test module
+- Reference them from a checked-out barn repo via `file://` URIs
+- Download them as part of the artifacts setup
 
-### 2e. `RouterClient` updates
+Recommended: include the needed route files in `src/test/resources/routes/` as test fixtures, just like current fixture YAML files in `camel-integration-capability-tests`.
 
-**File:** `test-common/.../client/RouterClient.java`
+### 2f. Remove gRPC from remaining code
 
-- `deregisterCapability()`: no longer needed for praxis mode (capabilities are forwards, not services)
-- Remove mandatory auth token (constructor accepts null, no token sent)
-- `isCapabilityRegistered()`: may not be used in praxis mode (capabilities registered as forwards, not services). Use `forwardsClient.exists()` or check tools list instead.
+- **`RouterManager`**: remove `grpcPort`, `getGrpcPort()`, `quarkus.grpc.server.*` (keep for Java router backward compat if needed)
+- **`PraxisManager`**: remove `getGrpcPort()`
+- **`SharedInfrastructure`**: remove `getGrpcPort()`
+- **`BaseIntegrationTest`**: remove `getServerGrpcPort()`, remove `httpCapabilityManager` field
+- **`TargetConfiguration`**: remove `routerGrpcPort`
+- **`ServiceClient`**: keep for Services CRUD tests, no longer used for capability registration
 
-### 2f. `ManagementClient` updates
+### 2g. Other client updates
 
-**File:** `test-common/.../client/ManagementClient.java`
+**`McpTestClient`**: constructor takes `mcpBaseUrl` (MCP port URL). Add namespace-aware path support.
 
-- Remove `getInfo()` (endpoint gone in praxis)
-- `getStatistics()`: same path, update expected response fields
+**`RouterClient`**: remove `deregisterCapability()` (praxis uses forwards). Remove mandatory auth token. `isCapabilityRegistered()` may not apply -- use `forwardsClient.exists()` or check tools list.
 
-### 2g. `CLIExecutor` updates
+**`ManagementClient`**: remove `getInfo()`. Update `getStatistics()` assertions.
 
-**File:** `test-common/.../client/CLIExecutor.java`
+**`CLIExecutor`**: add `--no-auth` flag for praxis mode.
 
-- Add `--no-auth` flag support for praxis mode
-- Append the flag to all CLI commands when no auth is configured
-
-### 2h. `DataStoreClient` and `ServiceCatalogClient`
-
-Keep classes but skip all tests that use them in praxis mode.
+**`DataStoreClient` / `ServiceCatalogClient`**: keep, skip tests in praxis mode.
 
 ---
 
 ## Phase 3: Test Module Updates
 
-### 3a. `router-tests`
+### 3a. `http-capability-tests`
+
+These tests no longer start a separate HTTP tool service JAR. Instead:
+
+| Test Class | Action | Details |
+|---|---|---|
+| `HttpToolRegistrationITCase` | **Keep** | Tools registered via REST API -- same in praxis |
+| `HttpToolCliITCase` | **Keep** | Add `--no-auth` |
+| `HttpToolCliExtendedITCase` | **Keep** | Add `--no-auth` |
+| `HttpToolErrorHandlingITCase` | **Rework** | Start CIC with HTTP tool route. Error scenarios may differ (CIC handles HTTP calls, not a dedicated HTTP service) |
+| `PublicApiITCase` | **Rework** | Start CIC with HTTP tool route. Assertions must account for `x-request-id` in tool schemas |
+
+**`HttpCapabilityTestBase`**: start CIC with HTTP tool route file, register as forward. Replace `isHttpToolServiceAvailable()` with `isCicAvailable()`.
+
+### 3b. `resources-tests`
+
+| Test Class | Action | Details |
+|---|---|---|
+| `RestApiResourceITCase` | **Keep** | Same REST API for resource management |
+| `McpResourceITCase` | **Rework** | Start CIC with file resource route |
+| `CliResourceITCase` | **Keep** | Add `--no-auth` |
+| `ResourceCliExtendedITCase` | **Keep** | Add `--no-auth` |
+
+**`ResourceTestBase`**: start CIC with file resource route, register as forward. Replace `isFileProviderAvailable()` with `isCicAvailable()`.
+
+### 3c. `router-tests`
 
 | Test Class | Action | Details |
 |---|---|---|
 | `NamespaceCrudITCase` | **Keep** | Same API |
-| `NamespaceCliITCase` | **Keep** | Add `--no-auth` to CLI commands |
-| `ForwardsCrudITCase` | **Keep** | May remove `@KnownLimitation` if auth issue resolved |
+| `NamespaceCliITCase` | **Keep** | Add `--no-auth` |
+| `ForwardsCrudITCase` | **Keep** | May remove `@KnownLimitation` |
 | `ForwardsCliITCase` | **Keep** | Add `--no-auth` |
 | `PromptsCrudITCase` | **Keep** | Same API |
-| `RouterInfoITCase` | **Rework** | Remove `shouldReturnInfo()`. Update `shouldReturnStatistics()` field assertions. Change health path to `/healthz` |
+| `RouterInfoITCase` | **Rework** | Remove info test. Update statistics. Change health to `/healthz` |
 | `AuthenticationITCase` | **Skip** | No built-in auth in praxis |
-| `ServiceDiscoveryITCase` | **Rework** | Capabilities are forwards now, not gRPC services. Rework to test forward-based discovery |
+| `ServiceDiscoveryITCase` | **Rework** | Test forward-based discovery instead of gRPC service discovery |
 | `DataStoreCrudITCase` | **Skip** | Not in praxis |
 | `DataStoreCliITCase` | **Skip** | Not in praxis |
-| `ConcurrentOperationsITCase` | **Partial** | Keep concurrent tool reg + list. Skip DataStore tests |
-| `CapabilityResilienceITCase` | **Rework** | Use `forwardsClient.remove()` instead of gRPC-based deregistration |
-
-### 3b. `http-capability-tests`
-
-| Test Class | Action | Details |
-|---|---|---|
-| `HttpToolRegistrationITCase` | **Keep** | Same API |
-| `HttpToolCliITCase` | **Keep** | Add `--no-auth` |
-| `HttpToolCliExtendedITCase` | **Keep** | Add `--no-auth` |
-| `HttpToolErrorHandlingITCase` | **Keep** | Same MCP protocol |
-| `PublicApiITCase` | **Adjust** | `tools/list` assertions must account for `x-request-id` in tool schemas |
-
-### 3c. `resources-tests`
-
-All test classes keep working. Update registration to use MCP forwards. Add `--no-auth` to CLI tests.
+| `ConcurrentOperationsITCase` | **Partial** | Keep concurrent tool reg + list. Skip DataStore |
+| `CapabilityResilienceITCase` | **Rework** | Use `forwardsClient.remove()` for deregistration |
 
 ### 3d. `camel-integration-capability-tests`
 
 | Test Class | Action | Details |
 |---|---|---|
-| `CamelBasicToolITCase` | **Partial** | Skip DataStore-loading tests. Keep direct fixture tests |
-| `CamelMultiInstanceITCase` | **Keep** | Update registration to MCP forwards |
+| `CamelBasicToolITCase` | **Partial** | Skip DataStore-loading tests |
+| `CamelMultiInstanceITCase` | **Keep** | Multiple CIC instances with different routes, each registered as forward |
 | `CamelFileResourceITCase` | **Partial** | Skip DataStore-loading tests |
 | `CamelPostgresToolITCase` | **Partial** | Skip DataStore-loading tests |
 
-`CamelCapabilityTestBase.startCapability()` needs updating:
-- Remove gRPC port and registration config from CIC CLI args
-- After CIC starts, register as MCP forward via `forwardsClient.add()`
-- `waitForCapabilityReady()`: wait for forwarded tools to appear (praxis auto-discovers)
+`CamelCapabilityTestBase.startCapability()`:
+- Remove gRPC and registration args
+- After CIC starts, register as MCP forward
+- `waitForCapabilityReady()`: wait for forwarded tools to appear
 
 ### 3e. `mcp-forwarding-tests`
 
-`McpForwardingTestBase`: the target "router" also becomes a PraxisManager instance. The forwarding setup uses the target's MCP URL directly, which aligns well with the new model.
+`McpForwardingTestBase`: the target becomes a praxis instance. The forwarding setup aligns naturally -- just register the target's MCP URL as a forward on the primary praxis.
+
+### 3f. Module consolidation (future consideration)
+
+With all capabilities running through CIC, `http-capability-tests` and `resources-tests` are essentially CIC tests with different routes. They could potentially be folded into `camel-integration-capability-tests`. Not required for the migration, but worth considering to reduce module sprawl.
 
 ---
 
@@ -237,12 +274,16 @@ All test classes keep working. Update registration to use MCP forwards. Add `--n
 
 ### 4a. `artifacts/download.sh`
 
-- Add praxis binary download from `wanaku-ai/wanaku-praxis` GitHub releases (platform-specific: linux-x86_64, darwin-aarch64)
-- Remove or flag the old Java router ZIP download
+- Add praxis binary download from `wanaku-ai/wanaku-praxis` releases (platform-specific)
+- **Remove HTTP tool service and file provider downloads** (no longer separate JARs)
+- Keep CIC JAR download (the single capability JAR)
+- Add route file downloads from barn catalog (or bundle in test resources)
 
 ### 4b. `.github/scripts/collect-from-source-artifacts.sh`
 
-- Add: clone wanaku-praxis, `cargo build --release`, copy `target/release/wanaku-praxis` to `artifacts/`
+- Add: clone wanaku-praxis, `cargo build --release`, copy binary to `artifacts/`
+- Remove: HTTP tool service and file provider artifact collection
+- Keep: CIC JAR collection
 - Rust toolchain needed in CI
 
 ### 4c. CI Workflows
@@ -250,6 +291,7 @@ All test classes keep working. Update registration to use MCP forwards. Add `--n
 - `full-integration-test.yml`: add `praxis_repo`/`praxis_branch` inputs, add Rust build step
 - `integration-tests.yml`: download praxis binary from releases
 - Both: pass `-Dwanaku.test.praxis.binary=artifacts/wanaku-praxis` to Maven
+- Remove: wanaku-examples repo inputs (file provider was there)
 
 ---
 
@@ -257,22 +299,26 @@ All test classes keep working. Update registration to use MCP forwards. Add `--n
 
 ### 5a. x-request-id Enrichment
 
-New test in `router-tests`: register a tool, verify `tools/list` via MCP includes `x-request-id` in `inputSchema.required`. Call the tool with `x-request-id` -- verify the capability provider does NOT receive it.
+New test: register a tool via forward, verify `tools/list` via MCP includes `x-request-id` in `inputSchema.required`. Call the tool with `x-request-id` -- verify CIC does NOT receive it.
 
 ### 5b. Namespace-scoped MCP Routing
 
-New test: register tool in namespace "finance", connect MCP client to `/finance/mcp`, verify tool appears. Connect to `/mcp` (default) -- verify it does NOT appear.
+New test: register tool in namespace "finance" via forward, connect MCP client to `/finance/mcp`, verify tool appears. Connect to `/mcp` (default) -- verify it does NOT appear.
 
 ### 5c. Services CRUD
 
-New `ServicesCrudITCase`: test `POST/GET/DELETE /api/v1/services`. This is a praxis-specific management API.
+New `ServicesCrudITCase`: test `POST/GET/DELETE /api/v1/services`.
+
+### 5d. Multi-route CIC
+
+New test: verify that a single CIC instance can serve multiple tools from a single route file, and all are discovered via forward registration.
 
 ---
 
 ## Verification
 
 1. `mvn -DskipTests package`
-2. Place praxis binary + capability JARs in `artifacts/`
+2. Place praxis binary + CIC JAR in `artifacts/`
 3. `mvn verify -Dwanaku.test.praxis.binary=artifacts/wanaku-praxis`
 4. Non-DataStore, non-auth tests pass
 5. DataStore tests skip cleanly
@@ -283,8 +329,10 @@ New `ServicesCrudITCase`: test `POST/GET/DELETE /api/v1/services`. This is a pra
 
 ## Open Questions
 
-1. **Capability MCP endpoint path**: Do the Java SDK capability providers expose MCP at `/mcp` or a different path? This determines the URL passed to `forwardsClient.add()`.
+1. **CIC HTTP port configuration**: How does CIC accept a custom HTTP port? Is it `quarkus.http.port` system property, a CLI arg like `--http-port`, or something else?
 
-2. **CIC as MCP server**: Does CIC now expose an MCP endpoint? What CLI args does it need (no `--grpc-port`, but maybe `--http-port` or similar)? How are CIC tools discovered via MCP?
+2. **CIC MCP endpoint path**: What path does CIC expose its MCP endpoint on? `/mcp`, `/mcp/sse`, or something else? This determines the forward URL.
 
-3. **Capability health check**: With gRPC removed, should capability health checks use the Quarkus HTTP health endpoint (`/q/health/ready`) or just wait for the HTTP port to be listening?
+3. **Route files for HTTP tool / file provider**: Which barn service template route files correspond to the old HTTP tool service and file resource provider? We need to identify the right route YAML files to use as test fixtures.
+
+4. **CIC health check**: With gRPC removed, how should we health-check a CIC instance? Quarkus health endpoint (`/q/health/ready`) or just HTTP port listening?
