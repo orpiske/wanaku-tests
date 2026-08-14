@@ -1,29 +1,14 @@
 - route:
-    id: simple-greeting
+    id: echo-tool
     from:
-      uri: direct:simple-greeting
+      uri: ai-tool:echo
+      parameters:
+        tags: wanaku
+        description: "Echo back the input message duplicated with a separator"
+        parameter.message: string
+        parameter.message.description: "The message to echo back"
       steps:
         - setBody:
-            constant: "Hello from CIC!"
-        - convertBodyTo:
-            type: java.lang.String
-
-- route:
-    id: weather-lookup
-    from:
-      uri: direct:weather-lookup
-      steps:
-        - setBody:
-            simple: "Weather report for ${header.Wanaku.city}: sunny, 25C"
-        - convertBodyTo:
-            type: java.lang.String
-
-- route:
-    id: explicit-param-tool
-    from:
-      uri: direct:explicit-param-tool
-      steps:
-        - setBody:
-            simple: "Received custom header: ${header.CUSTOM_HEADER}"
-        - convertBodyTo:
-            type: java.lang.String
+            expression:
+              simple:
+                expression: "${header.message} | ${header.message}"

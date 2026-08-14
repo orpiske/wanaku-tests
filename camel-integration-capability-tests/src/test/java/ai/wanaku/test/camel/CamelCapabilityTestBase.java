@@ -1,23 +1,19 @@
 package ai.wanaku.test.camel;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
-import org.awaitility.Awaitility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.quarkiverse.mcp.server.ToolResponse;
-import ai.wanaku.test.WanakuTestConstants;
 import ai.wanaku.test.base.BaseIntegrationTest;
-import ai.wanaku.test.client.DataStoreClient;
+import ai.wanaku.test.client.ForwardsClient;
 import ai.wanaku.test.client.McpTestClient;
+import ai.wanaku.test.client.SessionIdProxy;
 import ai.wanaku.test.fixtures.TestFixtures;
 import ai.wanaku.test.managers.CamelCapabilityManager;
 
@@ -28,21 +24,27 @@ import org.junit.jupiter.api.TestInfo;
 public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
 
     private static final Logger LOG = LoggerFactory.getLogger(CamelCapabilityTestBase.class);
+    private static final int MAX_REGISTER_RETRIES = 2;
 
     private static final Path FIXTURES_TARGET_DIR = Path.of("target", "test-fixtures");
 
     protected final List<CamelCapabilityManager> camelManagers = new ArrayList<>();
-    protected DataStoreClient dataStoreClient;
+    private String currentNamespace = "default";
 
     @BeforeEach
     void setupCamelTestInfrastructure(TestInfo testInfo) throws IOException {
         Files.createDirectories(FIXTURES_TARGET_DIR);
-        // DataStore not available in praxis
     }
 
     @AfterEach
     void teardownCamelInfrastructure() {
+        ForwardsClient forwardsClient = new ForwardsClient(getServerBaseUrl(), null);
         for (CamelCapabilityManager manager : camelManagers) {
+            try {
+                forwardsClient.remove(manager.getName());
+            } catch (Exception e) {
+                LOG.warn("Failed to remove forward {}: {}", manager.getName(), e.getMessage());
+            }
             try {
                 manager.stop();
             } catch (Exception e) {
@@ -50,192 +52,100 @@ public abstract class CamelCapabilityTestBase extends BaseIntegrationTest {
             }
         }
         camelManagers.clear();
-
-        if (dataStoreClient != null) {
-            try {
-                dataStoreClient.clearAll();
-            } catch (Exception e) {
-                LOG.warn("Failed to clear Data Store: {}", e.getMessage());
-            }
-        }
-
-        if (routerClient != null) {
-            try {
-                routerClient.clearAllTools();
-            } catch (Exception e) {
-                LOG.warn("Failed to clear tools: {}", e.getMessage());
-            }
-            try {
-                routerClient.clearAllResources();
-            } catch (Exception e) {
-                LOG.warn("Failed to clear resources: {}", e.getMessage());
-            }
-        }
     }
 
-    protected CamelCapabilityManager startCapability(String serviceName, String fixtureName) throws Exception {
-        Path fixtureDir = TestFixtures.load(fixtureName, FIXTURES_TARGET_DIR);
-        return startCapabilityFromDir(serviceName, fixtureDir);
-    }
-
-    protected CamelCapabilityManager startCapability(String serviceName, String fixtureName, Map<String, String> vars)
+    protected CamelCapabilityManager startCapability(String serviceName, String fixtureName, String namespace)
             throws Exception {
-        Path fixtureDir = TestFixtures.load(fixtureName, FIXTURES_TARGET_DIR, vars);
-        return startCapabilityFromDir(serviceName, fixtureDir);
-    }
+        this.currentNamespace = namespace;
 
-    protected CamelCapabilityManager startCapabilityFromDataStore(
-            String serviceName, String routesRef, String rulesRef, String depsRef) throws IOException {
+        String externalCicUrl = System.getProperty("wanaku.test.external.cic.url");
+        if (externalCicUrl != null) {
+            LOG.info("Using external CIC at {}", externalCicUrl);
+            registerForwardWithRetry(serviceName, externalCicUrl, namespace);
+            reconnectMcpClient(namespace);
+            return null;
+        }
 
-        CamelCapabilityManager manager = new CamelCapabilityManager(config);
-        manager.prepare(serviceName, routesRef, rulesRef, depsRef);
-
-        manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
-        manager.start(serviceName);
-
-        waitForCapabilityReady(serviceName, manager);
-
-        camelManagers.add(manager);
-        return manager;
-    }
-
-    protected CamelCapabilityManager startCapabilityFromDir(String serviceName, Path fixtureDir) throws IOException {
+        Path fixtureDir = TestFixtures.load(fixtureName, FIXTURES_TARGET_DIR);
         Path routesRef = fixtureDir.resolve("routes.camel.yaml");
-        Path rulesRef = fixtureDir.resolve("rules.yaml");
         Path depsRef = fixtureDir.resolve("dependencies.txt");
 
         CamelCapabilityManager manager = new CamelCapabilityManager(config);
         manager.prepare(
                 serviceName,
                 "file://" + routesRef.toAbsolutePath(),
-                rulesRef.toFile().exists() ? "file://" + rulesRef.toAbsolutePath() : null,
                 depsRef.toFile().exists() ? "file://" + depsRef.toAbsolutePath() : null);
 
         manager.setLogContext("camel-capability", getClass().getSimpleName(), serviceName);
         manager.start(serviceName);
 
-        waitForCapabilityReady(serviceName, manager);
+        registerForwardWithRetry(serviceName, manager.getMcpUrl(), namespace);
+        reconnectMcpClient(namespace);
 
         camelManagers.add(manager);
         return manager;
     }
 
-    private void waitForCapabilityReady(String serviceName, CamelCapabilityManager manager) {
-        LOG.debug("Waiting for CIC '{}' to register with Router...", serviceName);
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> {
-                    if (!manager.isRunning()) {
-                        String logPath = manager.getLogFile() != null
-                                ? manager.getLogFile().getAbsolutePath()
-                                : "unknown";
-                        throw new IllegalStateException("CIC '" + serviceName + "' process exited (exit code: "
-                                + manager.getExitCode() + ") before registration completed."
-                                + " Log file: " + logPath);
-                    }
-                    return routerClient.isCapabilityRegistered(serviceName);
-                });
-        LOG.info("CIC '{}' is registered with Router", serviceName);
+    protected void stopAndDeregister(CamelCapabilityManager manager, String serviceName) {
+        if (manager != null) {
+            manager.stop();
+            camelManagers.remove(manager);
+        }
 
-        LOG.debug("Waiting for CIC '{}' tools/resources to appear in Router...", serviceName);
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(WanakuTestConstants.DEFAULT_HEALTH_CHECK_INTERVAL)
-                .until(() -> {
-                    if (!manager.isRunning()) {
-                        String logPath = manager.getLogFile() != null
-                                ? manager.getLogFile().getAbsolutePath()
-                                : "unknown";
-                        throw new IllegalStateException("CIC '" + serviceName + "' process exited (exit code: "
-                                + manager.getExitCode() + ") before tools/resources registered."
-                                + " Log file: " + logPath);
-                    }
-                    boolean hasTools = routerClient.listTools().stream().anyMatch(t -> serviceName.equals(t.getType()));
-                    boolean hasResources =
-                            routerClient.listResources().stream().anyMatch(r -> serviceName.equals(r.getType()));
-                    return hasTools || hasResources;
-                });
-        LOG.info("CIC '{}' tools/resources are available", serviceName);
+        ForwardsClient forwardsClient = new ForwardsClient(getServerBaseUrl(), null);
+        forwardsClient.remove(serviceName);
+        LOG.info("Stopped CIC '{}' and removed forward", serviceName);
 
-        reconnectMcpClient();
+        reconnectMcpClient(currentNamespace);
     }
 
-    private void reconnectMcpClient() {
-        if (mcpClient == null) {
-            return;
+    private void registerForwardWithRetry(String name, String address, String namespace) {
+        ForwardsClient forwardsClient = new ForwardsClient(getServerBaseUrl(), null);
+        for (int attempt = 1; attempt <= MAX_REGISTER_RETRIES; attempt++) {
+            forwardsClient.add(name, address, namespace);
+            if (!routerClient.listTools().isEmpty()) {
+                LOG.info("Forward '{}' registered, tools discovered (attempt {})", name, attempt);
+                return;
+            }
+            LOG.debug("No tools discovered on attempt {}, retrying...", attempt);
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        LOG.info("Forward '{}' registered after retries", name);
+    }
+
+    private void reconnectMcpClient(String namespace) {
+        if (mcpClient != null) {
+            try {
+                mcpClient.disconnect();
+            } catch (Exception e) {
+                LOG.debug("MCP disconnect: {}", e.getMessage());
+            }
+            mcpClient = null;
         }
         try {
-            mcpClient.disconnect();
+            String mcpBaseUrl = getServerMcpBaseUrl() + "/" + namespace;
+            SessionIdProxy proxy = new SessionIdProxy(mcpBaseUrl);
+            proxy.start();
+            mcpClient = new McpTestClient(proxy.getBaseUrl(), null);
+            mcpClient.connect();
         } catch (Exception e) {
-            LOG.debug("MCP disconnect during reconnect: {}", e.getMessage());
+            LOG.warn("Failed to reconnect MCP client: {}", e.getMessage());
         }
-        mcpClient = null;
-        mcpClient = new McpTestClient(getServerMcpBaseUrl(), null);
-        mcpClient.connect();
-        LOG.debug("MCP client reconnected");
     }
 
     protected void assertToolCallWithRetry(
             String toolName, Map<String, Object> args, Consumer<ToolResponse> assertions) {
-        AtomicBoolean loggedOnce = new AtomicBoolean();
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(Duration.ofSeconds(3))
-                .untilAsserted(() -> {
-                    try {
-                        mcpClient.when().toolsCall(toolName, args, assertions).thenAssertResults();
-                    } catch (AssertionError | Exception e) {
-                        if (!loggedOnce.getAndSet(true)) {
-                            LOG.warn("Tool call '{}' failed, listing available MCP tools for diagnostics...", toolName);
-                            try {
-                                mcpClient
-                                        .when()
-                                        .toolsList()
-                                        .withAssert(page -> LOG.info(
-                                                "Available MCP tools: {}",
-                                                page.tools().stream()
-                                                        .map(t -> t.name())
-                                                        .toList()))
-                                        .send()
-                                        .thenAssertResults();
-                            } catch (Exception listErr) {
-                                LOG.warn("Failed to list MCP tools: {}", listErr.getMessage());
-                            }
-                        }
-                        throw e;
-                    }
-                });
-    }
-
-    protected void assertResourceReadWithRetry(Runnable assertion) {
-        Awaitility.await()
-                .atMost(Duration.ofSeconds(90))
-                .pollInterval(Duration.ofSeconds(3))
-                .untilAsserted(assertion::run);
+        mcpClient.when().toolsCall(toolName, args, assertions).thenAssertResults();
     }
 
     protected boolean isCamelCapabilityAvailable() {
         return config != null
                 && config.getCamelCapabilityJarPath() != null
                 && config.getCamelCapabilityJarPath().toFile().exists();
-    }
-
-    protected boolean isDataStoreAvailable() {
-        return dataStoreClient != null && dataStoreClient.isAvailable();
-    }
-
-    protected String readFixtureFromClasspath(String relativePath) throws Exception {
-        try (InputStream is = getClass().getResourceAsStream("/fixtures/" + relativePath)) {
-            if (is == null) {
-                throw new IllegalArgumentException("Fixture not found on classpath: fixtures/" + relativePath);
-            }
-            return new String(is.readAllBytes());
-        }
-    }
-
-    @Override
-    protected String getLogProfile() {
-        return "camel-capability";
     }
 }
