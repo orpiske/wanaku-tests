@@ -37,6 +37,17 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
 
         LOG.debug("Praxis binary: {}", config.getPraxisBinaryPath());
 
+        String externalMgmtPort = System.getProperty("wanaku.test.external.mgmt.port");
+        String externalMcpPort = System.getProperty("wanaku.test.external.mcp.port");
+
+        if (externalMgmtPort != null && externalMcpPort != null) {
+            praxisManager = PraxisManager.external(
+                    config, Integer.parseInt(externalMgmtPort), Integer.parseInt(externalMcpPort));
+            LOG.info("Using external praxis on management port {} and MCP port {}", externalMgmtPort, externalMcpPort);
+            LOG.info("=== Shared infrastructure ready (external) ===");
+            return;
+        }
+
         if (config.getPraxisBinaryPath() == null
                 || !config.getPraxisBinaryPath().toFile().exists()) {
             LOG.info("Praxis binary not available, skipping infrastructure setup");

@@ -47,13 +47,20 @@ public class TestConfiguration {
         if (explicitPath == null) {
             return null;
         }
-        return Path.of(explicitPath).toAbsolutePath().normalize();
+        return Path.of(expandTilde(explicitPath)).toAbsolutePath().normalize();
+    }
+
+    private static String expandTilde(String path) {
+        if (path.startsWith("~" + java.io.File.separator) || path.equals("~")) {
+            return System.getProperty("user.home") + path.substring(1);
+        }
+        return path;
     }
 
     private static Path findCicJar(Path artifactsDir) {
         String explicitPath = System.getProperty(WanakuTestConstants.PROP_CAMEL_CAPABILITY_JAR);
         if (explicitPath != null) {
-            return Path.of(explicitPath).toAbsolutePath().normalize();
+            return Path.of(expandTilde(explicitPath)).toAbsolutePath().normalize();
         }
 
         if (Files.exists(artifactsDir)) {

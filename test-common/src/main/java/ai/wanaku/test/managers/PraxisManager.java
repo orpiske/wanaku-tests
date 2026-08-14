@@ -25,8 +25,18 @@ public class PraxisManager extends ProcessManager {
     private Path wanakuConfigFile;
     private Path persistDir;
 
+    private boolean external;
+
     public PraxisManager(TestConfiguration config) {
         this.config = config;
+    }
+
+    public static PraxisManager external(TestConfiguration config, int mgmtPort, int mcpPort) {
+        PraxisManager manager = new PraxisManager(config);
+        manager.mgmtPort = mgmtPort;
+        manager.mcpPort = mcpPort;
+        manager.external = true;
+        return manager;
     }
 
     public void prepare() {
@@ -97,7 +107,18 @@ public class PraxisManager extends ProcessManager {
     }
 
     @Override
+    public boolean isRunning() {
+        if (external) {
+            return true;
+        }
+        return super.isRunning();
+    }
+
+    @Override
     public void stop() {
+        if (external) {
+            return;
+        }
         super.stop();
         cleanupTempFiles();
     }

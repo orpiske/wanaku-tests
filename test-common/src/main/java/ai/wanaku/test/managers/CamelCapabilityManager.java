@@ -1,7 +1,5 @@
 package ai.wanaku.test.managers;
 
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,12 +9,6 @@ import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.utils.HealthCheckUtils;
 import ai.wanaku.test.utils.PortUtils;
 
-/**
- * Manages the Camel Integration Capability (CIC) process lifecycle.
- * CIC is the single capability provider — different capabilities are CIC instances
- * launched with different Camel route files. CIC exposes an MCP endpoint on its
- * HTTP port, which praxis registers as a forward.
- */
 public class CamelCapabilityManager extends ProcessManager {
 
     private static final Logger LOG = LoggerFactory.getLogger(CamelCapabilityManager.class);
@@ -26,31 +18,24 @@ public class CamelCapabilityManager extends ProcessManager {
 
     private String name;
     private String routesRef;
-    private String rulesRef;
     private String dependenciesRef;
+    private String registrationUrl;
 
     public CamelCapabilityManager(TestConfiguration config) {
         this.config = config;
     }
 
-    /**
-     * Prepares CIC with route and config references.
-     *
-     * @param serviceName the service name (used as --name)
-     * @param routesRef routes reference (e.g., "file:///path/to/routes.yaml")
-     * @param rulesRef rules reference (can be null)
-     * @param dependenciesRef dependencies reference (can be null)
-     */
-    public void prepare(String serviceName, String routesRef, String rulesRef, String dependenciesRef) {
+    public void prepare(String serviceName, String routesRef, String dependenciesRef) {
         this.httpPort = PortUtils.findAvailablePort();
         this.name = serviceName;
         this.routesRef = routesRef;
-        this.rulesRef = rulesRef;
         this.dependenciesRef = dependenciesRef;
 
-        addSystemProperty("quarkus.http.port", String.valueOf(httpPort));
+        LOG.debug("Camel Capability '{}' prepared with MCP port {}", name, httpPort);
+    }
 
-        LOG.debug("Camel Capability '{}' prepared with HTTP port {}", name, httpPort);
+    public void setRegistrationUrl(String registrationUrl) {
+        this.registrationUrl = registrationUrl;
     }
 
     @Override
@@ -70,9 +55,7 @@ public class CamelCapabilityManager extends ProcessManager {
     }
 
     @Override
-    protected void configureDataIsolation() {
-        // CIC does not use Infinispan or service-home directories
-    }
+    protected void configureDataIsolation() {}
 
     @Override
     protected String getProcessName() {
@@ -94,16 +77,17 @@ public class CamelCapabilityManager extends ProcessManager {
         args.add("--routes-ref");
         args.add(routesRef);
 
-        if (rulesRef != null) {
-            args.add("--rules-ref");
-            args.add(rulesRef);
+        args.add("--mcp-port");
+        args.add(String.valueOf(httpPort));
+
+        if (dependenciesRef != null) {
+            args.add("--dependencies");
+            args.add(dependenciesRef);
         }
 
-        args.add("--dependencies");
-        if (dependenciesRef != null) {
-            args.add(dependenciesRef);
-        } else {
-            args.add("file://" + getOrCreateEmptyDepsFile().toAbsolutePath());
+        if (registrationUrl != null) {
+            args.add("--registration-url");
+            args.add(registrationUrl);
         }
 
         return args;
@@ -124,18 +108,5 @@ public class CamelCapabilityManager extends ProcessManager {
 
     public String getMcpUrl() {
         return "http://localhost:" + httpPort + "/mcp";
-    }
-
-    private static Path getOrCreateEmptyDepsFile() {
-        Path emptyDeps = Path.of("target", "empty-dependencies.txt");
-        if (!emptyDeps.toFile().exists()) {
-            try {
-                Files.createDirectories(emptyDeps.getParent());
-                Files.createFile(emptyDeps);
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to create empty dependencies file", e);
-            }
-        }
-        return emptyDeps;
     }
 }

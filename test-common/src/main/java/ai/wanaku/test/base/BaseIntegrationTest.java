@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.client.RouterClient;
+import ai.wanaku.test.client.SessionIdProxy;
 import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.managers.PraxisManager;
 
@@ -27,6 +28,7 @@ public abstract class BaseIntegrationTest {
     protected McpTestClient mcpClient;
     protected RouterClient routerClient;
     protected String testName;
+    private SessionIdProxy mcpProxy;
 
     @BeforeAll
     static void setupSuiteInfrastructure(TestInfo testInfo) {
@@ -45,12 +47,18 @@ public abstract class BaseIntegrationTest {
             routerClient = new RouterClient(getServerBaseUrl(), null);
 
             try {
-                mcpClient = new McpTestClient(getServerMcpBaseUrl(), null);
+                mcpProxy = new SessionIdProxy(getServerMcpBaseUrl());
+                mcpProxy.start();
+                mcpClient = new McpTestClient(mcpProxy.getBaseUrl(), null);
                 mcpClient.connect();
-                LOG.debug("MCP client connected to {}", getServerMcpBaseUrl());
+                LOG.debug("MCP client connected via proxy to {}", getServerMcpBaseUrl());
             } catch (Exception e) {
                 LOG.warn("Failed to connect MCP client: {}", e.getMessage());
                 mcpClient = null;
+                if (mcpProxy != null) {
+                    mcpProxy.close();
+                    mcpProxy = null;
+                }
             }
         }
 
@@ -68,6 +76,10 @@ public abstract class BaseIntegrationTest {
                 LOG.warn("Failed to disconnect MCP client: {}", e.getMessage());
             }
             mcpClient = null;
+        }
+        if (mcpProxy != null) {
+            mcpProxy.close();
+            mcpProxy = null;
         }
 
         if (routerClient != null) {

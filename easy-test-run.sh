@@ -1,0 +1,1 @@
+mvn verify -Dwanaku.test.praxis.binary=~/code/java/wanaku/target/release/wanaku-praxis -Dwanaku.test.camel-capability.jar=~/code/java/camel-integration-capability/camel-integration-capability-runtimes/camel-integration-capability-main/target/camel-integration-capability-main-0.3.0-SNAPSHOT-jar-with-dependencies.jar --fail-at-end
