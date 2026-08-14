@@ -3,6 +3,9 @@ package org.acme;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import io.quarkiverse.mcp.server.Prompt;
+import io.quarkiverse.mcp.server.PromptArg;
+import io.quarkiverse.mcp.server.PromptMessage;
 import io.quarkiverse.mcp.server.Resource;
 import io.quarkiverse.mcp.server.ResourceTemplate;
 import io.quarkiverse.mcp.server.TextResourceContents;
@@ -31,6 +34,26 @@ public class InfraRemediationServer {
                         + "WARN: disk usage at 92% on /var/log\n"
                         + "ERROR: OOM killer invoked for pid 4521\n"
                         + "INFO: systemd restarting failed units");
+    }
+
+    // ── Prompts ──
+
+    @Prompt(description = "Summarize a server incident for the ops team")
+    PromptMessage summarizeIncident(
+            @PromptArg(description = "The server experiencing the issue") String serverId,
+            @PromptArg(description = "Brief description of the incident") String incident) {
+        return PromptMessage.withUserRole(
+                "Summarize the following incident on server " + serverId + " for the ops team: " + incident
+                        + ". Include severity assessment, affected services, and recommended next steps.");
+    }
+
+    @Prompt(description = "Draft an escalation message for on-call engineers")
+    PromptMessage draftEscalation(
+            @PromptArg(description = "Urgency level: low, medium, or high") String urgency,
+            @PromptArg(description = "Description of what needs escalation") String reason) {
+        return PromptMessage.withUserRole(
+                "Draft an escalation message with urgency=" + urgency + " for the on-call team: " + reason
+                        + ". Follow the incident response playbook format.");
     }
 
     // ── Tools ──
