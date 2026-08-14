@@ -144,7 +144,6 @@ gh workflow run full-integration-test.yml \
   -f wanaku_branch=0.2.x \
   -f sdk_branch=0.2.x \
   -f cic_branch=0.2.x \
-  -f examples_branch=0.2.x \
   -R <your github ID>/wanaku-tests
 ```
 
@@ -169,13 +168,11 @@ gh workflow run full-integration-test.yml \
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `wanaku_repo` | `wanaku-ai/wanaku` | Wanaku repository |
+| `wanaku_repo` | `wanaku-ai/wanaku` | Wanaku repository (includes praxis Rust code) |
 | `wanaku_branch` | `main` | Wanaku branch |
 | `sdk_repo` | `wanaku-ai/wanaku-capabilities-java-sdk` | SDK repository |
 | `sdk_branch` | `main` | SDK branch |
 | `cic_repo` | `wanaku-ai/camel-integration-capability` | CIC repository |
 | `cic_branch` | `main` | CIC branch |
-| `examples_repo` | `wanaku-ai/wanaku-examples` | Examples repository |
-| `examples_branch` | `main` | Examples branch |
 
 <!-- MANUAL ADDITIONS END -->

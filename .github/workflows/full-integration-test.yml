@@ -27,26 +27,6 @@ on:
         description: 'Camel Integration Capability branch'
         required: false
         default: 'main'
-      examples_repo:
-        description: 'Wanaku Examples repository (owner/repo)'
-        required: false
-        default: 'wanaku-ai/wanaku-examples'
-      examples_branch:
-        description: 'Wanaku Examples branch'
-        required: false
-        default: 'main'
-      praxis_repo:
-        description: 'Wanaku Praxis repository (owner/repo)'
-        required: false
-        default: 'wanaku-ai/wanaku-praxis'
-      praxis_branch:
-        description: 'Wanaku Praxis branch'
-        required: false
-        default: 'main'
-      use_praxis:
-        description: 'Use praxis instead of Java router (true/false)'
-        required: false
-        default: 'false'
       pr_number:
         description: 'PR number to comment results on (empty = skip commenting)'
         required: false
@@ -70,11 +50,6 @@ jobs:
       SDK_BRANCH: ${{ inputs.sdk_branch }}
       CIC_REPO: ${{ inputs.cic_repo }}
       CIC_BRANCH: ${{ inputs.cic_branch }}
-      EXAMPLES_REPO: ${{ inputs.examples_repo }}
-      EXAMPLES_BRANCH: ${{ inputs.examples_branch }}
-      PRAXIS_REPO: ${{ inputs.praxis_repo }}
-      PRAXIS_BRANCH: ${{ inputs.praxis_branch }}
-      USE_PRAXIS: ${{ inputs.use_praxis }}
       PR_NUMBER: ${{ inputs.pr_number }}
       SOURCE_REPO: ${{ inputs.source_repo }}
     steps:
@@ -86,6 +61,9 @@ jobs:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
+
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Clone sources
         run: |
@@ -106,18 +84,6 @@ jobs:
             "https://github.com/${CIC_REPO}.git" source/camel-integration-capability
           echo "::endgroup::"
 
-          echo "::group::Cloning Examples (${EXAMPLES_REPO}@${EXAMPLES_BRANCH})"
-          git clone --depth 1 --branch "${EXAMPLES_BRANCH}" \
-            "https://github.com/${EXAMPLES_REPO}.git" source/wanaku-examples
-          echo "::endgroup::"
-
-          if [ "$USE_PRAXIS" = "true" ]; then
-            echo "::group::Cloning Praxis (${PRAXIS_REPO}@${PRAXIS_BRANCH})"
-            git clone --depth 1 --branch "${PRAXIS_BRANCH}" \
-              "https://github.com/${PRAXIS_REPO}.git" source/wanaku-praxis
-            echo "::endgroup::"
-          fi
-
       - name: Build sources summary
         run: |
           {
@@ -128,10 +94,6 @@ jobs:
             echo "| SDK | \`${SDK_REPO}\` | \`${SDK_BRANCH}\` |"
             echo "| Wanaku | \`${WANAKU_REPO}\` | \`${WANAKU_BRANCH}\` |"
             echo "| CIC | \`${CIC_REPO}\` | \`${CIC_BRANCH}\` |"
-            echo "| Examples | \`${EXAMPLES_REPO}\` | \`${EXAMPLES_BRANCH}\` |"
-            if [ "$USE_PRAXIS" = "true" ]; then
-              echo "| Praxis | \`${PRAXIS_REPO}\` | \`${PRAXIS_BRANCH}\` |"
-            fi
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build SDK
@@ -142,13 +104,19 @@ jobs:
             mvn -B -DskipTests install -f source/wanaku-sdk/pom.xml
           fi
 
-      - name: Build Wanaku
+      - name: Build Wanaku (Java components)
         run: |
           if [ -x source/wanaku/mvnw ]; then
             source/wanaku/mvnw -B -DskipTests install -f source/wanaku/pom.xml
           else
             mvn -B -DskipTests install -f source/wanaku/pom.xml
           fi
+
+      - name: Build Wanaku Praxis (Rust)
+        run: |
+          cd source/wanaku
+          cargo build --release --bin wanaku-praxis
+          echo "Praxis binary ready"
 
       - name: Build Camel Integration Capability
         run: |
@@ -158,40 +126,10 @@ jobs:
             mvn -B -DskipTests package -f source/camel-integration-capability/pom.xml
           fi
 
-      - name: Build Wanaku Examples
-        run: |
-          if [ -x source/wanaku-examples/mvnw ]; then
-            source/wanaku-examples/mvnw -B -DskipTests package -f source/wanaku-examples/pom.xml
-          else
-            mvn -B -DskipTests package -f source/wanaku-examples/pom.xml
-          fi
-
-      - name: Set up Rust toolchain
-        if: inputs.use_praxis == 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build Praxis
-        if: inputs.use_praxis == 'true'
-        run: |
-          cd source/wanaku-praxis
-          cargo build --release
-          cp target/release/wanaku-praxis ../../artifacts/wanaku-praxis
-          chmod +x ../../artifacts/wanaku-praxis
-          echo "Praxis binary ready"
-
       - name: Collect artifacts
         run: |
           chmod +x ./.github/scripts/collect-from-source-artifacts.sh
           ./.github/scripts/collect-from-source-artifacts.sh
-
-      - name: Validate artifacts
-        run: |
-          ROUTER_JAR=$(find artifacts/wanaku-router-backend -name "quarkus-run.jar" 2>/dev/null | head -1)
-          if [ -z "$ROUTER_JAR" ]; then
-            echo "::error::Router artifact not found — from-source build did not produce the expected output"
-            exit 1
-          fi
-          echo "Router artifact OK: ${ROUTER_JAR}"
 
       - name: Resolve CLI path
         id: cli
@@ -211,12 +149,15 @@ jobs:
         env:
           CLI_PATH: ${{ steps.cli.outputs.path }}
         run: |
-          EXTRA_OPTS=""
-          if [ -n "$CLI_PATH" ]; then
-            EXTRA_OPTS="-Dwanaku.test.cli.path=$CLI_PATH"
+          PRAXIS_BIN="$(pwd)/source/wanaku/target/release/wanaku-praxis"
+          CIC_JAR=$(find source/camel-integration-capability -name "*-jar-with-dependencies.jar" -path "*/target/*" | head -1)
+
+          EXTRA_OPTS="-Dwanaku.test.praxis.binary=${PRAXIS_BIN}"
+          if [ -n "$CIC_JAR" ]; then
+            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.camel-capability.jar=$(pwd)/${CIC_JAR}"
           fi
-          if [ "$USE_PRAXIS" = "true" ] && [ -f "artifacts/wanaku-praxis" ]; then
-            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.praxis.binary=$(pwd)/artifacts/wanaku-praxis"
+          if [ -n "$CLI_PATH" ]; then
+            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.cli.path=$CLI_PATH"
           fi
           mvn -B verify --fail-at-end --file pom.xml $EXTRA_OPTS
 
