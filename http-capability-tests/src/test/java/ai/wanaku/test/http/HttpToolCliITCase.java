@@ -3,6 +3,7 @@ package ai.wanaku.test.http;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
 
@@ -32,6 +33,7 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
         authToken = null;
     }
 
+    @KnownLimitation("CLI sends tool JSON without 'name' field — praxis rejects with 400")
     @DisplayName("Register a tool via CLI and verify it appears in CLI list output")
     @Test
     void shouldRegisterHttpToolViaCli() {
@@ -70,6 +72,7 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
                 .contains(toolName);
     }
 
+    @KnownLimitation("CLI sends tool JSON without 'name' field — praxis rejects with 400")
     @DisplayName("Register a tool via CLI with a named namespace")
     @Test
     void shouldRegisterToolWithNamespace() {

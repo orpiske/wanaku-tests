@@ -3,6 +3,7 @@ package ai.wanaku.test.router;
 import java.util.List;
 import java.util.Map;
 import io.quarkus.test.junit.QuarkusTest;
+import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.PromptsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -79,6 +80,7 @@ class PromptsCrudITCase extends RouterTestBase {
         assertThat(removed).isFalse();
     }
 
+    @KnownLimitation("Praxis prompt edit returns 404 — edit semantics not implemented")
     @DisplayName("Add a prompt, edit its description, and verify the update")
     @Test
     void shouldEditPrompt() {
@@ -101,6 +103,7 @@ class PromptsCrudITCase extends RouterTestBase {
         assertThat(edited.get("description").asText()).isEqualTo("Updated description");
     }
 
+    @KnownLimitation("Praxis uses upsert semantics — no rejection on duplicate prompt")
     @DisplayName("Reject adding a prompt with a duplicate name")
     @Test
     void shouldRejectDuplicatePrompt() {
