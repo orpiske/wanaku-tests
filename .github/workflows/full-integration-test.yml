@@ -104,14 +104,6 @@ jobs:
             mvn -B -DskipTests install -f source/wanaku-sdk/pom.xml
           fi
 
-      - name: Build Wanaku (Java components)
-        run: |
-          if [ -x source/wanaku/mvnw ]; then
-            source/wanaku/mvnw -B -DskipTests install -f source/wanaku/pom.xml
-          else
-            mvn -B -DskipTests install -f source/wanaku/pom.xml
-          fi
-
       - name: Build Wanaku Praxis (Rust)
         run: |
           cd source/wanaku
