@@ -150,11 +150,15 @@ jobs:
       - name: Resolve CLI path
         id: cli
         run: |
-          CLI_PATH=$(find source/wanaku-barn -name "quarkus-run.jar" -path "*wanaku-cli*/quarkus-app/*" 2>/dev/null | head -1)
+          CLI_PATH=$(find artifacts -name "wanaku" -path "*/bin/*" -type f 2>/dev/null | head -1)
+          if [ -z "$CLI_PATH" ]; then
+            CLI_PATH=$(find artifacts -name "quarkus-run.jar" -path "*wanaku-cli*" 2>/dev/null | head -1)
+          fi
           if [ -n "$CLI_PATH" ]; then
+            chmod +x "$CLI_PATH" 2>/dev/null || true
             echo "path=$(pwd)/${CLI_PATH}" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::CLI not found in wanaku-barn build output"
+            echo "::warning::CLI not found in built artifacts"
           fi
 
       - name: Run integration tests
