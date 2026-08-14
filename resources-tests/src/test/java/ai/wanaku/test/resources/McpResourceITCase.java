@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assumptions.assumeThat;
 
 /**
  * Tests for resource operations via MCP protocol using the mock MCP server.
@@ -23,7 +24,7 @@ class McpResourceITCase extends ResourceTestBase {
     @BeforeEach
     void checkInfrastructureAvailable() {
         assertThat(isServerRunning()).as("Router must be available").isTrue();
-        assertThat(isMockServerAvailable())
+        assumeThat(isMockServerAvailable())
                 .as("Mock MCP server must be available")
                 .isTrue();
         assertThat(isMcpClientAvailable()).as("MCP client must be available").isTrue();

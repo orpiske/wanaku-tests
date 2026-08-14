@@ -69,6 +69,9 @@ jobs:
             echo "path=$(pwd)/${CLI_PATH}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Build test fixtures
+        run: mvn -B -DskipTests package -f fixtures/test-mcp-server/pom.xml
+
       - name: Run integration tests
         run: |
           CLI_OPTS=""

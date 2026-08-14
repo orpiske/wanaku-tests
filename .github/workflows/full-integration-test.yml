@@ -161,6 +161,9 @@ jobs:
             echo "::warning::CLI not found in built artifacts"
           fi
 
+      - name: Build test fixtures
+        run: mvn -B -DskipTests package -f fixtures/test-mcp-server/pom.xml
+
       - name: Run integration tests
         env:
           CLI_PATH: ${{ steps.cli.outputs.path }}
