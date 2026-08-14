@@ -44,14 +44,27 @@ wanaku-tests/
 ## Key System Properties
 
 - `wanaku.test.artifacts.dir` - path to artifacts directory (default: "artifacts")
-- `wanaku.test.router.jar` - router JAR path (Router mode)
-- `wanaku.test.praxis.binary` - praxis binary path (Praxis mode, takes precedence over router JAR)
-- `wanaku.test.http-service.jar` - HTTP tool service JAR path
-- `wanaku.test.file-provider.jar` - file provider JAR path
+- `wanaku.test.praxis.binary` - praxis binary path
 - `wanaku.test.camel-capability.jar` - CIC JAR path
 - `wanaku.test.cli.path` - CLI path (JAR or binary)
 - `wanaku.test.timeout` - global timeout in seconds (default: 60)
 - `wanaku.test.skip.threshold` - max allowed skip percentage before build fails (default: 30)
+- `wanaku.test.external.mgmt.port` - connect to an already-running praxis management API on this port (skip launching praxis)
+- `wanaku.test.external.mcp.port` - connect to an already-running praxis MCP endpoint on this port (requires mgmt.port too)
+- `wanaku.test.external.cic.url` - connect to an already-running CIC MCP endpoint at this URL (skip launching CIC)
+
+### Debugging with external instances
+
+To run tests against already-running praxis and CIC instances (useful for debugging):
+
+```bash
+mvn verify -pl camel-integration-capability-tests \
+  -Dwanaku.test.external.mgmt.port=8080 \
+  -Dwanaku.test.external.mcp.port=8081 \
+  -Dwanaku.test.external.cic.url=http://localhost:9000/mcp
+```
+
+You can also use only the praxis properties (the framework will still launch CIC) or only the CIC property (the framework will still launch praxis).
 
 ## Test Lifecycle
 
