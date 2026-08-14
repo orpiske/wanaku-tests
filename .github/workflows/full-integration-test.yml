@@ -179,7 +179,7 @@ jobs:
 
       - name: Test summary
         if: always()
-        run: ./.github/scripts/test-summary.sh
+        run: ./.github/scripts/test-summary.sh test-summary-output.md
 
       - name: Resolve source repo name
         if: always() && env.PR_NUMBER != ''
@@ -217,7 +217,11 @@ jobs:
             echo "> **Run:** [${RUN_URL}](${RUN_URL})"
             echo "> **Wanaku:** \`${WANAKU_REPO}\` @ \`${WANAKU_BRANCH}\`"
             echo ""
-            cat "$GITHUB_STEP_SUMMARY"
+            if [ -f test-summary-output.md ]; then
+              cat test-summary-output.md
+            else
+              echo "_Test summary not available._"
+            fi
           } > pr-comment.md
 
           EXISTING=$(gh api --paginate "repos/${SOURCE_REPO}/issues/${PR_NUMBER}/comments" \
