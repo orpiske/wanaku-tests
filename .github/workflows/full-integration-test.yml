@@ -27,6 +27,14 @@ on:
         description: 'Camel Integration Capability branch'
         required: false
         default: 'main'
+      barn_repo:
+        description: 'Wanaku Barn repository (owner/repo)'
+        required: false
+        default: 'wanaku-ai/wanaku-barn'
+      barn_branch:
+        description: 'Wanaku Barn branch'
+        required: false
+        default: 'main'
       pr_number:
         description: 'PR number to comment results on (empty = skip commenting)'
         required: false
@@ -50,6 +58,8 @@ jobs:
       SDK_BRANCH: ${{ inputs.sdk_branch }}
       CIC_REPO: ${{ inputs.cic_repo }}
       CIC_BRANCH: ${{ inputs.cic_branch }}
+      BARN_REPO: ${{ inputs.barn_repo }}
+      BARN_BRANCH: ${{ inputs.barn_branch }}
       PR_NUMBER: ${{ inputs.pr_number }}
       SOURCE_REPO: ${{ inputs.source_repo }}
     steps:
@@ -84,6 +94,11 @@ jobs:
             "https://github.com/${CIC_REPO}.git" source/camel-integration-capability
           echo "::endgroup::"
 
+          echo "::group::Cloning Barn (${BARN_REPO}@${BARN_BRANCH})"
+          git clone --depth 1 --branch "${BARN_BRANCH}" \
+            "https://github.com/${BARN_REPO}.git" source/wanaku-barn
+          echo "::endgroup::"
+
       - name: Build sources summary
         run: |
           {
@@ -93,6 +108,7 @@ jobs:
             echo "|-----------|-----------|--------|"
             echo "| SDK | \`${SDK_REPO}\` | \`${SDK_BRANCH}\` |"
             echo "| Wanaku | \`${WANAKU_REPO}\` | \`${WANAKU_BRANCH}\` |"
+            echo "| Barn | \`${BARN_REPO}\` | \`${BARN_BRANCH}\` |"
             echo "| CIC | \`${CIC_REPO}\` | \`${CIC_BRANCH}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -102,6 +118,14 @@ jobs:
             source/wanaku-sdk/mvnw -B -DskipTests install -f source/wanaku-sdk/pom.xml
           else
             mvn -B -DskipTests install -f source/wanaku-sdk/pom.xml
+          fi
+
+      - name: Build Wanaku Barn
+        run: |
+          if [ -x source/wanaku-barn/mvnw ]; then
+            source/wanaku-barn/mvnw -B -DskipTests install -f source/wanaku-barn/pom.xml
+          else
+            mvn -B -DskipTests install -f source/wanaku-barn/pom.xml
           fi
 
       - name: Build Wanaku Praxis (Rust)
@@ -126,15 +150,11 @@ jobs:
       - name: Resolve CLI path
         id: cli
         run: |
-          CLI_PATH=$(find artifacts -name "wanaku" -path "*/bin/*" -type f 2>/dev/null | head -1)
-          if [ -z "$CLI_PATH" ]; then
-            CLI_PATH=$(find artifacts -name "quarkus-run.jar" -path "*wanaku-cli*" 2>/dev/null | head -1)
-          fi
+          CLI_PATH=$(find source/wanaku-barn -name "quarkus-run.jar" -path "*wanaku-cli*/quarkus-app/*" 2>/dev/null | head -1)
           if [ -n "$CLI_PATH" ]; then
-            chmod +x "$CLI_PATH" 2>/dev/null || true
             echo "path=$(pwd)/${CLI_PATH}" >> "$GITHUB_OUTPUT"
           else
-            echo "::warning::CLI not found in built artifacts"
+            echo "::warning::CLI not found in wanaku-barn build output"
           fi
 
       - name: Run integration tests

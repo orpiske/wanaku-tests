@@ -144,6 +144,7 @@ gh workflow run full-integration-test.yml \
   -f wanaku_branch=0.2.x \
   -f sdk_branch=0.2.x \
   -f cic_branch=0.2.x \
+  -f barn_branch=0.2.x \
   -R <your github ID>/wanaku-tests
 ```
 
@@ -174,5 +175,7 @@ gh workflow run full-integration-test.yml \
 | `sdk_branch` | `main` | SDK branch |
 | `cic_repo` | `wanaku-ai/camel-integration-capability` | CIC repository |
 | `cic_branch` | `main` | CIC branch |
+| `barn_repo` | `wanaku-ai/wanaku-barn` | Wanaku Barn repository (Java components, CLI) |
+| `barn_branch` | `main` | Wanaku Barn branch |
 
 <!-- MANUAL ADDITIONS END -->
