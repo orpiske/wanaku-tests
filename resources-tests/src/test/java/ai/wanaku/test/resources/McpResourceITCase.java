@@ -1,10 +1,8 @@
 package ai.wanaku.test.resources;
 
-import java.nio.file.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.quarkus.test.junit.QuarkusTest;
-import ai.wanaku.test.model.ResourceConfig;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -12,8 +10,10 @@ import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Tests for resource operations via MCP protocol.
- * MCP client availability is asserted (not assumed) — tests fail if MCP is unavailable.
+ * Tests for resource operations via MCP protocol using the mock MCP server.
+ * The mock server exposes:
+ * - config://policies/safety-limits (static JSON resource)
+ * - logs://{server_id}/syslog (resource template)
  */
 @QuarkusTest
 class McpResourceITCase extends ResourceTestBase {
@@ -23,97 +23,56 @@ class McpResourceITCase extends ResourceTestBase {
     @BeforeEach
     void checkInfrastructureAvailable() {
         assertThat(isServerRunning()).as("Router must be available").isTrue();
-        assertThat(isServerRunning()).as("File provider must be available").isTrue();
+        assertThat(isMockServerAvailable())
+                .as("Mock MCP server must be available")
+                .isTrue();
         assertThat(isMcpClientAvailable()).as("MCP client must be available").isTrue();
     }
 
-    @DisplayName("Expose a resource and verify it appears via MCP resourcesList")
+    @DisplayName("List resources via MCP and verify safety-limits resource appears")
     @Test
-    void shouldListResourcesViaMcp() throws Exception {
-        // Given
-        Path testFile = createTestFile("test-mcp-list.txt", "MCP list test");
-        ResourceConfig config = ResourceConfig.builder()
-                .name("mcp-list-resource")
-                .location(testFile.toUri().toString())
-                .mimeType("text/plain")
-                .build();
-
-        routerClient.exposeResource(config);
-
-        // When / Then
+    void shouldListResourcesViaMcp() {
         mcpClient
                 .when()
                 .resourcesList()
                 .withAssert(page -> {
-                    LOG.debug("=== MCP resourcesList response [mcp-list-resource]: {}", page.resources());
+                    LOG.info("MCP resources: {}", page.resources());
                     assertThat(page.resources()).isNotEmpty();
-                    assertThat(page.resources()).anyMatch(r -> r.name().equals("mcp-list-resource"));
+                    assertThat(page.resources()).anyMatch(r -> r.uri().contains("config://policies/safety-limits"));
                 })
                 .send()
                 .thenAssertResults();
     }
 
-    @DisplayName("Read a text file resource via MCP and verify content matches")
+    @DisplayName("Read safety-limits resource via MCP and verify JSON content")
     @Test
-    void shouldReadTextFileViaMcp() throws Exception {
-        // Given
-        Path testFile = createTestFile("read-test.txt", "Hello Wanaku Resources");
-        // Use absolute path, not file:// URI — FileResourceDelegate uses new File(location)
-        // which doesn't strip the file:// prefix, causing a broken Camel endpoint URI
-        String filePath = testFile.toAbsolutePath().toString();
-
-        ResourceConfig config = ResourceConfig.builder()
-                .name("readable-text-resource")
-                .location(filePath)
-                .mimeType("text/plain")
-                .build();
-
-        routerClient.exposeResource(config);
-
-        // When / Then
+    void shouldReadStaticResourceViaMcp() {
         mcpClient
                 .when()
-                .resourcesRead(filePath)
+                .resourcesRead("config://policies/safety-limits")
                 .withAssert(response -> {
-                    LOG.debug("=== MCP resourcesRead response [readable-text-resource]: {}", response.contents());
+                    LOG.info("Resource read response: {}", response.contents());
                     assertThat(response.contents()).isNotEmpty();
                     String text = response.contents().get(0).asText().text();
-                    assertThat(text).contains("Hello Wanaku Resources");
+                    assertThat(text).contains("max_db_replicas");
+                    assertThat(text).contains("blocked_services");
                 })
                 .send()
                 .thenAssertResults();
     }
 
-    @DisplayName("Read a resource pointing to a non-existent file and verify error is returned")
+    @DisplayName("Read syslog resource template via MCP and verify server-specific content")
     @Test
-    void shouldHandleNonExistentFile() throws Exception {
-        // Given
-        // Use absolute path, not file:// URI — FileResourceDelegate uses new File(location)
-        String nonExistentUri = "/tmp/wanaku-does-not-exist-" + System.nanoTime() + ".txt";
-
-        ResourceConfig config = ResourceConfig.builder()
-                .name("missing-file-resource")
-                .location(nonExistentUri)
-                .mimeType("text/plain")
-                .build();
-
-        routerClient.exposeResource(config);
-
-        // When / Then — reading a non-existent file should return an error
+    void shouldReadResourceTemplateViaMcp() {
         mcpClient
                 .when()
-                .resourcesRead(nonExistentUri)
-                .withErrorAssert(error -> {
-                    LOG.debug(
-                            "=== MCP resourcesRead error [non-existent]: code={}, message={}",
-                            error.code(),
-                            error.message());
-                    assertThat(error.code())
-                            .as("Non-existent file should return internal error code")
-                            .isEqualTo(-32603);
-                    assertThat(error.message())
-                            .as("Error message should indicate internal error")
-                            .containsIgnoringCase("Internal error");
+                .resourcesRead("logs://web-01/syslog")
+                .withAssert(response -> {
+                    LOG.info("Syslog resource response: {}", response.contents());
+                    assertThat(response.contents()).isNotEmpty();
+                    String text = response.contents().get(0).asText().text();
+                    assertThat(text).contains("web-01");
+                    assertThat(text).contains("nginx");
                 })
                 .send()
                 .thenAssertResults();
