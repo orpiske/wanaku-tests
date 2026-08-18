@@ -14,25 +14,25 @@ import ai.wanaku.test.utils.HealthCheckUtils;
 import ai.wanaku.test.utils.LogUtils;
 import ai.wanaku.test.utils.PortUtils;
 
-public class PraxisManager extends ProcessManager {
+public class WanakuServerManager extends ProcessManager {
 
-    private static final Logger LOG = LoggerFactory.getLogger(PraxisManager.class);
+    private static final Logger LOG = LoggerFactory.getLogger(WanakuServerManager.class);
 
     private final TestConfiguration config;
     private int mgmtPort;
     private int mcpPort;
-    private Path praxisConfigFile;
+    private Path pipelineConfigFile;
     private Path wanakuConfigFile;
     private Path persistDir;
 
     private boolean external;
 
-    public PraxisManager(TestConfiguration config) {
+    public WanakuServerManager(TestConfiguration config) {
         this.config = config;
     }
 
-    public static PraxisManager external(TestConfiguration config, int mgmtPort, int mcpPort) {
-        PraxisManager manager = new PraxisManager(config);
+    public static WanakuServerManager external(TestConfiguration config, int mgmtPort, int mcpPort) {
+        WanakuServerManager manager = new WanakuServerManager(config);
         manager.mgmtPort = mgmtPort;
         manager.mcpPort = mcpPort;
         manager.external = true;
@@ -43,38 +43,38 @@ public class PraxisManager extends ProcessManager {
         this.mgmtPort = PortUtils.findAvailablePort();
         this.mcpPort = PortUtils.findAvailablePort();
 
-        LOG.debug("Praxis prepared with management port {} and MCP port {}", mgmtPort, mcpPort);
+        LOG.debug("Wanaku server prepared with management port {} and MCP port {}", mgmtPort, mcpPort);
 
         addEnvironmentVariable("WANAKU_MGMT_LISTEN", "0.0.0.0:" + mgmtPort);
         addEnvironmentVariable("WANAKU_PERSIST_BACKEND", "file");
 
         try {
-            persistDir = Files.createTempDirectory("wanaku-praxis-data-");
+            persistDir = Files.createTempDirectory("wanaku-server-data-");
             addEnvironmentVariable(
                     "WANAKU_PERSIST_PATH", persistDir.toAbsolutePath().toString());
-            praxisConfigFile = generatePraxisConfig();
+            pipelineConfigFile = generatePipelineConfig();
             wanakuConfigFile = generateWanakuConfig();
         } catch (IOException e) {
-            throw new IllegalStateException("Failed to generate praxis config files", e);
+            throw new IllegalStateException("Failed to generate server config files", e);
         }
     }
 
     @Override
     protected String getProcessName() {
-        return "praxis";
+        return "wanaku-server";
     }
 
     @Override
     protected Path getExecutablePath() {
-        return config.getPraxisBinaryPath();
+        return config.getServerBinaryPath();
     }
 
     @Override
     protected List<String> buildCommand() {
         List<String> command = new ArrayList<>();
         command.add(getExecutablePath().toAbsolutePath().toString());
-        command.add("--praxis-config");
-        command.add(praxisConfigFile.toAbsolutePath().toString());
+        command.add("--pipeline-config");
+        command.add(pipelineConfigFile.toAbsolutePath().toString());
         command.add("--wanaku-config");
         command.add(wanakuConfigFile.toAbsolutePath().toString());
         return command;
@@ -86,9 +86,7 @@ public class PraxisManager extends ProcessManager {
     }
 
     @Override
-    protected void configureDataIsolation() {
-        // Praxis uses env vars, not JVM system properties
-    }
+    protected void configureDataIsolation() {}
 
     @Override
     protected List<String> getProcessArguments() {
@@ -97,13 +95,13 @@ public class PraxisManager extends ProcessManager {
 
     @Override
     protected boolean performHealthCheck() {
-        String healthUrl = "http://localhost:" + mgmtPort + WanakuTestConstants.PRAXIS_HEALTH_PATH;
+        String healthUrl = "http://localhost:" + mgmtPort + WanakuTestConstants.SERVER_HEALTH_PATH;
         return HealthCheckUtils.waitForHealthy(healthUrl, config.getDefaultTimeout());
     }
 
     @Override
     protected File createLogFile(String testName) throws IOException {
-        return LogUtils.createLogFile(testName, "praxis");
+        return LogUtils.createLogFile(testName, "wanaku-server");
     }
 
     @Override
@@ -143,7 +141,7 @@ public class PraxisManager extends ProcessManager {
         return config;
     }
 
-    private Path generatePraxisConfig() throws IOException {
+    private Path generatePipelineConfig() throws IOException {
         String yaml = String.join(
                 "\n",
                 "listeners:",
@@ -182,9 +180,9 @@ public class PraxisManager extends ProcessManager {
                 "  skip_pipeline_validation: true",
                 "");
 
-        Path configFile = Files.createTempFile("praxis-config-", ".yaml");
+        Path configFile = Files.createTempFile("pipeline-config-", ".yaml");
         Files.writeString(configFile, yaml);
-        LOG.debug("Generated praxis config at {}", configFile);
+        LOG.debug("Generated pipeline config at {}", configFile);
         return configFile;
     }
 
@@ -196,13 +194,13 @@ public class PraxisManager extends ProcessManager {
     }
 
     private void cleanupTempFiles() {
-        deleteSilently(praxisConfigFile);
+        deleteSilently(pipelineConfigFile);
         deleteSilently(wanakuConfigFile);
         if (persistDir != null) {
             try {
                 deleteRecursively(persistDir);
             } catch (IOException e) {
-                LOG.warn("Failed to cleanup praxis persist dir: {}", e.getMessage());
+                LOG.warn("Failed to cleanup server persist dir: {}", e.getMessage());
             }
         }
     }

@@ -128,11 +128,11 @@ jobs:
             mvn -B -DskipTests install -f source/wanaku-barn/pom.xml
           fi
 
-      - name: Build Wanaku Praxis (Rust)
+      - name: Build Wanaku Server (Rust)
         run: |
           cd source/wanaku
-          cargo build --release --bin wanaku-praxis
-          echo "Praxis binary ready"
+          cargo build --release --bin wanaku-server
+          echo "Wanaku server binary ready"
 
       - name: Build Camel Integration Capability
         run: |
@@ -168,10 +168,10 @@ jobs:
         env:
           CLI_PATH: ${{ steps.cli.outputs.path }}
         run: |
-          PRAXIS_BIN="$(pwd)/source/wanaku/target/release/wanaku-praxis"
+          SERVER_BIN="$(pwd)/source/wanaku/target/release/wanaku-server"
           CIC_JAR=$(find source/camel-integration-capability -name "*-jar-with-dependencies.jar" -path "*/target/*" | head -1)
 
-          EXTRA_OPTS="-Dwanaku.test.praxis.binary=${PRAXIS_BIN}"
+          EXTRA_OPTS="-Dwanaku.test.server.binary=${SERVER_BIN}"
           if [ -n "$CIC_JAR" ]; then
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.camel-capability.jar=$(pwd)/${CIC_JAR}"
           fi

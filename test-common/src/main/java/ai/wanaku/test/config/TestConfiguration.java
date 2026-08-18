@@ -8,14 +8,14 @@ import ai.wanaku.test.WanakuTestConstants;
 
 public class TestConfiguration {
 
-    private final Path praxisBinaryPath;
+    private final Path serverBinaryPath;
     private final Path camelCapabilityJarPath;
     private final Path artifactsDir;
     private final Path tempDataDir;
     private final Duration defaultTimeout;
 
     private TestConfiguration(Builder builder) {
-        this.praxisBinaryPath = builder.praxisBinaryPath;
+        this.serverBinaryPath = builder.serverBinaryPath;
         this.camelCapabilityJarPath = builder.camelCapabilityJarPath;
         this.artifactsDir = builder.artifactsDir;
         this.tempDataDir = builder.tempDataDir;
@@ -36,14 +36,14 @@ public class TestConfiguration {
 
         return builder()
                 .artifactsDir(artifactsDir)
-                .praxisBinaryPath(findPraxisBinary())
+                .serverBinaryPath(findServerBinary())
                 .camelCapabilityJarPath(findCicJar(artifactsDir))
                 .defaultTimeout(timeout)
                 .build();
     }
 
-    private static Path findPraxisBinary() {
-        String explicitPath = System.getProperty(WanakuTestConstants.PROP_PRAXIS_BINARY);
+    private static Path findServerBinary() {
+        String explicitPath = System.getProperty(WanakuTestConstants.PROP_SERVER_BINARY);
         if (explicitPath == null) {
             return null;
         }
@@ -85,8 +85,8 @@ public class TestConfiguration {
         return null;
     }
 
-    public Path getPraxisBinaryPath() {
-        return praxisBinaryPath;
+    public Path getServerBinaryPath() {
+        return serverBinaryPath;
     }
 
     public Path getCamelCapabilityJarPath() {
@@ -106,14 +106,14 @@ public class TestConfiguration {
     }
 
     public static class Builder {
-        private Path praxisBinaryPath;
+        private Path serverBinaryPath;
         private Path camelCapabilityJarPath;
         private Path artifactsDir;
         private Path tempDataDir;
         private Duration defaultTimeout = WanakuTestConstants.DEFAULT_TIMEOUT;
 
-        public Builder praxisBinaryPath(Path praxisBinaryPath) {
-            this.praxisBinaryPath = praxisBinaryPath;
+        public Builder serverBinaryPath(Path serverBinaryPath) {
+            this.serverBinaryPath = serverBinaryPath;
             return this;
         }
 

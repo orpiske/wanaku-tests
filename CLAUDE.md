@@ -1,6 +1,6 @@
 # wanaku-tests
 
-Integration test framework for Wanaku (MCP Router). Tests run against real processes (Router or Praxis, capability providers, Keycloak) managed via ProcessManager lifecycle. Supports two modes: **Router mode** (Java Quarkus) and **Praxis mode** (Rust native binary).
+Integration test framework for Wanaku (MCP Router). Tests run against real processes (Wanaku server, capability providers, Keycloak) managed via ProcessManager lifecycle. The Wanaku server is a Rust native binary.
 
 ## Build & Run
 
@@ -35,8 +35,8 @@ wanaku-tests/
 ### test-common layout
 
 - `base/` - BaseIntegrationTest (layered lifecycle: suite-scoped infra, test-scoped capabilities)
-- `managers/` - ProcessManager hierarchy (RouterManager, PraxisManager, HttpCapabilityManager, ResourceProviderManager, CamelCapabilityManager, KeycloakManager)
-- `client/` - RouterClient (REST), McpTestClient (MCP protocol), ServiceClient (praxis services), CLIExecutor, DataStoreClient
+- `managers/` - ProcessManager hierarchy (WanakuServerManager, HttpCapabilityManager, ResourceProviderManager, CamelCapabilityManager, KeycloakManager)
+- `client/` - RouterClient (REST), McpTestClient (MCP protocol), ServiceClient (services API), CLIExecutor, DataStoreClient
 - `config/` - TestConfiguration (system-properties-driven, builder pattern), TargetConfiguration, OidcCredentials
 - `model/` - HttpToolConfig, ResourceConfig, ToolInfo, ResourceReference
 - `utils/` - PortUtils, HealthCheckUtils, LogUtils
@@ -44,18 +44,18 @@ wanaku-tests/
 ## Key System Properties
 
 - `wanaku.test.artifacts.dir` - path to artifacts directory (default: "artifacts")
-- `wanaku.test.praxis.binary` - praxis binary path
+- `wanaku.test.server.binary` - wanaku-server binary path
 - `wanaku.test.camel-capability.jar` - CIC JAR path
 - `wanaku.test.cli.path` - CLI path (JAR or binary)
 - `wanaku.test.timeout` - global timeout in seconds (default: 60)
 - `wanaku.test.skip.threshold` - max allowed skip percentage before build fails (default: 30)
-- `wanaku.test.external.mgmt.port` - connect to an already-running praxis management API on this port (skip launching praxis)
-- `wanaku.test.external.mcp.port` - connect to an already-running praxis MCP endpoint on this port (requires mgmt.port too)
+- `wanaku.test.external.mgmt.port` - connect to an already-running server management API on this port (skip launching server)
+- `wanaku.test.external.mcp.port` - connect to an already-running server MCP endpoint on this port (requires mgmt.port too)
 - `wanaku.test.external.cic.url` - connect to an already-running CIC MCP endpoint at this URL (skip launching CIC)
 
 ### Debugging with external instances
 
-To run tests against already-running praxis and CIC instances (useful for debugging):
+To run tests against already-running server and CIC instances (useful for debugging):
 
 ```bash
 mvn verify -pl camel-integration-capability-tests \
@@ -64,28 +64,27 @@ mvn verify -pl camel-integration-capability-tests \
   -Dwanaku.test.external.cic.url=http://localhost:9000/mcp
 ```
 
-You can also use only the praxis properties (the framework will still launch CIC) or only the CIC property (the framework will still launch praxis).
+You can also use only the server properties (the framework will still launch CIC) or only the CIC property (the framework will still launch the server).
 
 ## Test Lifecycle
 
-1. `@BeforeAll` (suite-scoped, static): Keycloak container + Router process
+1. `@BeforeAll` (suite-scoped, static): Keycloak container + Wanaku server process
 2. `@BeforeEach` (test-scoped): capability providers + MCP client
 3. Test execution
 4. `@AfterEach`: capability teardown + resource cleanup
-5. `@AfterAll`: Router + Keycloak shutdown
+5. `@AfterAll`: Server + Keycloak shutdown
 
-Tests gracefully skip when required JARs are missing (check `isRouterAvailable()`, `isFileProviderAvailable()`, etc.).
+Tests gracefully skip when required binaries are missing (check `isServerRunning()`, `isMcpClientAvailable()`, etc.).
 
-### Praxis Mode Differences
+### Wanaku Server Mode
 
-When `wanaku.test.praxis.binary` is set and the binary exists, the framework runs in **praxis mode**:
-- PraxisManager starts a Rust binary instead of a Java JAR
+When `wanaku.test.server.binary` is set and the binary exists, the framework starts the Wanaku server:
+- WanakuServerManager starts a Rust binary
 - Two ports: management API (dynamic) + MCP server (dynamic, separate port)
 - No Keycloak/OIDC — all clients use null access tokens
 - Capability providers start as standalone gRPC servers; the test harness registers them via `POST /api/v1/services`
-- DataStore, ServiceCatalog, and Authentication tests are skipped (not native in praxis)
+- DataStore, ServiceCatalog, and Authentication tests are skipped (not native in the server)
 - Health check uses `/healthz` instead of `/q/health/ready`
-- Use `isPraxisMode()` in test classes to conditionally skip or adapt tests
 
 ## Code Style & Conventions
 
@@ -169,7 +168,7 @@ gh workflow run full-integration-test.yml \
 
 | Input | Default | Description |
 |-------|---------|-------------|
-| `wanaku_repo` | `wanaku-ai/wanaku` | Wanaku repository (includes praxis Rust code) |
+| `wanaku_repo` | `wanaku-ai/wanaku` | Wanaku repository (includes Rust server code) |
 | `wanaku_branch` | `main` | Wanaku branch |
 | `sdk_repo` | `wanaku-ai/wanaku-capabilities-java-sdk` | SDK repository |
 | `sdk_branch` | `main` | SDK branch |

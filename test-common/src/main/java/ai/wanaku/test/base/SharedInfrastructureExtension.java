@@ -23,7 +23,7 @@ public class SharedInfrastructureExtension implements BeforeAllCallback {
                         SharedInfrastructure.class);
 
         BaseIntegrationTest.config = infra.getConfig();
-        BaseIntegrationTest.praxisManager = infra.getPraxisManager();
+        BaseIntegrationTest.serverManager = infra.getServerManager();
         BaseIntegrationTest.tempDataDir = infra.getTempDataDir();
     }
 }

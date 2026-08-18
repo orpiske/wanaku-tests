@@ -8,7 +8,7 @@ public final class WanakuTestConstants {
 
     // System property keys
     public static final String PROP_ARTIFACTS_DIR = "wanaku.test.artifacts.dir";
-    public static final String PROP_PRAXIS_BINARY = "wanaku.test.praxis.binary";
+    public static final String PROP_SERVER_BINARY = "wanaku.test.server.binary";
     public static final String PROP_CLI_PATH = "wanaku.test.cli.path";
     public static final String PROP_CAMEL_CAPABILITY_JAR = "wanaku.test.camel-capability.jar";
     public static final String PROP_TIMEOUT = "wanaku.test.timeout";
@@ -23,7 +23,7 @@ public final class WanakuTestConstants {
     public static final int DEFAULT_SKIP_THRESHOLD = 30;
 
     // Health check
-    public static final String PRAXIS_HEALTH_PATH = "/healthz";
+    public static final String SERVER_HEALTH_PATH = "/healthz";
 
     // API paths
     public static final String API_BASE_PATH = "/api/v1";

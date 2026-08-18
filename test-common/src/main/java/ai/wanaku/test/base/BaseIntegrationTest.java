@@ -8,7 +8,7 @@ import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.client.RouterClient;
 import ai.wanaku.test.client.SessionIdProxy;
 import ai.wanaku.test.config.TestConfiguration;
-import ai.wanaku.test.managers.PraxisManager;
+import ai.wanaku.test.managers.WanakuServerManager;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
@@ -22,7 +22,7 @@ public abstract class BaseIntegrationTest {
     private static Logger LOG = LoggerFactory.getLogger(BaseIntegrationTest.class);
 
     protected static TestConfiguration config;
-    protected static PraxisManager praxisManager;
+    protected static WanakuServerManager serverManager;
     protected static Path tempDataDir;
 
     protected McpTestClient mcpClient;
@@ -94,19 +94,19 @@ public abstract class BaseIntegrationTest {
     }
 
     protected boolean isServerRunning() {
-        return praxisManager != null && praxisManager.isRunning();
+        return serverManager != null && serverManager.isRunning();
     }
 
     protected String getServerBaseUrl() {
-        return praxisManager != null ? praxisManager.getBaseUrl() : null;
+        return serverManager != null ? serverManager.getBaseUrl() : null;
     }
 
     protected String getServerMcpBaseUrl() {
-        return praxisManager != null ? praxisManager.getMcpBaseUrl() : null;
+        return serverManager != null ? serverManager.getMcpBaseUrl() : null;
     }
 
     protected int getServerHttpPort() {
-        return praxisManager != null ? praxisManager.getHttpPort() : -1;
+        return serverManager != null ? serverManager.getHttpPort() : -1;
     }
 
     protected boolean isMcpClientAvailable() {

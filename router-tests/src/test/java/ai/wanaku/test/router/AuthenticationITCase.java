@@ -4,7 +4,7 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-@Disabled("Authentication not built into praxis — handled by external goauth_proxy")
+@Disabled("Authentication not built into wanaku-server — handled by external goauth_proxy")
 class AuthenticationITCase extends RouterTestBase {
 
     @DisplayName("Reject unauthenticated tools list request")

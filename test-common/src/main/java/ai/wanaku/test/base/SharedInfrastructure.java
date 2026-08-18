@@ -6,7 +6,7 @@ import java.nio.file.Path;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ai.wanaku.test.config.TestConfiguration;
-import ai.wanaku.test.managers.PraxisManager;
+import ai.wanaku.test.managers.WanakuServerManager;
 
 import org.junit.jupiter.api.extension.ExtensionContext;
 
@@ -15,7 +15,7 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
     private static final Logger LOG = LoggerFactory.getLogger(SharedInfrastructure.class);
 
     private TestConfiguration config;
-    private PraxisManager praxisManager;
+    private WanakuServerManager serverManager;
     private Path tempDataDir;
 
     SharedInfrastructure() {}
@@ -29,38 +29,38 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
         TestConfiguration baseConfig = TestConfiguration.fromSystemProperties();
         config = TestConfiguration.builder()
                 .artifactsDir(baseConfig.getArtifactsDir())
-                .praxisBinaryPath(baseConfig.getPraxisBinaryPath())
+                .serverBinaryPath(baseConfig.getServerBinaryPath())
                 .camelCapabilityJarPath(baseConfig.getCamelCapabilityJarPath())
                 .tempDataDir(tempDataDir)
                 .defaultTimeout(baseConfig.getDefaultTimeout())
                 .build();
 
-        LOG.debug("Praxis binary: {}", config.getPraxisBinaryPath());
+        LOG.debug("Server binary: {}", config.getServerBinaryPath());
 
         String externalMgmtPort = System.getProperty("wanaku.test.external.mgmt.port");
         String externalMcpPort = System.getProperty("wanaku.test.external.mcp.port");
 
         if (externalMgmtPort != null && externalMcpPort != null) {
-            praxisManager = PraxisManager.external(
+            serverManager = WanakuServerManager.external(
                     config, Integer.parseInt(externalMgmtPort), Integer.parseInt(externalMcpPort));
-            LOG.info("Using external praxis on management port {} and MCP port {}", externalMgmtPort, externalMcpPort);
+            LOG.info("Using external server on management port {} and MCP port {}", externalMgmtPort, externalMcpPort);
             LOG.info("=== Shared infrastructure ready (external) ===");
             return;
         }
 
-        if (config.getPraxisBinaryPath() == null
-                || !config.getPraxisBinaryPath().toFile().exists()) {
-            LOG.info("Praxis binary not available, skipping infrastructure setup");
+        if (config.getServerBinaryPath() == null
+                || !config.getServerBinaryPath().toFile().exists()) {
+            LOG.info("Server binary not available, skipping infrastructure setup");
             return;
         }
 
-        praxisManager = new PraxisManager(config);
-        praxisManager.prepare();
-        praxisManager.start("shared");
+        serverManager = new WanakuServerManager(config);
+        serverManager.prepare();
+        serverManager.start("shared");
         LOG.info(
-                "Praxis started on management port {} and MCP port {}",
-                praxisManager.getHttpPort(),
-                praxisManager.getMcpPort());
+                "Wanaku server started on management port {} and MCP port {}",
+                serverManager.getHttpPort(),
+                serverManager.getMcpPort());
 
         LOG.info("=== Shared infrastructure ready ===");
     }
@@ -69,8 +69,8 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
     public void close() {
         LOG.info("=== Tearing down shared infrastructure ===");
 
-        if (praxisManager != null) {
-            praxisManager.stop();
+        if (serverManager != null) {
+            serverManager.stop();
         }
 
         if (tempDataDir != null) {
@@ -88,8 +88,8 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
         return config;
     }
 
-    public PraxisManager getPraxisManager() {
-        return praxisManager;
+    public WanakuServerManager getServerManager() {
+        return serverManager;
     }
 
     public Path getTempDataDir() {
@@ -97,19 +97,19 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
     }
 
     public String getBaseUrl() {
-        return praxisManager != null ? praxisManager.getBaseUrl() : null;
+        return serverManager != null ? serverManager.getBaseUrl() : null;
     }
 
     public String getMcpBaseUrl() {
-        return praxisManager != null ? praxisManager.getMcpBaseUrl() : null;
+        return serverManager != null ? serverManager.getMcpBaseUrl() : null;
     }
 
     public int getHttpPort() {
-        return praxisManager != null ? praxisManager.getHttpPort() : -1;
+        return serverManager != null ? serverManager.getHttpPort() : -1;
     }
 
     public boolean isServerRunning() {
-        return praxisManager != null && praxisManager.isRunning();
+        return serverManager != null && serverManager.isRunning();
     }
 
     private void deleteRecursively(Path path) throws IOException {

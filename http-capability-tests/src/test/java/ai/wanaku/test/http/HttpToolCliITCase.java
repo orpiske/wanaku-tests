@@ -33,7 +33,7 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
         authToken = null;
     }
 
-    @KnownLimitation("CLI sends tool JSON without 'name' field — praxis rejects with 400")
+    @KnownLimitation("CLI sends tool JSON without 'name' field — server rejects with 400")
     @DisplayName("Register a tool via CLI and verify it appears in CLI list output")
     @Test
     void shouldRegisterHttpToolViaCli() {
@@ -72,7 +72,7 @@ class HttpToolCliITCase extends HttpCapabilityTestBase {
                 .contains(toolName);
     }
 
-    @KnownLimitation("CLI sends tool JSON without 'name' field — praxis rejects with 400")
+    @KnownLimitation("CLI sends tool JSON without 'name' field — server rejects with 400")
     @DisplayName("Register a tool via CLI with a named namespace")
     @Test
     void shouldRegisterToolWithNamespace() {

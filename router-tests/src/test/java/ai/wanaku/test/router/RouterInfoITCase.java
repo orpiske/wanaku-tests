@@ -20,7 +20,7 @@ class RouterInfoITCase extends RouterTestBase {
     @DisplayName("Return router info from management endpoint")
     @Test
     void shouldReturnRouterInfo() {
-        assumeThat(false).as("Info endpoint not available in praxis mode").isFalse();
+        assumeThat(false).as("Info endpoint not available in server mode").isFalse();
 
         try {
             JsonNode info = managementClient.getInfo();

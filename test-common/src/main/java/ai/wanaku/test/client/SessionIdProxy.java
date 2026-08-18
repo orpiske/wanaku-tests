@@ -15,9 +15,9 @@ import ai.wanaku.test.utils.PortUtils;
 import com.sun.net.httpserver.HttpServer;
 
 /**
- * Lightweight HTTP proxy that forwards MCP requests to praxis and injects
+ * Lightweight HTTP proxy that forwards MCP requests to Wanaku server and injects
  * {@code Mcp-Session-Id} into responses. Needed because the quarkus-mcp-server-test
- * library requires this header but praxis does not return it.
+ * library requires this header but the server does not return it.
  */
 public class SessionIdProxy implements AutoCloseable {
 
