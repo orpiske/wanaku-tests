@@ -8,7 +8,6 @@ import java.time.Duration;
 import ai.wanaku.test.WanakuTestConstants;
 
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -22,14 +21,14 @@ class ServiceDiscoveryITCase extends RouterTestBase {
         assumeThat(routerClient).as("RouterClient must be available").isNotNull();
     }
 
-    @DisplayName("List capabilities endpoint returns a successful response")
+    @DisplayName("List services endpoint returns a successful response")
     @Test
-    void shouldListCapabilities() throws Exception {
+    void shouldListServices() throws Exception {
         HttpClient httpClient =
                 HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
 
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                .uri(URI.create(getServerBaseUrl() + WanakuTestConstants.CAPABILITIES_PATH))
+                .uri(URI.create(getServerBaseUrl() + WanakuTestConstants.SERVICES_PATH))
                 .GET()
                 .timeout(Duration.ofSeconds(30));
 
@@ -37,42 +36,5 @@ class ServiceDiscoveryITCase extends RouterTestBase {
 
         assertThat(response.statusCode()).isEqualTo(200);
         assertThat(response.body()).isNotEmpty();
-    }
-
-    @DisplayName("Detect HTTP capability registration when service is running")
-    @Test
-    @Disabled("No auto-registered capabilities in praxis — capabilities registered as MCP forwards")
-    void shouldDetectCapabilityRegistration() {
-        assumeThat(isServerRunning()).as("HTTP tool service must be available").isTrue();
-
-        boolean registered = routerClient.isCapabilityRegistered("nonexistent-for-now");
-
-        assertThat(registered).isTrue();
-    }
-
-    @DisplayName("Return false for unknown capability service name")
-    @Test
-    void shouldReturnFalseForUnknownCapability() {
-        boolean registered = routerClient.isCapabilityRegistered("nonexistent-service");
-
-        assertThat(registered).isFalse();
-    }
-
-    @DisplayName("Deregister a capability and verify it is no longer registered")
-    @Disabled("Blocked on wanaku-ai/wanaku#1702: deregistration endpoint needs identity verification")
-    @Test
-    void shouldDeregisterCapability() {
-        assumeThat(false)
-                .as("Discovery deregistration endpoint not available in praxis mode")
-                .isFalse();
-        assumeThat(isServerRunning()).as("HTTP tool service must be available").isTrue();
-        assumeThat(routerClient.isCapabilityRegistered("http"))
-                .as("HTTP capability must be registered before deregistration test")
-                .isTrue();
-
-        boolean deregistered = routerClient.deregisterCapability("http", null);
-
-        assertThat(deregistered).isTrue();
-        assertThat(routerClient.isCapabilityRegistered("http")).isFalse();
     }
 }

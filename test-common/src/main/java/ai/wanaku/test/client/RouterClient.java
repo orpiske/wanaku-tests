@@ -495,80 +495,6 @@ public class RouterClient {
         }
     }
 
-    // ──────────────────────────────────────────────────────────────
-    // Capability discovery operations
-    // ──────────────────────────────────────────────────────────────
-
-    /**
-     * Deregisters a capability from the Router by service name.
-     * Looks up the capability's ServiceTarget (to get the ID), then calls the deregister endpoint.
-     *
-     * @param serviceName the service name to deregister
-     * @param accessToken Bearer token for the management API (required, management endpoints are authenticated)
-     * @return true if deregistered, false if capability was not found
-     */
-    public boolean deregisterCapability(String serviceName, String accessToken) {
-        LOG.debug("Deregistering capability: {}", serviceName);
-
-        try {
-            // Find the ServiceTarget by service name
-            HttpRequest listRequest =
-                    buildRequest(WanakuTestConstants.CAPABILITIES_PATH).GET().build();
-            HttpResponse<String> listResponse = httpClient.send(listRequest, HttpResponse.BodyHandlers.ofString());
-
-            if (listResponse.statusCode() != 200) {
-                LOG.warn("Failed to list capabilities for deregistration: {}", listResponse.statusCode());
-                return false;
-            }
-
-            JsonNode data = objectMapper.readTree(listResponse.body()).path("data");
-            JsonNode targetNode = null;
-            for (JsonNode capability : data) {
-                if (serviceName.equals(capability.path("serviceName").asText())) {
-                    targetNode = capability;
-                    break;
-                }
-            }
-
-            if (targetNode == null) {
-                LOG.debug("Capability '{}' not found, nothing to deregister", serviceName);
-                return false;
-            }
-
-            // Call deregister endpoint with the full ServiceTarget
-            String serviceTargetJson = objectMapper.writeValueAsString(targetNode);
-
-            HttpRequest.Builder deregBuilder = buildRequest("/api/v1/management/discovery")
-                    .method("DELETE", HttpRequest.BodyPublishers.ofString(serviceTargetJson))
-                    .header("Content-Type", "application/json");
-
-            if (accessToken != null) {
-                deregBuilder.header("Authorization", "Bearer " + accessToken);
-            }
-
-            HttpResponse<String> deregResponse =
-                    httpClient.send(deregBuilder.build(), HttpResponse.BodyHandlers.ofString());
-
-            if (deregResponse.statusCode() == 200) {
-                LOG.debug("Capability '{}' deregistered successfully", serviceName);
-                return true;
-            } else {
-                LOG.warn(
-                        "Failed to deregister capability '{}': {} - {}",
-                        serviceName,
-                        deregResponse.statusCode(),
-                        deregResponse.body());
-                return false;
-            }
-        } catch (IOException | InterruptedException e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            LOG.warn("Failed to deregister capability '{}': {}", serviceName, e.getMessage());
-            return false;
-        }
-    }
-
     private HttpRequest.Builder buildRequest(String path) {
         HttpRequest.Builder builder =
                 HttpRequest.newBuilder().uri(URI.create(baseUrl + path)).timeout(Duration.ofSeconds(30));
@@ -580,41 +506,6 @@ public class RouterClient {
 
     public String getBaseUrl() {
         return baseUrl;
-    }
-
-    /**
-     * Checks if a specific capability service is registered with the Router.
-     *
-     * @param serviceName the service name (e.g., "http" for HTTP tool service)
-     * @return true if the service is found in the registered capabilities list
-     */
-    public boolean isCapabilityRegistered(String serviceName) {
-        /*
-         * GET /api/v1/capabilities returns:
-         * {
-         *   "data": [
-         *     { "serviceName": "http", "serviceType": "TOOLS", "host": "...", "port": 9000 },
-         *     { "serviceName": "exec", "serviceType": "TOOLS", "host": "...", "port": 9001 }
-         *   ]
-         * }
-         */
-        try {
-            HttpRequest request =
-                    buildRequest(WanakuTestConstants.CAPABILITIES_PATH).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() != 200) return false;
-
-            JsonNode data = objectMapper.readTree(response.body()).path("data");
-            for (JsonNode capability : data) {
-                if (serviceName.equals(capability.path("serviceName").asText())) {
-                    return true;
-                }
-            }
-        } catch (IOException | InterruptedException e) {
-            LOG.debug("Failed to check capability: {}", e.getMessage());
-        }
-        return false;
     }
 
     // Exception classes
