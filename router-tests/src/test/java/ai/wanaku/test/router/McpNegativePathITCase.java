@@ -22,6 +22,7 @@ class McpNegativePathITCase extends RouterTestBase {
     void assumeInfrastructureAvailable() {
         assumeThat(isServerRunning()).as("Router must be available").isTrue();
         assumeThat(isMcpClientAvailable()).as("MCP client must be available").isTrue();
+        assumeThat(mcpClient).as("MCP client must not be null").isNotNull();
     }
 
     @DisplayName("Calling a non-existent tool returns JSON-RPC error")
