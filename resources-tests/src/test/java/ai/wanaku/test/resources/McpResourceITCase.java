@@ -62,6 +62,21 @@ class McpResourceITCase extends ResourceTestBase {
                 .thenAssertResults();
     }
 
+    @DisplayName("List resource templates via MCP and verify syslog template appears")
+    @Test
+    void shouldListResourceTemplatesViaMcp() {
+        mcpClient
+                .when()
+                .resourcesTemplatesList()
+                .withAssert(page -> {
+                    LOG.info("MCP resource templates: {}", page.templates());
+                    assertThat(page.templates()).isNotEmpty();
+                    assertThat(page.templates()).anyMatch(t -> t.uriTemplate().contains("logs://"));
+                })
+                .send()
+                .thenAssertResults();
+    }
+
     @DisplayName("Read syslog resource template via MCP and verify server-specific content")
     @Test
     void shouldReadResourceTemplateViaMcp() {
