@@ -47,7 +47,7 @@ public abstract class BaseIntegrationTest {
             routerClient = new RouterClient(getServerBaseUrl(), null);
 
             try {
-                mcpProxy = new SessionIdProxy(getServerMcpBaseUrl());
+                mcpProxy = new SessionIdProxy(getServerMcpBaseUrl() + "/default");
                 mcpProxy.start();
                 mcpClient = new McpTestClient(mcpProxy.getBaseUrl(), null);
                 mcpClient.connect();

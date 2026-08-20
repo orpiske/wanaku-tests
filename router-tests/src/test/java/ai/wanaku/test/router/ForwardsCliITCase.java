@@ -42,7 +42,7 @@ class ForwardsCliITCase extends RouterTestBase {
                 "--name",
                 name,
                 "--service",
-                getServerBaseUrl() + "/mcp/",
+                getServerBaseUrl() + "/default/mcp/",
                 "--namespace-name",
                 "fwd-cli-test-ns");
 
@@ -70,7 +70,7 @@ class ForwardsCliITCase extends RouterTestBase {
     @Test
     void shouldRemoveForwardViaCli() {
         try {
-            forwardsClient.add("cli-remove-fwd", getServerBaseUrl() + "/mcp/", nsId);
+            forwardsClient.add("cli-remove-fwd", getServerBaseUrl() + "/default/mcp/", nsId);
         } catch (Exception e) {
             assumeThat(false)
                     .as("Cannot add forward for removal test (Router validates target): %s", e.getMessage())

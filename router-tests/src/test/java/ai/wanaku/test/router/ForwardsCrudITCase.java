@@ -40,7 +40,7 @@ class ForwardsCrudITCase extends RouterTestBase {
     @DisplayName("Add a forward and verify it exists")
     @Test
     void shouldAddForward() {
-        addForwardOrSkip("test-fwd", getServerBaseUrl() + "/mcp/");
+        addForwardOrSkip("test-fwd", getServerBaseUrl() + "/default/mcp/");
 
         assertThat(forwardsClient.exists("test-fwd")).isTrue();
     }
@@ -65,7 +65,7 @@ class ForwardsCrudITCase extends RouterTestBase {
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
     void shouldRemoveForward() {
-        addForwardOrSkip("fwd-to-remove", getServerBaseUrl() + "/mcp/");
+        addForwardOrSkip("fwd-to-remove", getServerBaseUrl() + "/default/mcp/");
         assumeThat(forwardsClient.exists("fwd-to-remove"))
                 .as("Forward must exist before removal")
                 .isTrue();
@@ -80,7 +80,7 @@ class ForwardsCrudITCase extends RouterTestBase {
     @DisplayName("Refresh a forward without error")
     @Test
     void shouldRefreshForwards() {
-        addForwardOrSkip("refresh-fwd", getServerBaseUrl() + "/mcp/");
+        addForwardOrSkip("refresh-fwd", getServerBaseUrl() + "/default/mcp/");
         assumeThat(forwardsClient.exists("refresh-fwd"))
                 .as("Forward must exist before refresh")
                 .isTrue();

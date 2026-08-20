@@ -55,7 +55,7 @@ public abstract class McpForwardingTestBase extends BaseIntegrationTest {
     }
 
     protected String getTargetMcpUrl() {
-        return getServerMcpBaseUrl() + "/mcp";
+        return getServerMcpBaseUrl() + "/default/mcp";
     }
 
     @Override
