@@ -25,7 +25,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @Test
     void shouldHandleUnreachableServerForward() {
         try {
-            forwardsClient.add("unreachable-fwd", "http://localhost:1/default/mcp/", testNamespaceId);
+            forwardsClient.add("unreachable-fwd", "http://localhost:1/mcp/", testNamespaceId);
             assertThat(forwardsClient.exists("unreachable-fwd")).isTrue();
         } catch (ForwardsClient.ForwardsClientException e) {
             assertThat(e.getMessage()).contains("500");

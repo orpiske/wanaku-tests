@@ -51,7 +51,7 @@ public abstract class BaseIntegrationTest {
                 mcpProxy.start();
                 mcpClient = new McpTestClient(mcpProxy.getBaseUrl(), null);
                 mcpClient.connect();
-                LOG.debug("MCP client connected via proxy to {}", getServerMcpBaseUrl());
+                LOG.debug("MCP client connected via proxy to {}/default", getServerMcpBaseUrl());
             } catch (Exception e) {
                 LOG.warn("Failed to connect MCP client: {}", e.getMessage());
                 mcpClient = null;
