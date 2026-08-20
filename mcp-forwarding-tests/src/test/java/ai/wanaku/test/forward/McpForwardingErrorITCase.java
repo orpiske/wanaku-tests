@@ -18,14 +18,14 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
     @BeforeEach
     void assumeInfrastructureAvailable() {
         assumeThat(isServerRunning()).as("Router must be available").isTrue();
-        assumeThat(testNamespaceId).as("Test namespace must be available").isNotNull();
+        assumeThat(testNamespaceName).as("Test namespace must be available").isNotNull();
     }
 
     @DisplayName("Router handles a forward pointing to an unreachable server")
     @Test
     void shouldHandleUnreachableServerForward() {
         try {
-            forwardsClient.add("unreachable-fwd", "http://localhost:1/mcp/", testNamespaceId);
+            forwardsClient.add("unreachable-fwd", "http://localhost:1/mcp/", testNamespaceName);
             assertThat(forwardsClient.exists("unreachable-fwd")).isTrue();
         } catch (ForwardsClient.ForwardsClientException e) {
             assertThat(e.getMessage()).contains("500");
@@ -40,7 +40,7 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
         ForwardsClient.ForwardsClientException lastException = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                forwardsClient.add("valid-fwd", getServerBaseUrl() + "/default/mcp/", testNamespaceId);
+                forwardsClient.add("valid-fwd", getServerBaseUrl() + "/default/mcp/", testNamespaceName);
                 assertThat(forwardsClient.exists("valid-fwd")).isTrue();
                 return;
             } catch (ForwardsClient.ForwardsClientException e) {

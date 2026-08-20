@@ -24,7 +24,7 @@ class ForwardsCliITCase extends RouterTestBase {
         assertThat(cliExecutor.isAvailable()).as("CLI must be available").isTrue();
         assertThat(isServerRunning()).as("Router must be available").isTrue();
 
-        nsId = getOrCreateNamespaceId("fwd-cli-test-ns");
+        nsId = getOrCreateNamespace("fwd-cli-test-ns");
         assumeThat(nsId).as("Test namespace must be available").isNotNull();
     }
 

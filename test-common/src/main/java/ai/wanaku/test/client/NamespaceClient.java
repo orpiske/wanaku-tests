@@ -36,14 +36,13 @@ public class NamespaceClient {
     }
 
     /**
-     * Creates a namespace and returns its server-generated ID.
+     * Creates a namespace and returns its name (the sole identifier).
      */
-    public String create(String name, String path) {
-        LOG.debug("Creating namespace: {} with path: {}", name, path);
+    public String create(String name) {
+        LOG.debug("Creating namespace: {}", name);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
-        body.put("path", path);
 
         try {
             String json = objectMapper.writeValueAsString(body);
@@ -59,10 +58,10 @@ public class NamespaceClient {
                 LOG.debug("Namespace created: {}", name);
                 JsonNode root = objectMapper.readTree(response.body());
                 JsonNode dataNode = root.has("data") ? root.get("data") : root;
-                if (dataNode != null && dataNode.has("id")) {
-                    return dataNode.get("id").asText();
+                if (dataNode != null && dataNode.has("name")) {
+                    return dataNode.get("name").asText();
                 }
-                return null;
+                return name;
             } else if (response.statusCode() == 409) {
                 throw new NamespaceExistsException("Namespace '" + name + "' already exists");
             } else {
@@ -255,14 +254,14 @@ public class NamespaceClient {
     }
 
     /**
-     * Finds a namespace by name and returns its server-generated ID, or null if not found.
+     * Finds a namespace by name and returns its name if it exists, or null if not found.
      */
-    public String findIdByName(String name) {
+    public String findByName(String name) {
         List<JsonNode> namespaces = list();
         return namespaces.stream()
                 .filter(ns -> ns.has("name") && name.equals(ns.get("name").asText()))
                 .findFirst()
-                .map(ns -> ns.has("id") ? ns.get("id").asText() : null)
+                .map(ns -> ns.get("name").asText())
                 .orElse(null);
     }
 

@@ -20,7 +20,7 @@ class ForwardsCrudITCase extends RouterTestBase {
     @BeforeEach
     void assumeRouterAvailable() {
         assumeThat(isServerRunning()).as("Router must be available").isTrue();
-        nsId = getOrCreateNamespaceId("fwd-test-ns");
+        nsId = getOrCreateNamespace("fwd-test-ns");
         assumeThat(nsId)
                 .as("Test namespace must be available for forwards tests")
                 .isNotNull();

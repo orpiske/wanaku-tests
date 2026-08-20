@@ -21,14 +21,14 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         assumeThat(isServerRunning())
                 .as("Target router must be available for forwarding tests")
                 .isTrue();
-        assumeThat(testNamespaceId).as("Test namespace must be available").isNotNull();
+        assumeThat(testNamespaceName).as("Test namespace must be available").isNotNull();
     }
 
     private boolean tryAddForward(String name, String address) {
         int maxAttempts = 5;
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                forwardsClient.add(name, address, testNamespaceId);
+                forwardsClient.add(name, address, testNamespaceName);
                 return true;
             } catch (ForwardsClient.ForwardsClientException e) {
                 if (attempt < maxAttempts) {
