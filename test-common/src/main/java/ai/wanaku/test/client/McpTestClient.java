@@ -2,6 +2,8 @@ package ai.wanaku.test.client;
 
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Collections;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import io.quarkiverse.mcp.server.test.McpAssured;
@@ -52,25 +54,42 @@ public class McpTestClient {
      * @param accessToken the bearer token for authorization (can be null for no auth)
      */
     public McpTestClient(String baseUrl, String accessToken) {
+        this(baseUrl, accessToken, Collections.emptyMap());
+    }
+
+    /**
+     * Creates a new MCP test client with optional bearer token and custom HTTP headers.
+     *
+     * @param baseUrl      the Router base URL (e.g., "http://localhost:8080")
+     * @param accessToken  the bearer token for authorization (can be null for no auth)
+     * @param extraHeaders additional HTTP headers sent with every MCP request
+     */
+    public McpTestClient(String baseUrl, String accessToken, Map<String, String> extraHeaders) {
         this.baseUrl = baseUrl;
         try {
             String normalizedUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
 
-            // Use Streamable HTTP transport (/mcp/) instead of SSE (/mcp/sse)
-            // Streamable HTTP properly applies additionalHeaders to ALL requests
-            // including the initial connection, enabling Bearer token auth
             McpStreamableTestClient.Builder builder = McpAssured.newStreamableClient()
                     .setBaseUri(new URI(normalizedUrl))
                     .setMcpPath("mcp/");
 
-            // Add Authorization header if token is provided
-            if (accessToken != null && !accessToken.isEmpty()) {
+            boolean hasToken = accessToken != null && !accessToken.isEmpty();
+            boolean hasExtra = extraHeaders != null && !extraHeaders.isEmpty();
+
+            if (hasToken || hasExtra) {
                 builder.setAdditionalHeaders(message -> {
                     MultiMap headers = MultiMap.caseInsensitiveMultiMap();
-                    headers.add("Authorization", "Bearer " + accessToken);
+                    if (hasExtra) {
+                        extraHeaders.forEach(headers::add);
+                    }
+                    if (hasToken && !headers.contains("Authorization")) {
+                        headers.add("Authorization", "Bearer " + accessToken);
+                    }
                     return headers;
                 });
-                LOG.debug("MCP client configured with bearer token authentication");
+                LOG.debug(
+                        "MCP client configured with {} header(s)",
+                        (hasToken ? 1 : 0) + (hasExtra ? extraHeaders.size() : 0));
             }
 
             this.client = builder.build();
