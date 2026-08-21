@@ -1,6 +1,8 @@
 package ai.wanaku.test.base;
 
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -68,9 +70,11 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
     }
 
     private SkipTracker getTracker(ExtensionContext context) {
-        return context.getRoot()
+        SkipTracker tracker = context.getRoot()
                 .getStore(NAMESPACE)
                 .getOrComputeIfAbsent(SkipTracker.class, key -> new SkipTracker(), SkipTracker.class);
+        context.getTestClass().ifPresent(c -> tracker.noteClass(c.getSimpleName()));
+        return tracker;
     }
 
     static class SkipTracker implements ExtensionContext.Store.CloseableResource {
@@ -80,6 +84,7 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
         private final AtomicInteger executed = new AtomicInteger();
         private final AtomicInteger skipped = new AtomicInteger();
         private final AtomicInteger excluded = new AtomicInteger();
+        private final Set<String> classNames = ConcurrentHashMap.newKeySet();
 
         void recordExecuted() {
             executed.incrementAndGet();
@@ -91,6 +96,10 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
 
         void recordExcluded() {
             excluded.incrementAndGet();
+        }
+
+        void noteClass(String simpleName) {
+            classNames.add(simpleName);
         }
 
         @Override
@@ -118,14 +127,15 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
             int excl = excluded.get();
             int countedTotal = exec + skip;
 
+            String classes = String.join(", ", classNames);
             if (excl > 0) {
                 LOG.info(
-                        "Test skip summary: {}/{} skipped ({}%), {} excluded (@KnownLimitation), threshold {}%",
-                        skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, excl, threshold);
+                        "Test skip summary [{}]: {}/{} skipped ({}%), {} excluded (@KnownLimitation), threshold {}%",
+                        classes, skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, excl, threshold);
             } else {
                 LOG.info(
-                        "Test skip summary: {}/{} skipped ({}%), threshold {}%",
-                        skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, threshold);
+                        "Test skip summary [{}]: {}/{} skipped ({}%), threshold {}%",
+                        classes, skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, threshold);
             }
 
             if (countedTotal < WanakuTestConstants.MIN_SKIP_THRESHOLD_SAMPLE) {
