@@ -12,6 +12,7 @@ import io.quarkiverse.mcp.server.TextResourceContents;
 import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
 import io.quarkiverse.mcp.server.ToolCallException;
+import io.quarkiverse.mcp.server.http.McpParamHeader;
 
 public class InfraRemediationServer {
 
@@ -93,5 +94,15 @@ public class InfraRemediationServer {
             @ToolArg(description = "Urgency level: low, medium, or high") Urgency urgency) {
         int id = ticketCounter.incrementAndGet();
         return "Ticket INC-" + id + " created with urgency=" + urgency + ": " + reason;
+    }
+
+    // ── Header forwarding verification (issue #873) ──
+
+    @Tool(description = "Echo the Authorization header for header-forwarding tests")
+    String echoAuthHeader(
+            @McpParamHeader("Authorization") String authorization,
+            @ToolArg(description = "Test marker to identify the call") String marker) {
+        return "auth=" + (authorization != null ? authorization : "MISSING")
+                + ";marker=" + marker;
     }
 }
