@@ -21,6 +21,7 @@ public final class WanakuTestConstants {
     public static final Duration DEFAULT_HEALTH_CHECK_INTERVAL = Duration.ofMillis(200);
     public static final Duration DEFAULT_REGISTRATION_POLL_INTERVAL = Duration.ofMillis(100);
     public static final int DEFAULT_SKIP_THRESHOLD = 30;
+    public static final int MIN_SKIP_THRESHOLD_SAMPLE = 5;
 
     // Health check
     public static final String SERVER_HEALTH_PATH = "/healthz";
