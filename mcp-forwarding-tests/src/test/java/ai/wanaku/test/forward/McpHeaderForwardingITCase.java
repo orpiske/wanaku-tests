@@ -25,22 +25,24 @@ import static org.assertj.core.api.Assumptions.assumeThat;
  * <p>Covers <a href="https://github.com/wanaku-ai/wanaku/issues/873">wanaku#873</a>:
  * the mock MCP server exposes an {@code echoAuthHeader} tool annotated with
  * {@code @McpParamHeader("Authorization")}. The test sends an Authorization
- * header via the MCP transport and verifies the forwarded tool receives it.
+ * header via the MCP transport and verifies the forwarded tool receives it
+ * only when the {@code wanaku.forward_headers} label is configured.
  */
 @QuarkusTest
 class McpHeaderForwardingITCase extends McpForwardingTestBase {
 
     private static final Logger LOG = LoggerFactory.getLogger(McpHeaderForwardingITCase.class);
     private static final String MOCK_SERVER_JAR = "../fixtures/test-mcp-server/target/quarkus-app/quarkus-run.jar";
-    private static final String FORWARD_NAME = "header-fwd-test";
     private static final String TEST_TOKEN = "test-token-873";
+    private static final String FORWARD_HEADERS_LABEL = "wanaku.forward_headers";
 
     private MockMcpServerManager mockServer;
     private SessionIdProxy headerProxy;
     private McpTestClient headerMcpClient;
+    private String currentForwardName;
 
     @BeforeEach
-    void setupMockServerAndForward() throws Exception {
+    void startMockServer() throws Exception {
         assumeThat(isServerRunning()).as("Router must be available").isTrue();
 
         Path jarPath = Path.of(MOCK_SERVER_JAR).toAbsolutePath();
@@ -50,16 +52,15 @@ class McpHeaderForwardingITCase extends McpForwardingTestBase {
 
         mockServer = new MockMcpServerManager(jarPath, config);
         mockServer.prepare();
-        mockServer.setLogContext("mock-mcp-server", getClass().getSimpleName(), FORWARD_NAME);
-        mockServer.start(FORWARD_NAME);
-
-        forwardsClient.add(FORWARD_NAME, mockServer.getMcpUrl(), "default");
-        LOG.info("Registered forward '{}' -> '{}'", FORWARD_NAME, mockServer.getMcpUrl());
-
-        waitForToolDiscovery();
+        mockServer.setLogContext("mock-mcp-server", getClass().getSimpleName(), "header-fwd");
+        mockServer.start("header-fwd");
     }
 
-    private void waitForToolDiscovery() throws Exception {
+    private void registerForwardAndWaitForDiscovery(String forwardName, Map<String, String> labels) throws Exception {
+        currentForwardName = forwardName;
+        forwardsClient.add(forwardName, mockServer.getMcpUrl(), "default", labels);
+        LOG.info("Registered forward '{}' -> '{}' (labels: {})", forwardName, mockServer.getMcpUrl(), labels);
+
         Awaitility.await()
                 .atMost(30, TimeUnit.SECONDS)
                 .pollInterval(2, TimeUnit.SECONDS)
@@ -116,24 +117,34 @@ class McpHeaderForwardingITCase extends McpForwardingTestBase {
             }
             headerProxy = null;
         }
+        if (currentForwardName != null) {
+            try {
+                forwardsClient.remove(currentForwardName);
+            } catch (Exception e) {
+                LOG.debug("Forward remove: {}", e.getMessage());
+            }
+            currentForwardName = null;
+        }
         if (mockServer != null) {
             mockServer.stop();
             mockServer = null;
         }
     }
 
-    @DisplayName("Authorization header is forwarded to downstream MCP server tool (issue #873)")
+    @DisplayName("Authorization header is forwarded when wanaku.forward_headers label is set (issue #873)")
     @Test
     void shouldForwardAuthorizationHeader() throws Exception {
+        registerForwardAndWaitForDiscovery("header-fwd-positive", Map.of(FORWARD_HEADERS_LABEL, "Authorization"));
+
         headerMcpClient = createClientWithHeaders(Map.of("Authorization", "Bearer " + TEST_TOKEN));
 
         headerMcpClient
                 .when()
                 .toolsCall("echoAuthHeader", Map.of("marker", "fwd-test"), response -> {
+                    LOG.info("echoAuthHeader response: isError={}, content={}", response.isError(), response.content());
                     assertThat(response.isError()).isFalse();
                     assertThat(response.content()).isNotEmpty();
                     String text = response.content().get(0).asText().text();
-                    LOG.info("echoAuthHeader response: {}", text);
                     assertThat(text)
                             .as("Authorization header should be forwarded to the downstream MCP server")
                             .contains(TEST_TOKEN);
@@ -142,22 +153,25 @@ class McpHeaderForwardingITCase extends McpForwardingTestBase {
                 .thenAssertResults();
     }
 
-    @DisplayName("Tool handles absent Authorization header without error (issue #873)")
+    @DisplayName("Authorization header is NOT forwarded without wanaku.forward_headers label (issue #873)")
     @Test
-    void shouldHandleAbsentAuthHeader() throws Exception {
-        headerMcpClient = createClientWithHeaders(Map.of());
+    void shouldNotForwardHeaderWithoutLabel() throws Exception {
+        registerForwardAndWaitForDiscovery("header-fwd-negative", Map.of());
+
+        headerMcpClient = createClientWithHeaders(Map.of("Authorization", "Bearer " + TEST_TOKEN));
 
         headerMcpClient
                 .when()
-                .toolsCall("echoAuthHeader", Map.of("marker", "no-auth"), response -> {
+                .toolsCall("echoAuthHeader", Map.of("marker", "deny-test"), response -> {
                     LOG.info(
-                            "echoAuthHeader response (no auth): isError={}, content={}",
+                            "echoAuthHeader response (no label): isError={}, content={}",
                             response.isError(),
                             response.content());
                     if (!response.isError() && !response.content().isEmpty()) {
                         String text = response.content().get(0).asText().text();
-                        assertThat(text).contains("auth=MISSING");
-                        assertThat(text).contains("marker=no-auth");
+                        assertThat(text)
+                                .as("Authorization header must NOT be forwarded without label")
+                                .contains("auth=MISSING");
                     }
                 })
                 .thenAssertResults();

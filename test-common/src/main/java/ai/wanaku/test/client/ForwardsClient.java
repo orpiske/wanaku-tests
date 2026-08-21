@@ -36,12 +36,19 @@ public class ForwardsClient {
     }
 
     public void add(String name, String address, String namespace) {
-        LOG.debug("Adding forward: {} -> {} (namespace: {})", name, address, namespace);
+        add(name, address, namespace, Map.of());
+    }
+
+    public void add(String name, String address, String namespace, Map<String, String> labels) {
+        LOG.debug("Adding forward: {} -> {} (namespace: {}, labels: {})", name, address, namespace, labels);
 
         Map<String, Object> body = new HashMap<>();
         body.put("name", name);
         body.put("address", address);
         body.put("namespace", namespace);
+        if (labels != null && !labels.isEmpty()) {
+            body.put("labels", labels);
+        }
 
         try {
             String json = objectMapper.writeValueAsString(body);
