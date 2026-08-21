@@ -129,6 +129,10 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
             }
 
             if (countedTotal < WanakuTestConstants.MIN_SKIP_THRESHOLD_SAMPLE) {
+                LOG.info(
+                        "Threshold check waived: sample size {} is below minimum {}",
+                        countedTotal,
+                        WanakuTestConstants.MIN_SKIP_THRESHOLD_SAMPLE);
                 return;
             }
 
