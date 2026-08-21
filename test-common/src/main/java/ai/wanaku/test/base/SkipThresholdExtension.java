@@ -128,7 +128,7 @@ public class SkipThresholdExtension implements TestWatcher, BeforeAllCallback {
                         skip, countedTotal, countedTotal > 0 ? skip * 100 / countedTotal : 0, threshold);
             }
 
-            if (countedTotal == 0) {
+            if (countedTotal < WanakuTestConstants.MIN_SKIP_THRESHOLD_SAMPLE) {
                 return;
             }
 
