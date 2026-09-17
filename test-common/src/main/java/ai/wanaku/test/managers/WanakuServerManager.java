@@ -130,6 +130,20 @@ public class WanakuServerManager extends ProcessManager {
         cleanupTempFiles();
     }
 
+    /**
+     * Stops a managed server without deleting its generated configuration or persisted state.
+     *
+     * <p>This is intended for recovery tests that restart the same manager instance. Call
+     * {@link #stop()} after the final restart to remove the temporary files and persistence
+     * directory.
+     */
+    public void stopPreservingState() {
+        if (external) {
+            throw new IllegalStateException("Cannot stop an externally managed Wanaku server");
+        }
+        super.stop();
+    }
+
     public int getHttpPort() {
         return mgmtPort;
     }
