@@ -93,10 +93,11 @@ class EvaluatorRevisionRecoveryITCase extends RouterTestBase {
         ObjectNode evaluator = root.putArray("evaluators").addObject();
         evaluator.put("name", evaluatorName);
         evaluator.putObject("trigger").put("method", "tools/call");
-        ObjectNode llm = evaluator.putObject("llm");
-        llm.put("operation", "classify");
-        llm.put("prompt", "Test prompt for " + evaluatorName);
-        llm.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
+        ObjectNode engine = evaluator.putObject("engine");
+        engine.put("type", "llm");
+        engine.put("operation", "classify");
+        engine.put("prompt", "Test prompt for " + evaluatorName);
+        engine.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
         evaluator.putObject("processor").put("path", processorPath);
         evaluator.put("on_error", "continue");
         return root.toString();

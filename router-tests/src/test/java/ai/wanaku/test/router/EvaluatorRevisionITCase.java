@@ -353,14 +353,15 @@ class EvaluatorRevisionITCase extends RouterTestBase {
         // Pre-security-fix shape: a valid connection reference PLUS legacy inline connection
         // details. Including the required `connection` isolates the failure to the inline fields, so
         // deny_unknown_fields on the LLM definition is provably what rejects model/url/api_key (400).
-        ObjectNode llm = mapper.createObjectNode();
-        llm.put("operation", "classify");
-        llm.put("prompt", "classify this");
-        llm.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
-        llm.put("model", "llama3.2");
-        llm.put("url", "http://localhost:11434/v1");
-        llm.put("api_key", "inline-secret-token");
-        evaluator.set("llm", llm);
+        ObjectNode engine = mapper.createObjectNode();
+        engine.put("type", "llm");
+        engine.put("operation", "classify");
+        engine.put("prompt", "classify this");
+        engine.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
+        engine.put("model", "llama3.2");
+        engine.put("url", "http://localhost:11434/v1");
+        engine.put("api_key", "inline-secret-token");
+        evaluator.set("engine", engine);
 
         ObjectNode processor = mapper.createObjectNode();
         processor.put("path", validProcessorPath());
@@ -382,7 +383,7 @@ class EvaluatorRevisionITCase extends RouterTestBase {
         // Connection validation happens before WASM compilation, so this fails with 422
         // regardless of whether a compiled action is available.
         ObjectNode evaluator = createEvaluatorNode("unknown-connection-eval");
-        ((ObjectNode) evaluator.get("llm")).put("connection", "does-not-exist");
+        ((ObjectNode) evaluator.get("engine")).put("connection", "does-not-exist");
         evaluators.add(evaluator);
 
         EvaluatorResponse response = evaluatorClient.updateEvaluators(root.toString());
@@ -466,7 +467,7 @@ class EvaluatorRevisionITCase extends RouterTestBase {
     }
 
     /**
-     * Creates a single evaluator definition node with minimal valid fields. The LLM operation
+     * Creates a single evaluator definition node with minimal valid fields. The LLM engine
      * references a named, host-configured connection; inline model/url/api_key are no longer
      * accepted (wanaku-ai/wanaku#1868).
      */
@@ -478,11 +479,12 @@ class EvaluatorRevisionITCase extends RouterTestBase {
         trigger.put("method", "tools/call");
         evaluator.set("trigger", trigger);
 
-        ObjectNode llm = mapper.createObjectNode();
-        llm.put("operation", "classify");
-        llm.put("prompt", "Test prompt for " + name);
-        llm.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
-        evaluator.set("llm", llm);
+        ObjectNode engine = mapper.createObjectNode();
+        engine.put("type", "llm");
+        engine.put("operation", "classify");
+        engine.put("prompt", "Test prompt for " + name);
+        engine.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
+        evaluator.set("engine", engine);
 
         ObjectNode processor = mapper.createObjectNode();
         processor.put("path", validProcessorPath());
