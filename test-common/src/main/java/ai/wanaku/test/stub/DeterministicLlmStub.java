@@ -2,6 +2,7 @@ package ai.wanaku.test.stub;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -40,6 +41,7 @@ public final class DeterministicLlmStub {
     private volatile String denyMarker;
 
     private HttpServer server;
+    private String host;
     private int port;
 
     /**
@@ -52,10 +54,12 @@ public final class DeterministicLlmStub {
     }
 
     public void start() throws IOException {
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        InetAddress loopback = InetAddress.getLoopbackAddress();
+        server = HttpServer.create(new InetSocketAddress(loopback, 0), 0);
         server.createContext(CHAT_COMPLETIONS_PATH, this::handleChatCompletion);
         server.setExecutor(null);
         server.start();
+        host = loopback.getHostAddress();
         port = server.getAddress().getPort();
         LOG.debug("Deterministic LLM stub started on port {} (deny marker: {})", port, denyMarker);
     }
@@ -69,7 +73,7 @@ public final class DeterministicLlmStub {
 
     /** Base URL to write into the bootstrap LLM connection; the server appends {@code chat/completions}. */
     public String getConnectionUrl() {
-        return "http://127.0.0.1:" + port + "/v1/";
+        return "http://" + host + ":" + port + "/v1/";
     }
 
     public int getCallCount() {
