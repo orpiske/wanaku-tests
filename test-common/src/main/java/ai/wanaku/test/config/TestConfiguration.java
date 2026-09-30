@@ -16,6 +16,10 @@ public class TestConfiguration {
     private final Duration defaultTimeout;
     private final boolean mcpIdFilterEnabled;
     private final String forwardHeaders;
+    private final boolean governanceEnabled;
+    private final String actionPolicyJson;
+    private final String governanceJson;
+    private final String llmConnectionUrl;
 
     private TestConfiguration(Builder builder) {
         this.serverBinaryPath = builder.serverBinaryPath;
@@ -26,6 +30,10 @@ public class TestConfiguration {
         this.defaultTimeout = builder.defaultTimeout;
         this.mcpIdFilterEnabled = builder.mcpIdFilterEnabled;
         this.forwardHeaders = builder.forwardHeaders;
+        this.governanceEnabled = builder.governanceEnabled;
+        this.actionPolicyJson = builder.actionPolicyJson;
+        this.governanceJson = builder.governanceJson;
+        this.llmConnectionUrl = builder.llmConnectionUrl;
     }
 
     public static Builder builder() {
@@ -51,7 +59,31 @@ public class TestConfiguration {
                 .mcpIdFilterEnabled(
                         Boolean.parseBoolean(System.getProperty(WanakuTestConstants.PROP_MCP_ID_FILTER, "false")))
                 .forwardHeaders(System.getProperty(WanakuTestConstants.PROP_FORWARD_HEADERS))
+                .governanceEnabled(
+                        Boolean.parseBoolean(System.getProperty(WanakuTestConstants.PROP_GOVERNANCE_ENABLED, "false")))
                 .build();
+    }
+
+    /**
+     * Creates a builder pre-populated with this configuration's values. Governance tests use this to
+     * derive a per-scenario configuration (enabling the governance filters and supplying the
+     * scenario's action-policy / posture / LLM-stub URL) from the shared, system-property-driven
+     * base configuration without re-resolving binary and artifact paths.
+     */
+    public Builder toBuilder() {
+        return builder()
+                .serverBinaryPath(serverBinaryPath)
+                .camelCapabilityJarPath(camelCapabilityJarPath)
+                .artifactsDir(artifactsDir)
+                .tempDataDir(tempDataDir)
+                .evaluatorWasmPath(evaluatorWasmPath)
+                .defaultTimeout(defaultTimeout)
+                .mcpIdFilterEnabled(mcpIdFilterEnabled)
+                .forwardHeaders(forwardHeaders)
+                .governanceEnabled(governanceEnabled)
+                .actionPolicyJson(actionPolicyJson)
+                .governanceJson(governanceJson)
+                .llmConnectionUrl(llmConnectionUrl);
     }
 
     private static Path findServerBinary() {
@@ -187,6 +219,45 @@ public class TestConfiguration {
         return forwardHeaders;
     }
 
+    /**
+     * Whether the generated server pipeline should include the governance filters
+     * ({@code wanaku_action_policy} followed by {@code wanaku_evaluator}) and whether the bootstrap
+     * config should carry {@code governance:} / {@code action_policy:} blocks. Defaults to
+     * {@code false} so every other module keeps its ungoverned pipeline; only the governance-tests
+     * module enables it. Servers that predate wanaku-ai/wanaku#1900 do not register these filters
+     * and abort startup on an unknown filter type.
+     */
+    public boolean isGovernanceEnabled() {
+        return governanceEnabled;
+    }
+
+    /**
+     * Action-policy definition rendered as a JSON object (a valid YAML flow mapping) and written
+     * under the {@code action_policy:} key of the bootstrap config, from which the server seeds the
+     * policy at startup. Returns {@code null} when no static policy should be emitted.
+     */
+    public String getActionPolicyJson() {
+        return actionPolicyJson;
+    }
+
+    /**
+     * Governance posture rendered as a JSON object (a valid YAML flow mapping) and written under the
+     * {@code governance:} key of the bootstrap config. Returns {@code null} to let the server apply
+     * its fail-closed defaults.
+     */
+    public String getGovernanceJson() {
+        return governanceJson;
+    }
+
+    /**
+     * URL of the LLM connection written into the bootstrap config. Returns
+     * {@link WanakuTestConstants#DEFAULT_LLM_CONNECTION_URL} when unset. Governance tests point this
+     * at a deterministic in-JVM stub so evaluator decisions never reach an external LLM.
+     */
+    public String getLlmConnectionUrl() {
+        return llmConnectionUrl != null ? llmConnectionUrl : WanakuTestConstants.DEFAULT_LLM_CONNECTION_URL;
+    }
+
     public static class Builder {
         private Path serverBinaryPath;
         private Path camelCapabilityJarPath;
@@ -196,6 +267,10 @@ public class TestConfiguration {
         private Duration defaultTimeout = WanakuTestConstants.DEFAULT_TIMEOUT;
         private boolean mcpIdFilterEnabled;
         private String forwardHeaders;
+        private boolean governanceEnabled;
+        private String actionPolicyJson;
+        private String governanceJson;
+        private String llmConnectionUrl;
 
         public Builder serverBinaryPath(Path serverBinaryPath) {
             this.serverBinaryPath = serverBinaryPath;
@@ -234,6 +309,26 @@ public class TestConfiguration {
 
         public Builder forwardHeaders(String forwardHeaders) {
             this.forwardHeaders = forwardHeaders;
+            return this;
+        }
+
+        public Builder governanceEnabled(boolean governanceEnabled) {
+            this.governanceEnabled = governanceEnabled;
+            return this;
+        }
+
+        public Builder actionPolicyJson(String actionPolicyJson) {
+            this.actionPolicyJson = actionPolicyJson;
+            return this;
+        }
+
+        public Builder governanceJson(String governanceJson) {
+            this.governanceJson = governanceJson;
+            return this;
+        }
+
+        public Builder llmConnectionUrl(String llmConnectionUrl) {
+            this.llmConnectionUrl = llmConnectionUrl;
             return this;
         }
 

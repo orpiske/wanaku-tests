@@ -70,7 +70,9 @@ jobs:
           fi
 
       - name: Build test fixtures
-        run: mvn -B -DskipTests package -f fixtures/test-mcp-server/pom.xml
+        run: |
+          mvn -B -DskipTests package -f fixtures/test-mcp-server/pom.xml
+          mvn -B -DskipTests package -f fixtures/governance-capture-server/pom.xml
 
       - name: Run integration tests
         run: |

@@ -196,7 +196,19 @@ public class WanakuServerManager extends ProcessManager {
         lines.addAll(List.of(
                 "      - filter: wanaku_namespace",
                 "      - filter: wanaku_well_known",
-                "      - filter: wanaku_mcp_init",
+                "      - filter: wanaku_mcp_init"));
+
+        // Governance filters must sit after request metadata/namespace/init resolution and before the
+        // tool/resource/prompt filters that forward to upstream MCP servers, so a denied call never
+        // reaches upstream. action_policy (static rules) runs before evaluator (dynamic LLM-backed
+        // review) per wanaku-ai/wanaku#1900. Only emitted for the governance-tests module; servers
+        // that predate that change abort startup on the unknown filter types.
+        if (config.isGovernanceEnabled()) {
+            lines.add("      - filter: wanaku_action_policy");
+            lines.add("      - filter: wanaku_evaluator");
+        }
+
+        lines.addAll(List.of(
                 "      - filter: wanaku_tool_list",
                 "      - filter: wanaku_tool_call",
                 "      - filter: wanaku_resource_list",
@@ -225,15 +237,26 @@ public class WanakuServerManager extends ProcessManager {
         // Named LLM connections are config-only: they can only be defined here, never through the
         // management API. Evaluator tests reference this connection by name; its credential must
         // never surface through any API response (wanaku-ai/wanaku#1868).
-        String yaml = String.join(
-                "\n",
+        List<String> lines = new ArrayList<>(List.of(
                 "# bootstrap config for testing",
                 "llm_connections:",
                 "  - name: \"" + WanakuTestConstants.TEST_LLM_CONNECTION_NAME + "\"",
                 "    model: \"test-model\"",
-                "    url: \"http://localhost:11434/v1/\"",
-                "    api_key: \"" + WanakuTestConstants.TEST_LLM_CONNECTION_SECRET + "\"",
-                "");
+                "    url: \"" + config.getLlmConnectionUrl() + "\"",
+                "    api_key: \"" + WanakuTestConstants.TEST_LLM_CONNECTION_SECRET + "\""));
+
+        // governance: and action_policy: are emitted as JSON, which is a valid YAML flow mapping, so
+        // the whole block is a single line and no hand-indented multi-line YAML is needed. The server
+        // reads governance posture and seeds the static action policy from these keys at startup.
+        if (config.getGovernanceJson() != null) {
+            lines.add("governance: " + config.getGovernanceJson());
+        }
+        if (config.getActionPolicyJson() != null) {
+            lines.add("action_policy: " + config.getActionPolicyJson());
+        }
+        lines.add("");
+
+        String yaml = String.join("\n", lines);
 
         Path configFile = Files.createTempFile("wanaku-config-", ".yaml");
         Files.writeString(configFile, yaml);

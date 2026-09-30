@@ -16,6 +16,7 @@ public final class WanakuTestConstants {
     public static final String PROP_EVALUATOR_WASM = "wanaku.test.evaluator.wasm";
     public static final String PROP_MCP_ID_FILTER = "wanaku.test.server.mcp-id-filter";
     public static final String PROP_FORWARD_HEADERS = "wanaku.test.server.forward-headers";
+    public static final String PROP_GOVERNANCE_ENABLED = "wanaku.test.server.governance";
 
     // Default values
     public static final String DEFAULT_ARTIFACTS_DIR = "artifacts";
@@ -50,6 +51,13 @@ public final class WanakuTestConstants {
     // management API response (see wanaku-ai/wanaku#1868).
     public static final String TEST_LLM_CONNECTION_NAME = "test-connection";
     public static final String TEST_LLM_CONNECTION_SECRET = "super-secret-test-key-do-not-leak";
+
+    // Default LLM connection URL written into the bootstrap config. Points at a local Ollama
+    // instance that is not required to exist for non-governance tests (the connection is only
+    // dialed when an evaluator is actually triggered). Governance tests override this with the URL
+    // of a deterministic in-JVM stub so evaluator decisions are reproducible and never hit a paid
+    // or external LLM.
+    public static final String DEFAULT_LLM_CONNECTION_URL = "http://localhost:11434/v1/";
 
     // Port allocation
     public static final int PORT_ALLOCATION_RETRIES = 5;
