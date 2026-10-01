@@ -78,6 +78,8 @@ jobs:
           targets: wasm32-wasip1
 
       - name: Install cargo-component
+        env:
+          RUSTC_WRAPPER: ''
         run: |
           cargo install cargo-component
 
