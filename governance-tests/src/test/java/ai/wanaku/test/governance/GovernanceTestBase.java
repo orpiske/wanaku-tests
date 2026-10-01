@@ -67,6 +67,7 @@ abstract class GovernanceTestBase {
             HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     private final List<SessionIdProxy> proxies = new ArrayList<>();
     private final List<McpTestClient> clients = new ArrayList<>();
+    private final List<MockMcpServerManager> additionalCaptureServers = new ArrayList<>();
 
     @BeforeEach
     void startInfrastructure() throws Exception {
@@ -123,6 +124,10 @@ abstract class GovernanceTestBase {
             captureServer.stop();
             captureServer = null;
         }
+        for (MockMcpServerManager additional : additionalCaptureServers) {
+            additional.stop();
+        }
+        additionalCaptureServers.clear();
         if (llmStub != null) {
             llmStub.stop();
             llmStub = null;
@@ -169,6 +174,20 @@ abstract class GovernanceTestBase {
      * so forwarding a labeled upstream is the supported way to exercise label selectors.
      */
     protected void registerLabeledCaptureForward(String namespace, Map<String, String> labels) throws Exception {
+        registerLabeledCaptureForward(namespace, labels, captureServer);
+    }
+
+    protected MockMcpServerManager startAdditionalCaptureServer() throws Exception {
+        MockMcpServerManager additional = new MockMcpServerManager(CAPTURE_JAR, baseConfig);
+        additionalCaptureServers.add(additional);
+        additional.prepare();
+        additional.addSystemProperty("capture.isolated-catalog", "true");
+        additional.start(getClass().getSimpleName());
+        return additional;
+    }
+
+    protected void registerLabeledCaptureForward(
+            String namespace, Map<String, String> labels, MockMcpServerManager upstream) throws Exception {
         NamespaceClient namespaceClient = new NamespaceClient(server.getBaseUrl(), null);
         if (!namespaceClient.exists(namespace)) {
             namespaceClient.create(namespace);
@@ -176,7 +195,7 @@ abstract class GovernanceTestBase {
 
         var body = MAPPER.createObjectNode();
         body.put("name", "capture-fwd-" + namespace);
-        body.put("address", captureServer.getMcpUrl());
+        body.put("address", upstream.getMcpUrl());
         body.put("namespace", namespace);
         var labelsNode = body.putObject("labels");
         labels.forEach(labelsNode::put);
@@ -191,7 +210,7 @@ abstract class GovernanceTestBase {
         assertThat(response.statusCode())
                 .as("Registering labeled forward for namespace '%s' should succeed: %s", namespace, response.body())
                 .isIn(200, 201);
-        waitForToolDiscovery(namespace, CAPTURE_TOOL);
+        waitForToolDiscovery(namespace, upstream == captureServer ? CAPTURE_TOOL : "capture_isolated_tool");
     }
 
     protected McpTestClient connect(String namespace) throws Exception {
@@ -205,8 +224,12 @@ abstract class GovernanceTestBase {
     }
 
     protected CaptureCounts captureCounts() throws Exception {
+        return captureCounts(captureServer);
+    }
+
+    protected CaptureCounts captureCounts(MockMcpServerManager upstream) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create("http://localhost:" + captureServer.getHttpPort() + "/capture/counts"))
+                .uri(URI.create("http://localhost:" + upstream.getHttpPort() + "/capture/counts"))
                 .timeout(Duration.ofSeconds(10))
                 .GET()
                 .build();
