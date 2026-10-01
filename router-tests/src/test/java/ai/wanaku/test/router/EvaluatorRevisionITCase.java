@@ -317,6 +317,19 @@ class EvaluatorRevisionITCase extends RouterTestBase {
         assertThat(response.statusCode()).isEqualTo(422);
     }
 
+    @DisplayName("Legacy evaluator error policy is rejected with 400 Bad Request")
+    @Test
+    void shouldRejectLegacyErrorPolicy() {
+        ObjectNode root = mapper.createObjectNode();
+        ObjectNode evaluator = createEvaluatorNode("legacy-error-policy-eval");
+        evaluator.put("on_error", "continue");
+        root.putArray("evaluators").add(evaluator);
+
+        EvaluatorResponse response = evaluatorClient.updateEvaluators(root.toString());
+
+        assertThat(response.statusCode()).isEqualTo(400);
+    }
+
     @DisplayName("Update with missing processor path returns 400 Bad Request")
     @Test
     void shouldRejectUpdateWhenProcessorPathIsMissing() {
@@ -489,8 +502,6 @@ class EvaluatorRevisionITCase extends RouterTestBase {
         ObjectNode processor = mapper.createObjectNode();
         processor.put("path", validProcessorPath());
         evaluator.set("processor", processor);
-
-        evaluator.put("on_error", "continue");
 
         return evaluator;
     }

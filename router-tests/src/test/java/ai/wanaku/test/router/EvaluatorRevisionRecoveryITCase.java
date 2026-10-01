@@ -99,7 +99,6 @@ class EvaluatorRevisionRecoveryITCase extends RouterTestBase {
         engine.put("prompt", "Test prompt for " + evaluatorName);
         engine.put("connection", WanakuTestConstants.TEST_LLM_CONNECTION_NAME);
         evaluator.putObject("processor").put("path", processorPath);
-        evaluator.put("on_error", "continue");
         return root.toString();
     }
 
