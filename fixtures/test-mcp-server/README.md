@@ -69,8 +69,11 @@ Select the target project with `oc project <project>`, then deploy from
 ```shell
 oc apply -f deploy/openshift.yaml
 oc rollout status deployment/test-mcp-server
-oc get route test-mcp-server -o jsonpath='https://{.spec.host}/mcp{"\n"}'
+oc port-forward service/test-mcp-server 8181:8181
 ```
+
+Keep the port-forward command running while using the server. The MCP endpoint
+is available locally at `http://localhost:8181/mcp`.
 
 The Deployment uses `quay.io/wanaku/test-mcp-server:latest`. To use a specific
 image tag or a different registry, change the `image` field in
@@ -81,8 +84,8 @@ oc set image deployment/test-mcp-server test-mcp-server=<registry>/test-mcp-serv
 oc rollout status deployment/test-mcp-server
 ```
 
-The Service exposes port 8181 within the project, and the Route exposes `/mcp`
-over HTTPS. OpenShift assigns the container's user ID. TCP probes check that the
+The Service exposes port 8181 within the project. OpenShift assigns the
+container's user ID. TCP probes check that the
 HTTP listener is available because this fixture has no health endpoint.
 
 When a new image is published under the same tag, restart the deployment to
