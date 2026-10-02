@@ -148,6 +148,11 @@ public class WanakuServerManager extends ProcessManager {
         return mgmtPort;
     }
 
+    /** Managed file-persistence directory shared by the independent revision stores. */
+    public Path getPersistDirectory() {
+        return persistDir;
+    }
+
     public int getMcpPort() {
         return mcpPort;
     }

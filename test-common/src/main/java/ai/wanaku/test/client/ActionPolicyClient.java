@@ -24,7 +24,15 @@ public final class ActionPolicyClient implements AutoCloseable {
     }
 
     public Response updatePolicy(JsonNode policy) throws IOException, InterruptedException {
-        var request = MAPPER.createObjectNode().set("policy", policy);
+        return updatePolicy(policy, null);
+    }
+
+    public Response updatePolicy(JsonNode policy, Long expectedRevision) throws IOException, InterruptedException {
+        var request = MAPPER.createObjectNode();
+        request.set("policy", policy);
+        if (expectedRevision != null) {
+            request.put("expected_revision", expectedRevision);
+        }
         return execute(builder(PATH)
                 .header("Content-Type", "application/json")
                 .PUT(HttpRequest.BodyPublishers.ofString(request.toString()))
@@ -37,6 +45,25 @@ public final class ActionPolicyClient implements AutoCloseable {
 
     public Response getActiveRevision() throws IOException, InterruptedException {
         return execute(builder(PATH + "/revisions/active").GET().build());
+    }
+
+    public Response listRevisions() throws IOException, InterruptedException {
+        return execute(builder(PATH + "/revisions").GET().build());
+    }
+
+    public Response getRevision(long revisionId) throws IOException, InterruptedException {
+        return execute(builder(PATH + "/revisions/" + revisionId).GET().build());
+    }
+
+    public Response activateRevision(long revisionId, Long expectedRevision) throws IOException, InterruptedException {
+        var body = MAPPER.createObjectNode();
+        if (expectedRevision != null) {
+            body.put("expected_revision", expectedRevision);
+        }
+        return execute(builder(PATH + "/revisions/" + revisionId + "/activate")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build());
     }
 
     private HttpRequest.Builder builder(String path) {
