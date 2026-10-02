@@ -10,6 +10,8 @@ This framework tests Wanaku capabilities:
 - **Resources** — expose, list, read, and remove file resources via REST API, MCP, and CLI
 - **Camel Integration** — Apache Camel-based tools, file resources, PostgreSQL, multi-instance
 - **Cross-Capability Tests** — router restart and mixed-capability flows
+- **Governance Audit** — decision and administrative events, query filters, redaction, retention,
+  restart durability, and observational storage failures
 
 ## Prerequisites
 
@@ -78,6 +80,21 @@ wanaku --version
 > **Note:** CLI tests will be skipped if `wanaku` command is not found in PATH and `-Dwanaku.test.cli.path` is not set.
 
 ## Run Tests
+
+Audit scenarios use isolated, harness-owned Rust servers and the local governance capture fixture:
+
+```bash
+mvn -DskipTests package -f fixtures/governance-capture-server/pom.xml
+mvn verify -pl governance-tests -am -Dit.test='Audit*ITCase' -Dfailsafe.failIfNoSpecifiedTests=false \
+  -Dwanaku.test.server.binary=/path/to/wanaku/target/debug/wanaku-server \
+  -Dwanaku.test.evaluator.wasm=/path/to/wanaku/actions/dist/safety_review_action.wasm
+```
+
+Use a server build with governance audit support. Missing binaries, the capture fixture, or evaluator
+WASM cause infrastructure skips; supported behavior failures fail the tests. External-server mode is
+skipped because these scenarios change configuration, restart processes, and inject storage failures.
+The `full-integration-test` workflow builds these prerequisites from source and runs the audit tests
+in managed mode.
 
 ```bash
 # Recommended: build and run all tests with CLI JAR and debug logging

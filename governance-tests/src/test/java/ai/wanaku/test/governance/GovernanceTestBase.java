@@ -73,6 +73,11 @@ abstract class GovernanceTestBase {
     void startInfrastructure() throws Exception {
         baseConfig = TestConfiguration.fromSystemProperties();
 
+        assumeThat(System.getProperty("wanaku.test.external.mgmt.port"))
+                .as(
+                        "Governance scenarios require a harness-owned server and store; external-server mode is unsupported")
+                .isNull();
+
         assumeThat(baseConfig.getServerBinaryPath() != null && Files.exists(baseConfig.getServerBinaryPath()))
                 .as("A managed Wanaku server binary is required (set -D%s)", WanakuTestConstants.PROP_SERVER_BINARY)
                 .isTrue();
@@ -143,11 +148,24 @@ abstract class GovernanceTestBase {
      * {@code wanaku_mcp_id} filter (required so denial responses carry the request's JSON-RPC id).
      */
     protected void startGovernedServer(String actionPolicyJson, String governanceJson) throws IOException {
+        startGovernedServer(actionPolicyJson, governanceJson, null);
+    }
+
+    protected void startGovernedServer(String actionPolicyJson, String governanceJson, String auditJson)
+            throws IOException {
+        startGovernedServer(actionPolicyJson, governanceJson, auditJson, true);
+    }
+
+    protected void startGovernedServer(
+            String actionPolicyJson, String governanceJson, String auditJson, boolean persistenceEnabled)
+            throws IOException {
         TestConfiguration config = baseConfig.toBuilder()
                 .governanceEnabled(true)
                 .mcpIdFilterEnabled(true)
                 .actionPolicyJson(actionPolicyJson)
                 .governanceJson(governanceJson)
+                .auditJson(auditJson)
+                .persistenceEnabled(persistenceEnabled)
                 .llmConnectionUrl(llmStub.getConnectionUrl())
                 .build();
         server = new WanakuServerManager(config);
@@ -214,10 +232,14 @@ abstract class GovernanceTestBase {
     }
 
     protected McpTestClient connect(String namespace) throws Exception {
+        return connect(namespace, Map.of());
+    }
+
+    protected McpTestClient connect(String namespace, Map<String, String> headers) throws Exception {
         SessionIdProxy proxy = new SessionIdProxy(server.getMcpBaseUrl() + "/" + namespace);
         proxy.start();
         proxies.add(proxy);
-        McpTestClient client = new McpTestClient(proxy.getBaseUrl(), null);
+        McpTestClient client = new McpTestClient(proxy.getBaseUrl(), null, headers);
         client.connect();
         clients.add(client);
         return client;

@@ -19,6 +19,8 @@ public class TestConfiguration {
     private final boolean governanceEnabled;
     private final String actionPolicyJson;
     private final String governanceJson;
+    private final String auditJson;
+    private final boolean persistenceEnabled;
     private final String llmConnectionUrl;
 
     private TestConfiguration(Builder builder) {
@@ -33,6 +35,8 @@ public class TestConfiguration {
         this.governanceEnabled = builder.governanceEnabled;
         this.actionPolicyJson = builder.actionPolicyJson;
         this.governanceJson = builder.governanceJson;
+        this.auditJson = builder.auditJson;
+        this.persistenceEnabled = builder.persistenceEnabled;
         this.llmConnectionUrl = builder.llmConnectionUrl;
     }
 
@@ -83,6 +87,8 @@ public class TestConfiguration {
                 .governanceEnabled(governanceEnabled)
                 .actionPolicyJson(actionPolicyJson)
                 .governanceJson(governanceJson)
+                .auditJson(auditJson)
+                .persistenceEnabled(persistenceEnabled)
                 .llmConnectionUrl(llmConnectionUrl);
     }
 
@@ -249,6 +255,14 @@ public class TestConfiguration {
         return governanceJson;
     }
 
+    public String getAuditJson() {
+        return auditJson;
+    }
+
+    public boolean isPersistenceEnabled() {
+        return persistenceEnabled;
+    }
+
     /**
      * URL of the LLM connection written into the bootstrap config. Returns
      * {@link WanakuTestConstants#DEFAULT_LLM_CONNECTION_URL} when unset. Governance tests point this
@@ -270,6 +284,8 @@ public class TestConfiguration {
         private boolean governanceEnabled;
         private String actionPolicyJson;
         private String governanceJson;
+        private String auditJson;
+        private boolean persistenceEnabled = true;
         private String llmConnectionUrl;
 
         public Builder serverBinaryPath(Path serverBinaryPath) {
@@ -324,6 +340,16 @@ public class TestConfiguration {
 
         public Builder governanceJson(String governanceJson) {
             this.governanceJson = governanceJson;
+            return this;
+        }
+
+        public Builder auditJson(String auditJson) {
+            this.auditJson = auditJson;
+            return this;
+        }
+
+        public Builder persistenceEnabled(boolean persistenceEnabled) {
+            this.persistenceEnabled = persistenceEnabled;
             return this;
         }
 

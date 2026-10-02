@@ -46,7 +46,7 @@ public class WanakuServerManager extends ProcessManager {
         LOG.debug("Wanaku server prepared with management port {} and MCP port {}", mgmtPort, mcpPort);
 
         addEnvironmentVariable("WANAKU_MGMT_LISTEN", "0.0.0.0:" + mgmtPort);
-        addEnvironmentVariable("WANAKU_PERSIST_BACKEND", "file");
+        addEnvironmentVariable("WANAKU_PERSIST_BACKEND", config.isPersistenceEnabled() ? "file" : "none");
 
         // Header forwarding is default-deny (wanaku-ai/wanaku#873): the server forwards a request
         // header to downstream MCP servers only when it appears in this allowlist. Left unset, the
@@ -164,6 +164,10 @@ public class WanakuServerManager extends ProcessManager {
         return config;
     }
 
+    public Path getPersistDir() {
+        return persistDir;
+    }
+
     private Path generatePipelineConfig() throws IOException {
         List<String> lines = new ArrayList<>(List.of(
                 "listeners:",
@@ -253,6 +257,9 @@ public class WanakuServerManager extends ProcessManager {
         }
         if (config.getActionPolicyJson() != null) {
             lines.add("action_policy: " + config.getActionPolicyJson());
+        }
+        if (config.getAuditJson() != null) {
+            lines.add("audit: " + config.getAuditJson());
         }
         lines.add("");
 
