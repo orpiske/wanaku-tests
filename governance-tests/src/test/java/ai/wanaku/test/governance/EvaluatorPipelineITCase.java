@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
 import ai.wanaku.test.WanakuTestConstants;
+import ai.wanaku.test.client.ActionPolicyClient;
 import ai.wanaku.test.client.EvaluatorClient;
 import ai.wanaku.test.client.EvaluatorClient.EvaluatorResponse;
 import ai.wanaku.test.client.McpTestClient;
@@ -92,6 +93,52 @@ class EvaluatorPipelineITCase extends GovernanceTestBase {
         assertThat(captureCounts().toolCalls())
                 .as("A passed tool call must reach the upstream capture server")
                 .isEqualTo(1);
+    }
+
+    @DisplayName("Multiple matching allows continue to the evaluator; a matching deny skips it")
+    @Test
+    void staticPrecedenceControlsEvaluatorExecution() throws Exception {
+        llmStub.setDenyMarker(DENY_MARKER);
+        ObjectNode broadAllow = MAPPER.createObjectNode();
+        broadAllow.put("id", "allow-broad").put("effect", "allow");
+        broadAllow.putObject("selectors").put("operation", "tools/call");
+        ObjectNode specificAllow = GovernancePolicies.denyTool("allow-specific", CAPTURE_TOOL, "unused");
+        specificAllow.put("effect", "allow");
+        specificAllow.remove("message");
+        specificAllow.remove("reason_code");
+        ObjectNode deny = GovernancePolicies.denyTool("deny-specific", CAPTURE_TOOL, "Static precedence denial.");
+
+        try (ActionPolicyClient policies = new ActionPolicyClient(server.getBaseUrl())) {
+            assertThat(policies.updatePolicy(MAPPER.readTree(GovernancePolicies.policy(broadAllow, specificAllow)))
+                            .statusCode())
+                    .isEqualTo(200);
+            McpTestClient client = connect(NAMESPACE);
+            client.when()
+                    .toolsCall(CAPTURE_TOOL)
+                    .withArguments(Map.of("payload", DENY_MARKER))
+                    .withErrorAssert(error -> assertThat(error.code()).isEqualTo(EVALUATOR_BLOCK_CODE))
+                    .send()
+                    .thenAssertResults();
+            int evaluatorCalls = llmStub.getCallCount();
+            assertThat(evaluatorCalls).isPositive();
+            assertThat(captureCounts().toolCalls()).isZero();
+
+            assertThat(policies.updatePolicy(
+                                    MAPPER.readTree(GovernancePolicies.policy(broadAllow, specificAllow, deny)))
+                            .statusCode())
+                    .isEqualTo(200);
+            client.when()
+                    .toolsCall(CAPTURE_TOOL)
+                    .withArguments(Map.of("payload", DENY_MARKER))
+                    .withErrorAssert(error -> {
+                        assertThat(error.code()).isEqualTo(-32003);
+                        assertThat(error.message()).isEqualTo("Static precedence denial.");
+                    })
+                    .send()
+                    .thenAssertResults();
+            assertThat(llmStub.getCallCount()).isEqualTo(evaluatorCalls);
+            assertThat(captureCounts().toolCalls()).isZero();
+        }
     }
 
     private void registerSafetyEvaluator(Path wasm) {
