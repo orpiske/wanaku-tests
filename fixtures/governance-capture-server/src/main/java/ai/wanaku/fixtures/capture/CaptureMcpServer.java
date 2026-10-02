@@ -16,6 +16,8 @@ import io.quarkiverse.mcp.server.Tool;
 import io.quarkiverse.mcp.server.ToolArg;
 import io.quarkiverse.mcp.server.ToolFilter;
 import io.quarkiverse.mcp.server.ToolManager.ToolInfo;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Upstream MCP server used by the governance tests. Each governed operation records that it was
@@ -30,6 +32,9 @@ public class CaptureMcpServer implements ToolFilter, ResourceFilter, PromptFilte
 
     @Inject
     CaptureState state;
+
+    @Inject
+    ObjectMapper mapper;
 
     private static boolean isolatedCatalog() {
         return Boolean.getBoolean("capture.isolated-catalog");
@@ -62,8 +67,10 @@ public class CaptureMcpServer implements ToolFilter, ResourceFilter, PromptFilte
     }
 
     @Tool(name = "capture_typed_tool", description = "Records arbitrary JSON arguments")
-    String captureTypedTool(@ToolArg(description = "Optional JSON value", required = false) Object value) {
-        return "capture_typed_tool invoked (count=" + state.incrementToolCalls() + ") value=" + value;
+    String captureTypedTool(@ToolArg(description = "Optional JSON value", required = false) Object value)
+            throws JsonProcessingException {
+        state.incrementToolCalls();
+        return mapper.writeValueAsString(value);
     }
 
     @Tool(name = "capture_star*tool", description = "Literal star name for matcher tests")
@@ -96,5 +103,10 @@ public class CaptureMcpServer implements ToolFilter, ResourceFilter, PromptFilte
     PromptMessage capturePrompt(@PromptArg(description = "Arbitrary topic") String topic) {
         int count = state.incrementPromptGets();
         return PromptMessage.withUserRole("capture_prompt invoked (count=" + count + ") topic=" + topic);
+    }
+
+    @Prompt(name = "capture_optional_prompt", description = "Records a prompt with optional arguments")
+    PromptMessage captureOptionalPrompt(@PromptArg(description = "Optional topic", required = false) String topic) {
+        return capturePrompt(topic);
     }
 }
