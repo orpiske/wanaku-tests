@@ -38,7 +38,8 @@ jobs:
     - name: Run PMD and SpotBugs
       id: analysis
       continue-on-error: true
-      run: mvn -B --no-transfer-progress verify -Pstatic-analysis -DskipTests --file pom.xml
+      # Failsafe 3.6 requires skipITs; skipTests still compiles tests for analysis.
+      run: mvn -B --no-transfer-progress verify -Pstatic-analysis -DskipTests -DskipITs --file pom.xml
     - name: Generate Report
       if: steps.analysis.outcome == 'failure'
       run: |
