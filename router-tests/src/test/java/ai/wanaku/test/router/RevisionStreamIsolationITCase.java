@@ -1,7 +1,12 @@
 package ai.wanaku.test.router;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,7 +16,6 @@ import ai.wanaku.test.client.EvaluatorClient;
 import ai.wanaku.test.client.ForwardsClient;
 import ai.wanaku.test.client.McpTestClient;
 import ai.wanaku.test.client.NamespaceClient;
-import ai.wanaku.test.client.PromptsClient;
 import ai.wanaku.test.client.SessionIdProxy;
 import ai.wanaku.test.config.TestConfiguration;
 import ai.wanaku.test.managers.MockMcpServerManager;
@@ -80,7 +84,6 @@ class RevisionStreamIsolationITCase {
         server.start("revision-stream-isolation");
         evaluators = new EvaluatorClient(server.getBaseUrl(), null);
         policies = new ActionPolicyClient(server.getBaseUrl());
-        new PromptsClient(server.getBaseUrl(), null).add("revision-prompt", "Revision isolation prompt");
     }
 
     @AfterEach
@@ -309,7 +312,7 @@ class RevisionStreamIsolationITCase {
                 .put("target_type", "prompt")
                 .putObject("target_name")
                 .put("matcher", "exact")
-                .put("value", "revision-prompt");
+                .put("value", "capture_prompt");
         return root;
     }
 
@@ -340,15 +343,15 @@ class RevisionStreamIsolationITCase {
         return response.body();
     }
 
-    private void assertEvaluatorBlocks() throws Exception {
+    private void startCaptureForward() throws Exception {
         Path captureJar = Path.of("../fixtures/governance-capture-server/target/quarkus-app/quarkus-run.jar")
                 .toAbsolutePath()
                 .normalize();
         if (!Files.exists(captureJar)) {
-            LOG.warn("Skipping evaluator runtime check: governance capture fixture is unavailable at {}", captureJar);
+            LOG.warn("Skipping revision runtime check: governance capture fixture is unavailable at {}", captureJar);
         }
         assumeThat(captureJar)
-                .as("Governance capture fixture is required for evaluator runtime checks")
+                .as("Governance capture fixture is required for revision runtime checks")
                 .exists();
         if (captureServer == null) {
             captureServer = new MockMcpServerManager(captureJar, config);
@@ -358,6 +361,10 @@ class RevisionStreamIsolationITCase {
             new ForwardsClient(server.getBaseUrl(), null)
                     .add("revision-capture", captureServer.getMcpUrl(), "revision-runtime");
         }
+    }
+
+    private void assertEvaluatorBlocks() throws Exception {
+        startCaptureForward();
         int callsBefore = llmStub.getCallCount();
         try (SessionIdProxy proxy = new SessionIdProxy(server.getMcpBaseUrl() + "/revision-runtime")) {
             proxy.start();
@@ -381,26 +388,51 @@ class RevisionStreamIsolationITCase {
                         .send()
                         .thenAssertResults();
                 assertThat(llmStub.getCallCount()).isGreaterThan(callsBefore);
+                assertThat(captureCounts().path("toolCalls").asInt()).isZero();
             } finally {
                 client.disconnect();
             }
         }
     }
 
+    private JsonNode captureCounts() throws Exception {
+        try (HttpClient client =
+                HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build()) {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("http://localhost:" + captureServer.getHttpPort() + "/capture/counts"))
+                    .timeout(Duration.ofSeconds(10))
+                    .GET()
+                    .build();
+            var response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            assertThat(response.statusCode()).isEqualTo(200);
+            return mapper.readTree(response.body());
+        }
+    }
+
     private void assertPromptDenied(String message) throws Exception {
-        try (SessionIdProxy proxy = new SessionIdProxy(server.getMcpBaseUrl() + "/default")) {
+        startCaptureForward();
+        try (SessionIdProxy proxy = new SessionIdProxy(server.getMcpBaseUrl() + "/revision-runtime")) {
             proxy.start();
             McpTestClient client = new McpTestClient(proxy.getBaseUrl(), null);
             client.connect();
             try {
+                // Forwarded prompt discovery is asynchronous, including after a managed restart.
+                org.awaitility.Awaitility.await()
+                        .atMost(config.getDefaultTimeout())
+                        .untilAsserted(() -> client.when()
+                                .promptsList(page -> assertThat(page.prompts())
+                                        .anyMatch(prompt -> "capture_prompt".equals(prompt.name())))
+                                .thenAssertResults());
                 client.when()
-                        .promptsGet("revision-prompt")
+                        .promptsGet("capture_prompt")
+                        .withArguments(Map.of("topic", "revision-isolation"))
                         .withErrorAssert(error -> {
                             assertThat(error.code()).isEqualTo(-32003);
                             assertThat(error.message()).contains(message);
                         })
                         .send()
                         .thenAssertResults();
+                assertThat(captureCounts().path("promptGets").asInt()).isZero();
             } finally {
                 client.disconnect();
             }
