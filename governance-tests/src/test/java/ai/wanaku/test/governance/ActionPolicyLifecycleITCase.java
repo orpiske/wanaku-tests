@@ -1,6 +1,5 @@
 package ai.wanaku.test.governance;
 
-import java.util.List;
 import java.util.Map;
 import ai.wanaku.test.client.ActionPolicyClient;
 import ai.wanaku.test.client.McpTestClient;
@@ -121,9 +120,9 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
 
             JsonNode revisionsAfterRestart = policies.listRevisions().body();
             assertThat(revisionsAfterRestart.isArray()).isTrue();
-            assertThat(revisionsAfterRestart)
+            assertThat(revisionsAfterRestart.size())
                     .as("Baseline, denied, rejected, and rollback revisions must survive restart")
-                    .hasSize(4);
+                    .isEqualTo(4);
             assertThat(revisionsAfterRestart)
                     .anyMatch(revision -> revision.path("id").asLong() == rollbackRevision
                             && "active".equals(revision.path("status").asText()));
