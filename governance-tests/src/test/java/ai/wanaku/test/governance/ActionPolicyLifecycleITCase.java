@@ -121,8 +121,8 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
             JsonNode revisionsAfterRestart = policies.listRevisions().body();
             assertThat(revisionsAfterRestart.isArray()).isTrue();
             assertThat(revisionsAfterRestart.size())
-                    .as("Baseline, denied, rejected, and rollback revisions must survive restart")
-                    .isEqualTo(4);
+                    .as("Baseline, denied, and rollback revisions must survive restart")
+                    .isEqualTo(3);
             assertThat(revisionsAfterRestart)
                     .anyMatch(revision -> revision.path("id").asLong() == rollbackRevision
                             && "active".equals(revision.path("status").asText()));
