@@ -14,6 +14,7 @@ public class TestConfiguration {
     private final Path tempDataDir;
     private final Path evaluatorWasmPath;
     private final Duration defaultTimeout;
+    private final boolean a2aEnabled;
     private final boolean mcpIdFilterEnabled;
     private final String forwardHeaders;
     private final boolean governanceEnabled;
@@ -30,6 +31,7 @@ public class TestConfiguration {
         this.tempDataDir = builder.tempDataDir;
         this.evaluatorWasmPath = builder.evaluatorWasmPath;
         this.defaultTimeout = builder.defaultTimeout;
+        this.a2aEnabled = builder.a2aEnabled;
         this.mcpIdFilterEnabled = builder.mcpIdFilterEnabled;
         this.forwardHeaders = builder.forwardHeaders;
         this.governanceEnabled = builder.governanceEnabled;
@@ -60,6 +62,8 @@ public class TestConfiguration {
                 .camelCapabilityJarPath(findCicJar(artifactsDir))
                 .evaluatorWasmPath(findEvaluatorWasm(serverBinary))
                 .defaultTimeout(timeout)
+                .actionPolicyJson(System.getProperty(WanakuTestConstants.PROP_ACTION_POLICY))
+                .a2aEnabled(Boolean.parseBoolean(System.getProperty(WanakuTestConstants.PROP_A2A_ENABLED, "false")))
                 .mcpIdFilterEnabled(
                         Boolean.parseBoolean(System.getProperty(WanakuTestConstants.PROP_MCP_ID_FILTER, "false")))
                 .forwardHeaders(System.getProperty(WanakuTestConstants.PROP_FORWARD_HEADERS))
@@ -82,6 +86,7 @@ public class TestConfiguration {
                 .tempDataDir(tempDataDir)
                 .evaluatorWasmPath(evaluatorWasmPath)
                 .defaultTimeout(defaultTimeout)
+                .a2aEnabled(a2aEnabled)
                 .mcpIdFilterEnabled(mcpIdFilterEnabled)
                 .forwardHeaders(forwardHeaders)
                 .governanceEnabled(governanceEnabled)
@@ -203,6 +208,11 @@ public class TestConfiguration {
         return defaultTimeout;
     }
 
+    /** Enable the managed A2A listener for servers containing wanaku-ai/wanaku#2071. */
+    public boolean isA2aEnabled() {
+        return a2aEnabled;
+    }
+
     /**
      * Whether the generated server pipeline should include the {@code wanaku_mcp_id} filter, which
      * extracts the JSON-RPC id from the request body once and exposes it to downstream filters as
@@ -279,6 +289,7 @@ public class TestConfiguration {
         private Path tempDataDir;
         private Path evaluatorWasmPath;
         private Duration defaultTimeout = WanakuTestConstants.DEFAULT_TIMEOUT;
+        private boolean a2aEnabled;
         private boolean mcpIdFilterEnabled;
         private String forwardHeaders;
         private boolean governanceEnabled;
@@ -315,6 +326,11 @@ public class TestConfiguration {
 
         public Builder defaultTimeout(Duration defaultTimeout) {
             this.defaultTimeout = defaultTimeout;
+            return this;
+        }
+
+        public Builder a2aEnabled(boolean a2aEnabled) {
+            this.a2aEnabled = a2aEnabled;
             return this;
         }
 

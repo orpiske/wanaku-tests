@@ -238,3 +238,24 @@ gh workflow run full-integration-test.yml \
 - [Resources Tests](resources-tests/README.md) — file resource management via REST API, MCP, and CLI
 - [Cross-Capability Tests](cross-capability-tests/README.md) — router restart and mixed-capability scenarios
 - [Camel Integration Capability Tests](camel-integration-capability-tests/README.md) — CIC tools, resources, PostgreSQL, multi-instance
+
+### A2A integration tests
+
+The `a2a-tests` module tests the managed A2A 0.3 JSON-RPC proxy introduced in
+[Wanaku PR #2071](https://github.com/wanaku-ai/wanaku/pull/2071), using a custom
+agent hosted by Camel Integration Capability. See [the module README](a2a-tests/README.md)
+for protocol compatibility, prerequisites, and coverage.
+
+```bash
+mvn verify -pl a2a-tests -am \
+  -Dwanaku.test.server.binary=/path/to/wanaku-server \
+  -Dwanaku.test.server.mcp-id-filter=true \
+  -Dwanaku.test.server.a2a-enabled=true \
+  -Dwanaku.test.camel-capability.jar=/path/to/cic.jar
+```
+
+A2A is disabled by default because older servers reject the new pipeline filters.
+The source-build CI workflow detects support and enables it automatically. For
+an external server, also supply `wanaku.test.external.a2a.port` alongside the
+management and MCP ports; the external pipeline must expose the managed A2A
+listener and allow the test agent actions.

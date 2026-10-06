@@ -34,6 +34,8 @@ public class SharedInfrastructure implements ExtensionContext.Store.CloseableRes
                 .evaluatorWasmPath(baseConfig.getEvaluatorWasmPath())
                 .tempDataDir(tempDataDir)
                 .defaultTimeout(baseConfig.getDefaultTimeout())
+                .actionPolicyJson(baseConfig.getActionPolicyJson())
+                .a2aEnabled(baseConfig.isA2aEnabled())
                 .mcpIdFilterEnabled(baseConfig.isMcpIdFilterEnabled())
                 .forwardHeaders(baseConfig.getForwardHeaders())
                 .build();
