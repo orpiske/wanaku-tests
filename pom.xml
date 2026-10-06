@@ -15,6 +15,7 @@
     <modules>
         <module>test-common</module>
         <module>camel-integration-capability-tests</module>
+        <module>a2a-tests</module>
         <module>resources-tests</module>
         <module>router-tests</module>
         <module>mcp-forwarding-tests</module>

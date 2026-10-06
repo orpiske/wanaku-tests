@@ -241,6 +241,10 @@ jobs:
               source/wanaku/server/src/default.yaml 2>/dev/null; then
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.server.mcp-id-filter=true"
           fi
+          if grep -qE '^[[:space:]]*-[[:space:]]*filter:[[:space:]]*wanaku_a2a[[:space:]]*$' \
+              source/wanaku/server/src/default.yaml 2>/dev/null; then
+            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.server.a2a-enabled=true"
+          fi
           if [ -n "$CLI_PATH" ]; then
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.cli.path=$CLI_PATH"
           fi

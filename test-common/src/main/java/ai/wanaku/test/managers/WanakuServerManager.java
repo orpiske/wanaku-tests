@@ -21,6 +21,7 @@ public class WanakuServerManager extends ProcessManager {
     private final TestConfiguration config;
     private int mgmtPort;
     private int mcpPort;
+    private int a2aPort;
     private Path pipelineConfigFile;
     private Path wanakuConfigFile;
     private Path persistDir;
@@ -35,6 +36,10 @@ public class WanakuServerManager extends ProcessManager {
         WanakuServerManager manager = new WanakuServerManager(config);
         manager.mgmtPort = mgmtPort;
         manager.mcpPort = mcpPort;
+        String externalA2aPort = System.getProperty("wanaku.test.external.a2a.port");
+        if (externalA2aPort != null) {
+            manager.a2aPort = Integer.parseInt(externalA2aPort);
+        }
         manager.external = true;
         return manager;
     }
@@ -42,6 +47,10 @@ public class WanakuServerManager extends ProcessManager {
     public void prepare() {
         this.mgmtPort = PortUtils.findAvailablePort();
         this.mcpPort = PortUtils.findAvailablePort();
+        if (config.isA2aEnabled()) {
+            this.a2aPort = PortUtils.findAvailablePort();
+            addEnvironmentVariable("WANAKU_A2A_PUBLIC_URL", getA2aBaseUrl() + "/");
+        }
 
         LOG.debug("Wanaku server prepared with management port {} and MCP port {}", mgmtPort, mcpPort);
 
@@ -165,6 +174,10 @@ public class WanakuServerManager extends ProcessManager {
         return "http://localhost:" + mcpPort;
     }
 
+    public String getA2aBaseUrl() {
+        return a2aPort > 0 ? "http://localhost:" + a2aPort : null;
+    }
+
     public TestConfiguration getConfig() {
         return config;
     }
@@ -190,6 +203,12 @@ public class WanakuServerManager extends ProcessManager {
                         + " \"Mcp-Protocol-Version\", \"Authorization\"]",
                 "      - filter: mcp",
                 "        on_invalid: continue"));
+
+        if (config.isA2aEnabled()) {
+            lines.add(1, "  - name: a2a");
+            lines.add(2, "    address: \"0.0.0.0:" + a2aPort + "\"");
+            lines.add(3, "    filter_chains: [a2a_proxy]");
+        }
 
         // wanaku_mcp_id extracts the JSON-RPC id from the request body once and stores it as mcp.id
         // metadata, which downstream filters (mcp_init, tool_call, ...) then read instead of
@@ -231,15 +250,41 @@ public class WanakuServerManager extends ProcessManager {
                 "            value: application/json",
                 "        body: '{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32601,"
                         + "\"message\":\"method not supported\"},\"id\":null}'",
-                "",
-                "insecure_options:",
-                "  skip_pipeline_validation: true",
                 ""));
+
+        if (config.isA2aEnabled()) {
+            lines.add(a2aFilterChain());
+        }
+
+        lines.addAll(List.of("insecure_options:", "  skip_pipeline_validation: true", ""));
+
+        if (config.isA2aEnabled()) {
+            lines.add("  allow_private_endpoints: true");
+            lines.add("  allow_private_upstreams: true");
+        }
 
         Path configFile = Files.createTempFile("pipeline-config-", ".yaml");
         Files.writeString(configFile, String.join("\n", lines));
         LOG.debug("Generated pipeline config at {}", configFile);
         return configFile;
+    }
+
+    private String a2aFilterChain() {
+        return """
+                      - name: a2a_proxy
+                        filters:
+                          - filter: a2a
+                            on_invalid: continue
+                            method_aliases:
+                              message/send: SendMessage
+                              tasks/get: GetTask
+                              tasks/cancel: CancelTask
+                          - filter: wanaku_a2a
+                            managed: true
+                            public_url: "%s/"
+                          - filter: wanaku_action_policy
+                    """
+                .formatted(getA2aBaseUrl());
     }
 
     private Path generateWanakuConfig() throws IOException {

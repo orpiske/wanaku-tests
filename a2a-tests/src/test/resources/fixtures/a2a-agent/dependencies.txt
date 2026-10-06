@@ -1,0 +1,2 @@
+org.apache.camel:camel-platform-http-vertx
+org.apache.camel:camel-jsonpath

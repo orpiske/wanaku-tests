@@ -14,6 +14,8 @@ public final class WanakuTestConstants {
     public static final String PROP_TIMEOUT = "wanaku.test.timeout";
     public static final String PROP_SKIP_THRESHOLD = "wanaku.test.skip.threshold";
     public static final String PROP_EVALUATOR_WASM = "wanaku.test.evaluator.wasm";
+    public static final String PROP_ACTION_POLICY = "wanaku.test.server.action-policy";
+    public static final String PROP_A2A_ENABLED = "wanaku.test.server.a2a-enabled";
     public static final String PROP_MCP_ID_FILTER = "wanaku.test.server.mcp-id-filter";
     public static final String PROP_FORWARD_HEADERS = "wanaku.test.server.forward-headers";
     public static final String PROP_GOVERNANCE_ENABLED = "wanaku.test.server.governance";

@@ -1,0 +1,67 @@
+# A deterministic A2A 0.3 upstream. camel-a2a currently targets A2A 1.0.
+- route:
+    id: agent-card
+    from:
+      uri: platform-http:/.well-known/agent-card.json
+      parameters:
+        httpMethodRestrict: GET
+      steps:
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - setBody:
+            constant: >-
+              {"protocolVersion":"0.3.0","name":"${AGENT_MARKER}","description":"Deterministic Camel A2A fixture","version":"1.0.0","url":"${UPSTREAM_URL}/","preferredTransport":"JSONRPC","capabilities":{"streaming":true,"pushNotifications":true},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[],"additionalInterfaces":[{"url":"${UPSTREAM_URL}/bypass","transport":"JSONRPC"}],"signatures":[{"signature":"fixture-signature"}],"supportsAuthenticatedExtendedCard":true}
+- route:
+    id: agent-jsonrpc
+    from:
+      uri: platform-http:/agent
+      parameters:
+        httpMethodRestrict: POST
+      steps:
+        - convertBodyTo:
+            type: java.lang.String
+        - setHeader:
+            name: rpcId
+            jsonpath: $.id
+        - setHeader:
+            name: rpcMethod
+            jsonpath: $.method
+        - setHeader:
+            name: taskId
+            jsonpath:
+              expression: $.params.id
+              suppressExceptions: true
+        - setHeader:
+            name: Content-Type
+            constant: application/json
+        - choice:
+            when:
+              - simple: ${header.rpcMethod} == 'message/send'
+                steps:
+                  - setHeader:
+                      name: messageText
+                      jsonpath: $.params.message.parts[0].text
+                  - setBody:
+                      simple: >-
+                        {"jsonrpc":"2.0","id":"${header.rpcId}","result":{"kind":"task","id":"fixture-task","contextId":"fixture-context","status":{"state":"completed"},"artifacts":[{"artifactId":"echo","parts":[{"kind":"text","text":"${AGENT_MARKER}--a2a--${header.messageText}"}]}]}}
+              - simple: ${header.rpcMethod} == 'tasks/get' && ${header.taskId} == 'fixture-task'
+                steps:
+                  - setBody:
+                      simple: >-
+                        {"jsonrpc":"2.0","id":"${header.rpcId}","result":{"kind":"task","id":"fixture-task","contextId":"fixture-context","status":{"state":"completed"},"artifacts":[{"artifactId":"echo","parts":[{"kind":"text","text":"${AGENT_MARKER}--a2a--A2A integration test"}]}]}}
+              - simple: ${header.rpcMethod} == 'tasks/cancel' && ${header.taskId} == 'fixture-task'
+                steps:
+                  - setBody:
+                      simple: >-
+                        {"jsonrpc":"2.0","id":"${header.rpcId}","error":{"code":-32002,"message":"Completed fixture task cannot be canceled"}}
+              - simple: ${header.rpcMethod} == 'tasks/get' || ${header.rpcMethod} == 'tasks/cancel'
+                steps:
+                  - setBody:
+                      simple: >-
+                        {"jsonrpc":"2.0","id":"${header.rpcId}","error":{"code":-32001,"message":"Fixture task not found"}}
+            otherwise:
+              steps:
+                - setBody:
+                    simple: >-
+                      {"jsonrpc":"2.0","id":"${header.rpcId}","error":{"code":-32601,"message":"Unsupported fixture method"}}
