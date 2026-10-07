@@ -56,7 +56,7 @@ class A2aProxyITCase extends A2aTestBase {
         HttpRequest request = HttpRequest.newBuilder(URI.create(proxyUrl("default")))
                 .timeout(config.getDefaultTimeout())
                 .header("Content-Type", "application/json")
-                .header("A2A-Version", "1.0")
+                .header("A2A-Version", "2.0")
                 .POST(HttpRequest.BodyPublishers.ofString(mapper.writeValueAsString(Map.of(
                         "jsonrpc",
                         "2.0",
@@ -68,7 +68,9 @@ class A2aProxyITCase extends A2aTestBase {
                         message("valid-message")))))
                 .build();
         HttpResponse<String> version = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        assertThat(json(version).path("error").path("code").asInt()).isEqualTo(-32600);
+        // Legacy servers use Invalid Request; A2A 1.0 servers use VersionNotSupportedError.
+        assertThat(json(version).path("error").path("code").asInt()).isIn(-32600, -32009);
+        assertThat(json(version).path("error").path("message").asText()).contains("supported");
     }
 
     @Test
