@@ -14,7 +14,7 @@ mvn verify -pl a2a-tests -am \
 
 The module is disabled by default because released servers may not recognize A2A filters. Enabling the A2A listener automatically enables these tests. Missing binaries use the framework's infrastructure assumptions and skip threshold.
 
-The [Barn template](https://github.com/wanaku-ai/wanaku-barn/pull/166) uses `camel-a2a`. Current Camel A2A targets protocol 1.0, while the Wanaku candidate supports 0.3. This suite therefore uses a deterministic 0.3 fixture implemented with Camel `platform-http` and `jsonpath` routes. It tests Wanaku's proxy contract; it does not establish interoperability with Camel's native A2A 1.0 component. No MCP forward is registered.
+The [Barn template](https://github.com/wanaku-ai/wanaku-barn/pull/166) uses `camel-a2a`. Current Camel A2A targets protocol 1.0. This suite uses a deterministic 0.3 fixture implemented with Camel `platform-http` and `jsonpath` routes to verify legacy behavior on servers supporting 0.3 or both 0.3 and 1.0. Unsupported-version checks request 2.0 and accept the legacy Invalid Request or newer VersionNotSupportedError response. The suite does not establish interoperability with Camel's native A2A 1.0 component. No MCP forward is registered.
 
 The fixture exposes a synchronous completed task. Cancellation returns the A2A `TaskNotCancelable` error. Task IDs deliberately collide between upstreams to test namespace routing; the fixture is not a general agent or durable task store. Test message text is a fixed JSON-safe string.
 
