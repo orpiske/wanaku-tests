@@ -1,6 +1,7 @@
 package ai.wanaku.test.governance;
 
 import java.util.Map;
+import org.awaitility.Awaitility;
 import ai.wanaku.test.client.ActionPolicyClient;
 import ai.wanaku.test.client.McpTestClient;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -49,12 +50,9 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
             assertThat(afterAllow).isEqualTo(new CaptureCounts(1, 1, 1));
 
             JsonNode denyPolicy = MAPPER.readTree(GovernancePolicies.policy(
-                    GovernancePolicies.denyTool(
-                            "lifecycle-tool-deny", CAPTURE_TOOL, DENY_MESSAGE),
-                    GovernancePolicies.denyResourceByUri(
-                            "lifecycle-resource-deny", CAPTURE_RESOURCE_URI, DENY_MESSAGE),
-                    GovernancePolicies.denyPrompt(
-                            "lifecycle-prompt-deny", CAPTURE_PROMPT, DENY_MESSAGE)));
+                    GovernancePolicies.denyTool("lifecycle-tool-deny", CAPTURE_TOOL, DENY_MESSAGE),
+                    GovernancePolicies.denyResourceByUri("lifecycle-resource-deny", CAPTURE_RESOURCE_URI, DENY_MESSAGE),
+                    GovernancePolicies.denyPrompt("lifecycle-prompt-deny", CAPTURE_PROMPT, DENY_MESSAGE)));
 
             ActionPolicyClient.Response denied = policies.updatePolicy(denyPolicy, baselineRevision);
             assertThat(denied.statusCode())
@@ -81,7 +79,8 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
             ActionPolicyClient.Response activeAfterReject = policies.getActiveRevision();
             assertThat(activeAfterReject.statusCode()).isEqualTo(200);
             assertThat(revisionId(activeAfterReject.body())).isEqualTo(denyRevision);
-            assertThat(activeAfterReject.body().path("policy")).isEqualTo(denyPolicy);
+            assertThat(activeAfterReject.body().path("policy"))
+                    .isEqualTo(denied.body().path("policy"));
 
             assertDiscoveryRemainsAvailable(client);
             assertDeniedOperations(client);
@@ -89,8 +88,7 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
                     .as("A rejected candidate must not change active behavior")
                     .isEqualTo(afterAllow);
 
-            ActionPolicyClient.Response rollback =
-                    policies.activateRevision(baselineRevision, denyRevision);
+            ActionPolicyClient.Response rollback = policies.activateRevision(baselineRevision, denyRevision);
             assertThat(rollback.statusCode())
                     .as("Rollback activation: %s", rollback.body())
                     .isEqualTo(200);
@@ -116,8 +114,7 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
             assertThat(revisionId(activeAfterRestart.body()))
                     .as("Restart must retain the active rollback revision")
                     .isEqualTo(rollbackRevision);
-            assertThat(activeAfterRestart.body().path("policy"))
-                    .isEqualTo(baselinePolicy);
+            assertThat(activeAfterRestart.body().path("policy")).isEqualTo(baselinePolicy);
 
             JsonNode revisionsAfterRestart = policies.listRevisions().body();
             assertThat(revisionsAfterRestart.isArray()).isTrue();
@@ -136,19 +133,10 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
     }
 
     private void assertAllowedOperations(McpTestClient client) {
-        client.when()
-                .toolsList(page -> assertThat(page.tools()).anyMatch(tool -> CAPTURE_TOOL.equals(tool.name())))
-                .thenAssertResults();
-
-        client.when()
-                .resourcesList(page -> assertThat(page.resources())
-                        .anyMatch(resource -> CAPTURE_RESOURCE_URI.equals(resource.uri())))
-                .thenAssertResults();
-
-        client.when()
-                .promptsList(page -> assertThat(page.prompts())
-                        .anyMatch(prompt -> CAPTURE_PROMPT.equals(prompt.name())))
-                .thenAssertResults();
+        // Forwarded catalogs are discovered asynchronously, including after a managed restart.
+        Awaitility.await()
+                .atMost(baseConfig.getDefaultTimeout())
+                .untilAsserted(() -> assertDiscoveryRemainsAvailable(client));
 
         client.when()
                 .toolsCall(CAPTURE_TOOL)
@@ -159,12 +147,21 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
 
         client.when()
                 .resourcesRead(CAPTURE_RESOURCE_URI)
+                .withAssert(response -> {
+                    assertThat(response.contents()).hasSize(1);
+                    assertThat(response.contents().get(0).asText().text()).contains("capture resource read (count=");
+                })
                 .send()
                 .thenAssertResults();
 
         client.when()
                 .promptsGet(CAPTURE_PROMPT)
                 .withArguments(Map.of("topic", "lifecycle-allow"))
+                .withAssert(response -> {
+                    assertThat(response.messages()).hasSize(1);
+                    assertThat(response.messages().get(0).content().asText().text())
+                            .contains("capture_prompt invoked (count=", "topic=lifecycle-allow");
+                })
                 .send()
                 .thenAssertResults();
     }
@@ -206,13 +203,13 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
                 .thenAssertResults();
 
         client.when()
-                .resourcesList(page -> assertThat(page.resources())
-                        .anyMatch(resource -> CAPTURE_RESOURCE_URI.equals(resource.uri())))
+                .resourcesList(page ->
+                        assertThat(page.resources()).anyMatch(resource -> CAPTURE_RESOURCE_URI.equals(resource.uri())))
                 .thenAssertResults();
 
         client.when()
-                .promptsList(page -> assertThat(page.prompts())
-                        .anyMatch(prompt -> CAPTURE_PROMPT.equals(prompt.name())))
+                .promptsList(
+                        page -> assertThat(page.prompts()).anyMatch(prompt -> CAPTURE_PROMPT.equals(prompt.name())))
                 .thenAssertResults();
     }
 
@@ -229,7 +226,9 @@ class ActionPolicyLifecycleITCase extends GovernanceTestBase {
 
     private static long revisionId(JsonNode responseBody) {
         long id = responseBody.path("revision").path("id").asLong(-1);
-        assertThat(id).as("Management response must contain a numeric revision id").isPositive();
+        assertThat(id)
+                .as("Management response must contain a numeric revision id")
+                .isPositive();
         return id;
     }
 }
