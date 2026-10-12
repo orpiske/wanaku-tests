@@ -13,6 +13,8 @@ public final class WanakuTestConstants {
     public static final String PROP_CAMEL_CAPABILITY_JAR = "wanaku.test.camel-capability.jar";
     public static final String PROP_TIMEOUT = "wanaku.test.timeout";
     public static final String PROP_SKIP_THRESHOLD = "wanaku.test.skip.threshold";
+    public static final String PROP_OPA_BINARY = "wanaku.test.opa.binary";
+    public static final String PROP_OPA_WASM = "wanaku.test.opa.wasm";
     public static final String PROP_EVALUATOR_WASM = "wanaku.test.evaluator.wasm";
     public static final String PROP_ACTION_POLICY = "wanaku.test.server.action-policy";
     public static final String PROP_A2A_ENABLED = "wanaku.test.server.a2a-enabled";

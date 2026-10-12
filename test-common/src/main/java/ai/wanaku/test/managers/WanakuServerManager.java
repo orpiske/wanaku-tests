@@ -308,6 +308,9 @@ public class WanakuServerManager extends ProcessManager {
         if (config.getActionPolicyJson() != null) {
             lines.add("action_policy: " + config.getActionPolicyJson());
         }
+        if (config.getOpaConnectionsJson() != null) {
+            lines.add("opa_connections: " + config.getOpaConnectionsJson());
+        }
         if (config.getAuditJson() != null) {
             lines.add("audit: " + config.getAuditJson());
         }

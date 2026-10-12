@@ -115,6 +115,27 @@ the process while retaining the persistence directory, and verifies the revision
 The capture fixture remains alive across the managed server restart; the test refreshes or recreates its
 forward before the final post-restart MCP requests.
 
+### OPA evaluator
+
+OPA scenarios require a Wanaku build with OPA evaluator support (PR #2082), its
+`opa_allow_action.wasm`, and a native OPA binary. Real policy tests start OPA locally;
+contract and governance tests use a local HTTP stub. All suites use the capture fixture
+and isolated, harness-owned servers:
+
+```bash
+mvn -DskipTests package -f fixtures/governance-capture-server/pom.xml
+mvn verify -pl governance-tests -am -Dit.test='Opa*ITCase' -Dfailsafe.failIfNoSpecifiedTests=false \
+  -Dwanaku.test.server.binary=/path/to/wanaku/target/debug/wanaku-server \
+  -Dwanaku.test.opa.wasm=/path/to/wanaku/actions/dist/opa_allow_action.wasm \
+  -Dwanaku.test.opa.binary=/path/to/opa
+```
+
+The OPA WASM property is separate from `wanaku.test.evaluator.wasm` (the safety-review
+action). Missing local prerequisites cause infrastructure skips; invalid configured
+OPA paths and behavior failures fail. External-server mode is skipped. The
+`full-integration-test` workflow detects OPA-capable sources, builds the OPA action,
+installs checksum-verified OPA 1.21.1, and fails if any OPA suite is missing or skipped.
+Older source branches retain their existing behavior.
 
 ```bash
 # Recommended: build and run all tests with CLI JAR and debug logging
