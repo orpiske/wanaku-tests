@@ -159,20 +159,24 @@ abstract class GovernanceTestBase {
     protected void startGovernedServer(
             String actionPolicyJson, String governanceJson, String auditJson, boolean persistenceEnabled)
             throws IOException {
-        TestConfiguration config = baseConfig.toBuilder()
+        TestConfiguration.Builder builder = baseConfig.toBuilder()
                 .governanceEnabled(true)
                 .mcpIdFilterEnabled(true)
                 .actionPolicyJson(actionPolicyJson)
                 .governanceJson(governanceJson)
                 .auditJson(auditJson)
                 .persistenceEnabled(persistenceEnabled)
-                .llmConnectionUrl(llmStub.getConnectionUrl())
-                .build();
+                .llmConnectionUrl(llmStub.getConnectionUrl());
+        configureGovernedServer(builder);
+        TestConfiguration config = builder.build();
         server = new WanakuServerManager(config);
         server.prepare();
         server.setLogContext("wanaku-server", getClass().getSimpleName(), "governed-server");
         server.start(getClass().getSimpleName());
     }
+
+    /** Allows a scenario to supply additional bootstrap configuration before starting Wanaku. */
+    protected void configureGovernedServer(TestConfiguration.Builder builder) {}
 
     /** Creates the namespace (if needed), forwards it to the capture server, and waits for discovery. */
     protected void registerCaptureForward(String namespace) {

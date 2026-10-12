@@ -183,6 +183,33 @@ jobs:
           echo "EVAL_WASM=$(pwd)/${WASM}" >> "$GITHUB_ENV"
           echo "Wanaku server binary and evaluator WASM action ready: ${WASM}"
 
+          # Older source branches do not include the OPA evaluator action.
+          if [ -f actions/opa-allow/Cargo.toml ]; then
+            OPA_WASM="actions/dist/opa_allow_action.wasm"
+            if [ ! -s "$OPA_WASM" ]; then
+              (cd actions/opa-allow && cargo component build --release)
+              BUILT=$(find actions/opa-allow target -path '*/wasm32-wasip1/release/opa_allow_action.wasm' -type f | head -1)
+              test -n "$BUILT" || { echo "::error::OPA action build produced no WASM"; exit 1; }
+              cp "$BUILT" "$OPA_WASM"
+            fi
+            test -s "$OPA_WASM" || { echo "::error::OPA evaluator WASM missing"; exit 1; }
+            echo "OPA_WASM=$(pwd)/${OPA_WASM}" >> "$GITHUB_ENV"
+            echo "OPA_CAPABLE=true" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install OPA 1.21.1
+        if: env.OPA_CAPABLE == 'true'
+        run: |
+          mkdir -p artifacts/opa
+          curl --fail --location --retry 3 \
+            https://github.com/open-policy-agent/opa/releases/download/v1.21.1/opa_linux_amd64_static \
+            --output artifacts/opa/opa
+          # Digest published with the official immutable release.
+          echo '668506eb17a2eaa1fce6cc0d1f42ef85125d4ac5bda5fc74d1152d0c77145031  artifacts/opa/opa' | sha256sum --check
+          chmod +x artifacts/opa/opa
+          artifacts/opa/opa version
+          echo "OPA_BINARY=$(pwd)/artifacts/opa/opa" >> "$GITHUB_ENV"
+
       - name: Build Camel Integration Capability
         run: |
           if [ -x source/camel-integration-capability/mvnw ]; then
@@ -230,6 +257,10 @@ jobs:
           if [ -n "$EVAL_WASM" ] && [ -f "$EVAL_WASM" ]; then
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.evaluator.wasm=${EVAL_WASM}"
           fi
+          if [ "$OPA_CAPABLE" = true ]; then
+            test -x "$OPA_BINARY" && test -s "$OPA_WASM" || { echo "::error::OPA prerequisites missing"; exit 1; }
+            EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.opa.binary=${OPA_BINARY} -Dwanaku.test.opa.wasm=${OPA_WASM}"
+          fi
           # Servers built from wanaku-ai/wanaku#1849 register a wanaku_mcp_id filter and expect it
           # in the pipeline; without it they answer MCP initialize with a null id and clients fail
           # to connect. The harness generates its own pipeline (to inject a dynamic MCP port), so we
@@ -249,6 +280,10 @@ jobs:
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.cli.path=$CLI_PATH"
           fi
           mvn -B verify --fail-at-end --file pom.xml $EXTRA_OPTS
+
+      - name: Require OPA test execution
+        if: always() && env.OPA_CAPABLE == 'true'
+        run: python3 .github/scripts/check-opa-test-results.py governance-tests/target/failsafe-reports
 
       - name: Test summary
         if: always()

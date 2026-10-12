@@ -13,6 +13,9 @@ public class TestConfiguration {
     private final Path artifactsDir;
     private final Path tempDataDir;
     private final Path evaluatorWasmPath;
+    private final Path opaBinaryPath;
+    private final Path opaWasmPath;
+    private final String opaConnectionsJson;
     private final Duration defaultTimeout;
     private final boolean a2aEnabled;
     private final boolean mcpIdFilterEnabled;
@@ -30,6 +33,9 @@ public class TestConfiguration {
         this.artifactsDir = builder.artifactsDir;
         this.tempDataDir = builder.tempDataDir;
         this.evaluatorWasmPath = builder.evaluatorWasmPath;
+        this.opaBinaryPath = builder.opaBinaryPath;
+        this.opaWasmPath = builder.opaWasmPath;
+        this.opaConnectionsJson = builder.opaConnectionsJson;
         this.defaultTimeout = builder.defaultTimeout;
         this.a2aEnabled = builder.a2aEnabled;
         this.mcpIdFilterEnabled = builder.mcpIdFilterEnabled;
@@ -61,6 +67,8 @@ public class TestConfiguration {
                 .serverBinaryPath(serverBinary)
                 .camelCapabilityJarPath(findCicJar(artifactsDir))
                 .evaluatorWasmPath(findEvaluatorWasm(serverBinary))
+                .opaBinaryPath(findExplicitPath(WanakuTestConstants.PROP_OPA_BINARY))
+                .opaWasmPath(findOpaWasm(serverBinary))
                 .defaultTimeout(timeout)
                 .actionPolicyJson(System.getProperty(WanakuTestConstants.PROP_ACTION_POLICY))
                 .a2aEnabled(Boolean.parseBoolean(System.getProperty(WanakuTestConstants.PROP_A2A_ENABLED, "false")))
@@ -85,6 +93,9 @@ public class TestConfiguration {
                 .artifactsDir(artifactsDir)
                 .tempDataDir(tempDataDir)
                 .evaluatorWasmPath(evaluatorWasmPath)
+                .opaBinaryPath(opaBinaryPath)
+                .opaWasmPath(opaWasmPath)
+                .opaConnectionsJson(opaConnectionsJson)
                 .defaultTimeout(defaultTimeout)
                 .a2aEnabled(a2aEnabled)
                 .mcpIdFilterEnabled(mcpIdFilterEnabled)
@@ -95,6 +106,29 @@ public class TestConfiguration {
                 .auditJson(auditJson)
                 .persistenceEnabled(persistenceEnabled)
                 .llmConnectionUrl(llmConnectionUrl);
+    }
+
+    private static Path findExplicitPath(String property) {
+        String value = System.getProperty(property);
+        return value == null
+                ? null
+                : Path.of(expandTilde(value)).toAbsolutePath().normalize();
+    }
+
+    private static Path findOpaWasm(Path serverBinary) {
+        Path explicit = findExplicitPath(WanakuTestConstants.PROP_OPA_WASM);
+        if (explicit != null) {
+            return explicit;
+        }
+        Path wanakuRoot = serverBinary == null ? null : serverBinary.getParent();
+        for (int i = 0; i < 2 && wanakuRoot != null; i++) {
+            wanakuRoot = wanakuRoot.getParent();
+        }
+        if (wanakuRoot == null) {
+            return null;
+        }
+        Path candidate = wanakuRoot.resolve("actions/dist/opa_allow_action.wasm");
+        return Files.exists(candidate) ? candidate.toAbsolutePath().normalize() : null;
     }
 
     private static Path findServerBinary() {
@@ -190,6 +224,19 @@ public class TestConfiguration {
 
     public Path getEvaluatorWasmPath() {
         return evaluatorWasmPath;
+    }
+
+    public Path getOpaBinaryPath() {
+        return opaBinaryPath;
+    }
+
+    public Path getOpaWasmPath() {
+        return opaWasmPath;
+    }
+
+    /** Named OPA connections rendered as JSON under the bootstrap {@code opa_connections} key. */
+    public String getOpaConnectionsJson() {
+        return opaConnectionsJson;
     }
 
     public Path getCamelCapabilityJarPath() {
@@ -288,6 +335,9 @@ public class TestConfiguration {
         private Path artifactsDir;
         private Path tempDataDir;
         private Path evaluatorWasmPath;
+        private Path opaBinaryPath;
+        private Path opaWasmPath;
+        private String opaConnectionsJson;
         private Duration defaultTimeout = WanakuTestConstants.DEFAULT_TIMEOUT;
         private boolean a2aEnabled;
         private boolean mcpIdFilterEnabled;
@@ -321,6 +371,21 @@ public class TestConfiguration {
 
         public Builder evaluatorWasmPath(Path evaluatorWasmPath) {
             this.evaluatorWasmPath = evaluatorWasmPath;
+            return this;
+        }
+
+        public Builder opaBinaryPath(Path opaBinaryPath) {
+            this.opaBinaryPath = opaBinaryPath;
+            return this;
+        }
+
+        public Builder opaWasmPath(Path opaWasmPath) {
+            this.opaWasmPath = opaWasmPath;
+            return this;
+        }
+
+        public Builder opaConnectionsJson(String opaConnectionsJson) {
+            this.opaConnectionsJson = opaConnectionsJson;
             return this;
         }
 
