@@ -27,6 +27,14 @@ on:
         description: 'Camel Integration Capability branch'
         required: false
         default: 'main'
+      wsr_repo:
+        description: 'Wanaku Semantic Router repository (owner/repo) with local startup and audit support'
+        required: false
+        default: 'wanaku-ai/wanaku-semantic-router'
+      wsr_branch:
+        description: 'WSR branch containing local startup and audit support'
+        required: false
+        default: 'main'
       barn_repo:
         description: 'Wanaku Barn repository (owner/repo)'
         required: false
@@ -58,6 +66,8 @@ jobs:
       SDK_BRANCH: ${{ inputs.sdk_branch }}
       CIC_REPO: ${{ inputs.cic_repo }}
       CIC_BRANCH: ${{ inputs.cic_branch }}
+      WSR_REPO: ${{ inputs.wsr_repo }}
+      WSR_BRANCH: ${{ inputs.wsr_branch }}
       BARN_REPO: ${{ inputs.barn_repo }}
       BARN_BRANCH: ${{ inputs.barn_branch }}
       PR_NUMBER: ${{ inputs.pr_number }}
@@ -102,6 +112,11 @@ jobs:
             "https://github.com/${CIC_REPO}.git" source/camel-integration-capability
           echo "::endgroup::"
 
+          echo "::group::Cloning WSR (${WSR_REPO}@${WSR_BRANCH})"
+          git clone --depth 1 --branch "${WSR_BRANCH}" \
+            "https://github.com/${WSR_REPO}.git" source/wanaku-semantic-router
+          echo "::endgroup::"
+
           echo "::group::Cloning Barn (${BARN_REPO}@${BARN_BRANCH})"
           git clone --depth 1 --branch "${BARN_BRANCH}" \
             "https://github.com/${BARN_REPO}.git" source/wanaku-barn
@@ -135,6 +150,7 @@ jobs:
             echo "| SDK | \`${SDK_REPO}\` | \`${SDK_BRANCH}\` |"
             echo "| Wanaku | \`${WANAKU_REPO}\` | \`${WANAKU_BRANCH}\` |"
             echo "| Barn | \`${BARN_REPO}\` | \`${BARN_BRANCH}\` |"
+            echo "| WSR | \`${WSR_REPO}\` | \`${WSR_BRANCH}\` |"
             echo "| CIC | \`${CIC_REPO}\` | \`${CIC_BRANCH}\` |"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -144,6 +160,14 @@ jobs:
             source/wanaku-sdk/mvnw -B -DskipTests install -f source/wanaku-sdk/pom.xml
           else
             mvn -B -DskipTests install -f source/wanaku-sdk/pom.xml
+          fi
+
+      - name: Build Wanaku Semantic Router
+        run: |
+          if [ -x source/wanaku-semantic-router/mvnw ]; then
+            source/wanaku-semantic-router/mvnw -B -DskipTests package -f source/wanaku-semantic-router/pom.xml
+          else
+            mvn -B -DskipTests package -f source/wanaku-semantic-router/pom.xml
           fi
 
       - name: Build Wanaku Barn
@@ -249,7 +273,9 @@ jobs:
           SERVER_BIN="$(pwd)/source/wanaku/target/debug/wanaku-server"
           CIC_JAR=$(find source/camel-integration-capability -name "*-jar-with-dependencies.jar" -path "*/target/*" | head -1)
 
-          EXTRA_OPTS="-Dwanaku.test.server.binary=${SERVER_BIN}"
+          WSR_JAR="$(pwd)/artifacts/wanaku-semantic-router/wanaku-semantic-router.jar"
+          test -s "$WSR_JAR" || { echo "::error::WSR executable JAR missing"; exit 1; }
+          EXTRA_OPTS="-Dwanaku.test.server.binary=${SERVER_BIN} -Dwanaku.test.semantic-router.jar=${WSR_JAR}"
           if [ -n "$CIC_JAR" ]; then
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.camel-capability.jar=$(pwd)/${CIC_JAR}"
           fi
@@ -280,6 +306,10 @@ jobs:
             EXTRA_OPTS="$EXTRA_OPTS -Dwanaku.test.cli.path=$CLI_PATH"
           fi
           mvn -B verify --fail-at-end --file pom.xml $EXTRA_OPTS
+
+      - name: Require semantic router test execution
+        if: always()
+        run: python3 .github/scripts/check-semantic-router-test-results.py semantic-router-tests/target/failsafe-reports
 
       - name: Require OPA test execution
         if: always() && env.OPA_CAPABLE == 'true'

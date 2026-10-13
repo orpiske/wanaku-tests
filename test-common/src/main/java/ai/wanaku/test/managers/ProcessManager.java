@@ -136,9 +136,7 @@ public abstract class ProcessManager {
             pb.directory(workingDir.toFile());
         }
 
-        if (!environment.isEmpty()) {
-            pb.environment().putAll(environment);
-        }
+        configureEnvironment(pb.environment());
 
         pb.redirectOutput(logFile);
         pb.redirectErrorStream(true);
@@ -154,6 +152,11 @@ public abstract class ProcessManager {
             throw new IllegalStateException(
                     getProcessName() + " failed health check. Check logs: " + logFile.getAbsolutePath());
         }
+    }
+
+    /** Applies explicit process environment overrides. */
+    protected void configureEnvironment(Map<String, String> processEnvironment) {
+        processEnvironment.putAll(environment);
     }
 
     /**

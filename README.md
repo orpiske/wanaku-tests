@@ -9,6 +9,7 @@ This framework tests Wanaku capabilities:
 - **HTTP Capability** — register HTTP endpoints as tools, invoke via MCP
 - **Resources** — expose, list, read, and remove file resources via REST API, MCP, and CLI
 - **Camel Integration** — Apache Camel-based tools, file resources, PostgreSQL, multi-instance
+- **Semantic Router** — local semantic routes through Wanaku, audit delivery, controls and recovery
 - **Cross-Capability Tests** — router restart and mixed-capability flows
 - **Governance Audit** — decision and administrative events, query filters, redaction, retention,
   restart durability, and observational storage failures
@@ -234,7 +235,7 @@ gh workflow run full-integration-test.yml \
   -f wanaku_branch=0.2.x \
   -f sdk_branch=0.2.x \
   -f cic_branch=0.2.x \
-  -f examples_branch=0.2.x \
+  -f barn_branch=0.2.x \
   -R <your github ID>/wanaku-tests
 ```
 
@@ -261,8 +262,49 @@ gh workflow run full-integration-test.yml \
 | `sdk_branch` | `main` | SDK branch |
 | `cic_repo` | `wanaku-ai/camel-integration-capability` | CIC repository |
 | `cic_branch` | `main` | CIC branch |
-| `examples_repo` | `wanaku-ai/wanaku-examples` | Examples repository |
-| `examples_branch` | `main` | Examples branch |
+| `barn_repo` | `wanaku-ai/wanaku-barn` | Barn repository |
+| `barn_branch` | `main` | Barn branch |
+| `wsr_repo` | `wanaku-ai/wanaku-semantic-router` | Semantic Router repository |
+| `wsr_branch` | `main` | Semantic Router branch |
+
+### Semantic router and audit tests
+
+The `semantic-router-tests` module requires a Wanaku server containing
+[the semantic audit receiver](https://github.com/wanaku-ai/wanaku/pull/2125) and a
+WSR build containing **both** [audit delivery](https://github.com/wanaku-ai/wanaku-semantic-router/pull/13)
+and [local route startup](https://github.com/wanaku-ai/wanaku-semantic-router/issues/14).
+Until these features reach `main`, select a combined WSR branch; the workflow does
+not merge feature branches. Local startup must support `--routes-ref`, an adjacent
+`semantic-router.properties`, and `--dependencies`.
+Audit source revision and digest must come from the loaded local snapshot
+(`catalog.reference()`); Barn catalog settings are absent in local mode.
+
+```bash
+gh workflow run full-integration-test.yml \
+  -f wanaku_repo=<your github ID>/wanaku \
+  -f wanaku_branch=semantic-audit-receiver \
+  -f wsr_repo=<your github ID>/wanaku-semantic-router \
+  -f wsr_branch=local-startup-and-audit \
+  -R <your github ID>/wanaku-tests
+```
+
+Source CI builds WSR after the SDK and preserves its executable thin JAR and
+adjacent `lib/` under `artifacts/wanaku-semantic-router/`. It passes the explicit
+JAR path and fails if any expected semantic router scenario is missing, skipped,
+or failed, including parameterized routing cases.
+
+For a local run, copy the complete WSR distribution, keeping `lib/` beside its
+executable JAR, then run:
+
+```bash
+mvn verify -pl semantic-router-tests -am \
+  -Dwanaku.test.server.binary=/absolute/path/to/wanaku-server \
+  -Dwanaku.test.semantic-router.jar=/absolute/path/to/wanaku-semantic-router.jar
+```
+
+Missing local artifacts produce WARN messages and skipped tests. Existing artifacts
+that fail startup or lack the required features fail the tests. Routing uses a
+local deterministic model fixture; no external model service or API key is required.
 
 ## Troubleshooting
 
