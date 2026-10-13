@@ -11,6 +11,7 @@ public final class WanakuTestConstants {
     public static final String PROP_SERVER_BINARY = "wanaku.test.server.binary";
     public static final String PROP_CLI_PATH = "wanaku.test.cli.path";
     public static final String PROP_CAMEL_CAPABILITY_JAR = "wanaku.test.camel-capability.jar";
+    public static final String PROP_SEMANTIC_ROUTER_JAR = "wanaku.test.semantic-router.jar";
     public static final String PROP_TIMEOUT = "wanaku.test.timeout";
     public static final String PROP_SKIP_THRESHOLD = "wanaku.test.skip.threshold";
     public static final String PROP_OPA_BINARY = "wanaku.test.opa.binary";

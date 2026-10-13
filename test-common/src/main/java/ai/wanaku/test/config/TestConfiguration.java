@@ -10,6 +10,7 @@ public class TestConfiguration {
 
     private final Path serverBinaryPath;
     private final Path camelCapabilityJarPath;
+    private final Path semanticRouterJarPath;
     private final Path artifactsDir;
     private final Path tempDataDir;
     private final Path evaluatorWasmPath;
@@ -30,6 +31,7 @@ public class TestConfiguration {
     private TestConfiguration(Builder builder) {
         this.serverBinaryPath = builder.serverBinaryPath;
         this.camelCapabilityJarPath = builder.camelCapabilityJarPath;
+        this.semanticRouterJarPath = builder.semanticRouterJarPath;
         this.artifactsDir = builder.artifactsDir;
         this.tempDataDir = builder.tempDataDir;
         this.evaluatorWasmPath = builder.evaluatorWasmPath;
@@ -66,6 +68,7 @@ public class TestConfiguration {
                 .artifactsDir(artifactsDir)
                 .serverBinaryPath(serverBinary)
                 .camelCapabilityJarPath(findCicJar(artifactsDir))
+                .semanticRouterJarPath(findSemanticRouterJar(artifactsDir))
                 .evaluatorWasmPath(findEvaluatorWasm(serverBinary))
                 .opaBinaryPath(findExplicitPath(WanakuTestConstants.PROP_OPA_BINARY))
                 .opaWasmPath(findOpaWasm(serverBinary))
@@ -90,6 +93,7 @@ public class TestConfiguration {
         return builder()
                 .serverBinaryPath(serverBinaryPath)
                 .camelCapabilityJarPath(camelCapabilityJarPath)
+                .semanticRouterJarPath(semanticRouterJarPath)
                 .artifactsDir(artifactsDir)
                 .tempDataDir(tempDataDir)
                 .evaluatorWasmPath(evaluatorWasmPath)
@@ -144,6 +148,32 @@ public class TestConfiguration {
             return System.getProperty("user.home") + path.substring(1);
         }
         return path;
+    }
+
+    private static Path findSemanticRouterJar(Path artifactsDir) {
+        Path explicit = findExplicitPath(WanakuTestConstants.PROP_SEMANTIC_ROUTER_JAR);
+        if (explicit != null) {
+            return explicit;
+        }
+        if (!Files.isDirectory(artifactsDir)) {
+            return null;
+        }
+        try (var files = Files.walk(artifactsDir, 2)) {
+            return files.filter(Files::isRegularFile)
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.startsWith("wanaku-semantic-router")
+                                && name.endsWith(".jar")
+                                && !name.endsWith("-sources.jar")
+                                && !name.endsWith("-javadoc.jar")
+                                && !name.startsWith("original-");
+                    })
+                    .sorted()
+                    .findFirst()
+                    .orElse(null);
+        } catch (IOException e) {
+            throw new IllegalStateException("Cannot discover semantic router artifacts in " + artifactsDir, e);
+        }
     }
 
     private static Path findCicJar(Path artifactsDir) {
@@ -243,6 +273,10 @@ public class TestConfiguration {
         return camelCapabilityJarPath;
     }
 
+    public Path getSemanticRouterJarPath() {
+        return semanticRouterJarPath;
+    }
+
     public Path getArtifactsDir() {
         return artifactsDir;
     }
@@ -332,6 +366,7 @@ public class TestConfiguration {
     public static class Builder {
         private Path serverBinaryPath;
         private Path camelCapabilityJarPath;
+        private Path semanticRouterJarPath;
         private Path artifactsDir;
         private Path tempDataDir;
         private Path evaluatorWasmPath;
@@ -356,6 +391,11 @@ public class TestConfiguration {
 
         public Builder camelCapabilityJarPath(Path camelCapabilityJarPath) {
             this.camelCapabilityJarPath = camelCapabilityJarPath;
+            return this;
+        }
+
+        public Builder semanticRouterJarPath(Path semanticRouterJarPath) {
+            this.semanticRouterJarPath = semanticRouterJarPath;
             return this;
         }
 

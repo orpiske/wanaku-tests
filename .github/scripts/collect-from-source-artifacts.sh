@@ -5,6 +5,7 @@
 #
 # Expected source layout (created by the CI workflow):
 #   source/wanaku-barn/                  -> wanaku-cli (native binary or Quarkus app)
+#   source/wanaku-semantic-router/       -> executable thin JAR + adjacent lib/
 #   source/camel-integration-capability/ -> camel-integration-capability-main fat JAR
 #
 
@@ -49,6 +50,35 @@ if [ -n "$CIC_JAR" ]; then
 else
     echo "::warning::Could not find CIC fat JAR"
 fi
+
+# WSR ships a thin executable JAR. Preserve the manifest's relative lib/ classpath.
+python3 - "$SOURCE_DIR/wanaku-semantic-router" "$ARTIFACTS_DIR/wanaku-semantic-router" <<'PYTHON'
+import shutil
+import sys
+import zipfile
+from pathlib import Path
+
+source, destination = map(Path, sys.argv[1:])
+candidates = []
+for jar in source.glob("**/target/*.jar"):
+    with zipfile.ZipFile(jar) as archive:
+        try:
+            manifest = archive.read("META-INF/MANIFEST.MF").decode("utf-8")
+        except KeyError:
+            continue
+    if any(line.startswith("Main-Class:") for line in manifest.splitlines()):
+        candidates.append(jar)
+if len(candidates) != 1:
+    sys.exit(f"::error::Expected one WSR executable JAR, found {len(candidates)}: {candidates}")
+jar = candidates[0]
+libraries = jar.parent / "lib"
+if not libraries.is_dir() or not any(libraries.glob("*.jar")):
+    sys.exit(f"::error::WSR dependency distribution missing: {libraries}")
+destination.mkdir(parents=True, exist_ok=True)
+shutil.copy2(jar, destination / "wanaku-semantic-router.jar")
+shutil.copytree(libraries, destination / "lib", dirs_exist_ok=True)
+print(f"Collected WSR distribution from {jar}")
+PYTHON
 
 echo ""
 echo "Collected artifacts:"
