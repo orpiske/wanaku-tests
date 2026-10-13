@@ -103,9 +103,9 @@ public class SemanticRouterManager extends ProcessManager {
                 "--status-port",
                 String.valueOf(statusPort),
                 "--bind",
-                "127.0.0.1",
+                "localhost",
                 "--status-bind",
-                "127.0.0.1",
+                "localhost",
                 "--mcp-address",
                 getMcpUrl(),
                 "--work-directory",
@@ -143,7 +143,7 @@ public class SemanticRouterManager extends ProcessManager {
     }
 
     public JsonNode getStatus() throws IOException, InterruptedException {
-        HttpRequest request = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + statusPort + "/api/v1/status"))
+        HttpRequest request = HttpRequest.newBuilder(URI.create("http://localhost:" + statusPort + "/api/v1/status"))
                 .timeout(Duration.ofSeconds(1))
                 .GET()
                 .build();
@@ -204,6 +204,6 @@ public class SemanticRouterManager extends ProcessManager {
     }
 
     public String getMcpUrl() {
-        return "http://127.0.0.1:" + httpPort + "/mcp";
+        return "http://localhost:" + httpPort + "/mcp";
     }
 }
