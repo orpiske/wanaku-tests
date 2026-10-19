@@ -30,12 +30,17 @@ COPY --from=wanaku /usr/local/bin/wanaku-server /usr/local/bin/wanaku-server
 # relative to its own path, so /usr/local/bin/wanaku is a wrapper, not a link.
 RUN --mount=type=bind,from=busybox,source=/bin/busybox,target=/tmp/busybox \
     set -eu; \
+    programs_to_install="nodejs npm"; \
     base="https://github.com/wanaku-ai/wanaku-barn/releases/download/${WANAKU_CLI_RELEASE}"; \
     case "${TARGETARCH:-$(uname -m)}" in \
         amd64|x86_64) archive="wanaku-cli-${WANAKU_CLI_VERSION}-linux-x86_64.zip"; launcher=bin/wanaku; programs="bin/wanaku bin/wanaku-cli" ;; \
         *) archive="wanaku-cli-${WANAKU_CLI_VERSION}.zip"; launcher=wanaku; programs=wanaku; \
-           dnf install --assumeyes --setopt=install_weak_deps=False java-headless && dnf clean all ;; \
+           programs_to_install="$programs_to_install java-headless" ;; \
     esac; \
+    dnf install --assumeyes --setopt=install_weak_deps=False $programs_to_install; \
+    dnf clean all; \
+    node --version; \
+    npx --version; \
     tmp=$(mktemp -d); \
     curl -fsSL -o "$tmp/$archive" "$base/$archive"; \
     curl -fsSL -o "$tmp/checksums_sha256.txt" "$base/checksums_sha256.txt"; \
