@@ -18,14 +18,15 @@ For operator deployment and authenticated MCP operations on OpenShift, use
 
 ### Required tools
 
-| Tool            | Minimum version                                  | Verify command             |
-|-----------------|--------------------------------------------------|----------------------------|
-| `wanaku` CLI    | installed executable or local build              | `wanaku --version`         |
-| `java`          | 21+, only for direct jar invocation              | `java -version`            |
-| `wanaku-server` | installed in the worker image; builtin mode only | `command -v wanaku-server` |
-| `curl`          | any                                              | `curl --version`           |
-| `timeout`       | GNU coreutils; required in the worker image      | `timeout --version`        |
-| `jq`            | 1.6+                                             | `jq --version`             |
+| Tool              | Minimum version                                                  | Verify command               |
+|-------------------|------------------------------------------------------------------|------------------------------|
+| `wanaku` CLI      | installed executable or local build                              | `wanaku --version`           |
+| `java`            | 21+, only for direct jar invocation                              | `java -version`              |
+| `wanaku-server`   | installed in the worker image; builtin mode only                 | `command -v wanaku-server`   |
+| `test-mcp-server` | installed fixture launcher; only when no fixture URL is supplied | `command -v test-mcp-server` |
+| `curl`            | any                                                              | `curl --version`             |
+| `timeout`         | GNU coreutils; required in the worker image                      | `timeout --version`          |
+| `jq`              | 1.6+                                                             | `jq --version`               |
 
 ### CLI invocation
 
@@ -78,11 +79,15 @@ Set variables before Step S.2 to override these defaults. Keep exports and owner
 | `MCP_RUN_ID`                                                            | Unique run suffix                                                             | Timestamp and shell PID                                  |
 | `MCP_NAMESPACE` / `MCP_ISOLATED_NAMESPACE` / `MCP_UNGOVERNED_NAMESPACE` | New, distinct test namespaces                                                 | Run-specific DNS labels                                  |
 | `TEST_MCP_FORWARD`                                                      | Name of this run's forward                                                    | `infra-remediation-${MCP_RUN_ID}`                               |
-| `TEST_MCP_URL`                                                          | Running infra-remediation MCP fixture URL reachable from Wanaku Server                | Required; `TEST_MCP_ADVERTISED_URL` accepted as fallback |
+| `TEST_MCP_URL`                                                          | Running infra-remediation MCP fixture URL reachable from Wanaku Server                | Launch the installed fixture when unset; `TEST_MCP_ADVERTISED_URL` accepted as fallback |
+| `TEST_MCP_PORT`                                                         | Port for the fixture launched by this plan                                    | `8181` |
 
 Example before setup: `export TEST_MCP_URL=http://fixture:8181/mcp` (replace `fixture` with the reachable fixture
 service name). When the fixture runs beside the builtin server in the same worker container, use its localhost URL.
-The plan registers this fixture; it does not launch or stop it.
+When no fixture URL is supplied, Step 1.3 launches the container's `test-mcp-server` directly and uses
+`http://localhost:${TEST_MCP_PORT:-8181}/mcp`. Cleanup stops only the fixture launched by this run.
+An existing Wanaku Server must be able to reach the worker's localhost endpoint for this default to work;
+otherwise supply a reachable fixture URL.
 
 The test fixture forward goes into `MCP_NAMESPACE`. `MCP_ISOLATED_NAMESPACE` is governed but has no forward.
 `MCP_UNGOVERNED_NAMESPACE` has the fail-safe defaults.
@@ -151,6 +156,9 @@ MCP_CREATED_FORWARD=false
 MCP_CREATED_SERVER=false
 MCP_CREATED_SERVER_DATA_DIR=""
 WANAKU_SERVER_PID=""
+MCP_CREATED_FIXTURE=false
+MCP_FIXTURE_PID=""
+MCP_FIXTURE_DATA_DIR=""
 export TEST_MCP_URL="${TEST_MCP_URL:-${TEST_MCP_ADVERTISED_URL:-}}"
 # Accept the supplied fixture origin as shorthand, preserving explicit endpoint paths.
 TEST_MCP_URL="${TEST_MCP_URL%/}"
@@ -332,9 +340,10 @@ done
 
 **Expected result:** Three new namespaces are created; none are reused.
 
-### Step 1.3: Register the running MCP fixture as a forward
+### Step 1.3: Start or reuse the MCP fixture and register it as a forward
 
-Provide `TEST_MCP_URL` before setup. Use the supplied `fixtures/test-mcp-server` fixture, implemented by
+Provide `TEST_MCP_URL` before setup to reuse a running fixture, or leave it unset to launch the fixture
+already installed in the worker container. Use the supplied `fixtures/test-mcp-server` fixture, implemented by
 `InfraRemediationServer`. Its tools include `restartService`, `scaleDeployment` and `escalateTicket`; its static
 resource is `safetyLimits` at `config://policies/safety-limits`; its prompts are `summarizeIncident` and
 `draftEscalation`. These are simulated remediation operations in the test fixture.
@@ -343,10 +352,46 @@ Supply the MCP endpoint (for example `http://host.docker.internal:38181/mcp`). S
 HTTP(S) origin and appends the fixture's `/mcp` path; an explicit endpoint path is preserved.
 For builtin mode a fixture in the same worker can use localhost. For existing mode, localhost refers to the existing
 server's machine/container; use a reachable fixture service URL instead. A fixture connection failure is a setup
-failure, not a tool-list test failure. The plan registers the fixture without launching or stopping it.
+failure, not a tool-list test failure. Supplied fixtures are never stopped by this plan. The automatically
+launched fixture listens on `0.0.0.0` at `TEST_MCP_PORT` (default `8181`); no nested container is needed.
 
 ```bash run
-: "${TEST_MCP_URL:?Set the running infra-remediation MCP fixture URL reachable from Wanaku Server}"
+if [ -z "${TEST_MCP_URL:-}" ]; then
+  command -v test-mcp-server > /dev/null 2>&1 \
+    || { echo "FAIL [1.3]: install test-mcp-server in the worker or provide TEST_MCP_URL"; exit 1; }
+  export TEST_MCP_PORT="${TEST_MCP_PORT:-8181}"
+  case "${TEST_MCP_PORT}" in
+    ''|*[!0-9]*) echo "FAIL [1.3]: TEST_MCP_PORT must be an integer"; exit 1 ;;
+  esac
+  [ "${TEST_MCP_PORT}" -ge 1 ] && [ "${TEST_MCP_PORT}" -le 65535 ] \
+    || { echo "FAIL [1.3]: TEST_MCP_PORT must be between 1 and 65535"; exit 1; }
+  export TEST_MCP_URL="http://localhost:${TEST_MCP_PORT}/mcp"
+  if curl --connect-timeout 1 --max-time 2 -s -o /dev/null "${TEST_MCP_URL}"; then
+    echo "FAIL [1.3]: fixture port already in use; provide TEST_MCP_URL or select a free TEST_MCP_PORT"; exit 1
+  fi
+  MCP_FIXTURE_DATA_DIR=$(mktemp -d) \
+    || { echo "FAIL [1.3]: cannot create fixture log directory"; exit 1; }
+  QUARKUS_HTTP_HOST=0.0.0.0 QUARKUS_HTTP_PORT="${TEST_MCP_PORT}" \
+    test-mcp-server < /dev/null > "${MCP_FIXTURE_DATA_DIR}/fixture.log" 2>&1 &
+  MCP_FIXTURE_PID=$!
+  MCP_CREATED_FIXTURE=true
+  for ATTEMPT in $(seq 1 30); do
+    kill -0 "${MCP_FIXTURE_PID}" 2>/dev/null \
+      || { echo "FAIL [1.3]: fixture exited; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; exit 1; }
+    if curl --connect-timeout 1 --max-time 2 -fsS \
+      -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+      --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"wanaku-cli-plan","version":"1"}}}' \
+      "${TEST_MCP_URL}" > "${MCP_FIXTURE_DATA_DIR}/initialize.out" 2>/dev/null \
+      && sed -n -e 's/^data: *//p' -e '/^{/p' "${MCP_FIXTURE_DATA_DIR}/initialize.out" \
+        | jq -e '.result.serverInfo and .result.capabilities' > /dev/null 2>&1; then
+      echo "PASS [1.3]: launched fixture accepts MCP initialization"
+      break
+    fi
+    [ "${ATTEMPT}" -lt 30 ] \
+      || { echo "FAIL [1.3]: fixture startup timed out; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; exit 1; }
+    sleep 1
+  done
+fi
 case "${TEST_MCP_URL}" in
   http://*|https://*) ;;
   *) echo "FAIL [1.3]: TEST_MCP_URL must use http:// or https://"; exit 1 ;;
@@ -377,7 +422,9 @@ done
 
 Do not register another copy if discovery fails; fix connectivity and refresh this forward.
 
-**Expected result:** The test fixture is reachable from the selected instance, the run's forward is created,
+**Expected result:** When no fixture URL was supplied, the installed fixture starts and the output includes
+`PASS [1.3]: launched fixture accepts MCP initialization`. Otherwise the supplied fixture is reused.
+The test fixture is reachable from the selected instance, the run's forward is created,
 and `restartService` is discovered. Step 1.4 also verifies the MCP listener through the CLI.
 
 ### Step 1.4: Set the MCP endpoint
@@ -989,6 +1036,13 @@ fi
 for NS in $(printf '%s' "${MCP_CREATED_NAMESPACES}"); do
   wanaku namespaces delete "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 || true
 done
+if [ "${MCP_CREATED_FIXTURE:-false}" = true ]; then
+  kill "${MCP_FIXTURE_PID}" 2>/dev/null || true
+  wait "${MCP_FIXTURE_PID}" 2>/dev/null || true
+fi
+if [ -n "${MCP_FIXTURE_DATA_DIR:-}" ]; then
+  rm -rf "${MCP_FIXTURE_DATA_DIR}"
+fi
 if [ "${WANAKU_SERVER_MODE}" = builtin ]; then
   if [ "${MCP_CREATED_SERVER:-false}" = true ]; then
     kill "${WANAKU_SERVER_PID}" 2>/dev/null || true
@@ -1001,7 +1055,8 @@ fi
 ```
 
 **Expected result:** The run's forward, discovered entries and three namespaces are absent (verify with the CLI
-list commands). The supplied fixture remains running. In builtin mode the owned server process and fresh
+list commands). A supplied fixture remains running; a fixture launched by this run and its temporary files
+are removed. In builtin mode the owned server process and fresh
 configuration/data directory are removed. In existing mode the server remains reachable and its unrelated configuration/data is preserved.
 Cleanup failures must be investigated; ignored missing-resource errors alone do not establish PASS.
 
