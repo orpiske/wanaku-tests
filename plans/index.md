@@ -3,3 +3,6 @@
 These test plans are written for execution with [Midnight Saci](https://github.com/orpiske/midnight-saci).
 
 The Markdown format must be compliant with Saci (see https://github.com/orpiske/midnight-saci/tree/main/docs/templates)
+
+- [Wanaku MCP CLI commands](mcp-cli-commands.md): CLI behavior against a builtin or existing server.
+- [Wanaku MCP deployment on OpenShift](openshift-mcp-deployment.md): operator deployment, authentication and MCP operations through Routes.
