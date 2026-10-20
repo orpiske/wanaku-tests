@@ -1,0 +1,106 @@
+# Procedure: Namespace Setup
+
+Reusable steps for creating and configuring the test namespace on OpenShift.
+Use this shared setup from each OpenShift plan instead of re-defining the namespace derivation inline.
+
+## Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `WANAKU_NAMESPACE_PREFIX` | Prefix used to derive a per-run namespace when one is not provided | `wanaku-test` |
+| `WANAKU_TEST_RUN_ID` | Unique suffix for the namespace when one is not provided | `20260716-043000` |
+| `WANAKU_NAMESPACE` | Target namespace for all Wanaku resources | `wanaku-test-<run-id>` |
+
+## Phase 1: Namespace Setup
+
+### Step 1: Export the namespace variable
+
+```bash
+export WANAKU_TEST_RUN_ID="${WANAKU_TEST_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
+export WANAKU_NAMESPACE_PREFIX="${WANAKU_NAMESPACE_PREFIX:-wanaku-test}"
+export WANAKU_NAMESPACE="${WANAKU_NAMESPACE:-${WANAKU_NAMESPACE_PREFIX}-${WANAKU_TEST_RUN_ID}}"
+```
+
+This keeps each test run isolated by default while still allowing callers to override `WANAKU_NAMESPACE` when they intentionally want to reuse a namespace.
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+### Step 2: Create the namespace (project)
+
+```bash
+oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/dev/null \
+  || oc project "${WANAKU_NAMESPACE}"
+```
+
+**Expected result:**
+
+- The output includes `exit_code=0`.
+
+**Verification:**
+
+```bash
+[ "$(oc project -q)" = "${WANAKU_NAMESPACE}" ]
+echo "exit_code=$?"
+# Expected: exit_code=0
+```
+
+### Step 3: Verify current context targets the correct namespace
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+CURRENT_NS=$(oc project -q)
+if [ "${CURRENT_NS}" != "${WANAKU_NAMESPACE}" ]; then
+  echo "FAIL: current namespace is '${CURRENT_NS}', expected '${WANAKU_NAMESPACE}'"
+  exit 1
+fi
+echo "PASS: namespace is ${WANAKU_NAMESPACE}"
+```
+
+**Expected result:**
+
+- The output includes `PASS: namespace is <WANAKU_NAMESPACE>`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+### Step 4: Verify the user has sufficient permissions
+
+```bash
+oc auth can-i create deployments -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-deployments=$?"
+
+oc auth can-i create services -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-services=$?"
+
+oc auth can-i create persistentvolumeclaims -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-pvcs=$?"
+
+oc auth can-i create routes -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-routes=$?"
+
+oc auth can-i create configmaps -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-configmaps=$?"
+
+oc auth can-i create secrets -n "${WANAKU_NAMESPACE}" | grep -q "yes"
+echo "can-create-secrets=$?"
+
+# Expected: all values should be 0
+```
+
+**Expected result:**
+
+- The output includes `can-create-deployments=0`.
+- The output includes `can-create-services=0`.
+- The output includes `can-create-pvcs=0`.
+- The output includes `can-create-routes=0`.
+- The output includes `can-create-configmaps=0`.
+- The output includes `can-create-secrets=0`.
+
+## Output Variables
+
+| Variable | Description |
+|----------|-------------|
+| `WANAKU_NAMESPACE` | The namespace (OpenShift project) for this run. The current `oc` context targets it. |
+| `WANAKU_TEST_RUN_ID` | The unique suffix of this run |
