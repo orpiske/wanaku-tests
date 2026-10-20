@@ -36,6 +36,20 @@ Every step is fully automatable.
 
 ### Prerequisite check script
 
+### Environment variables
+
+Set these before running the plan. All values have sensible defaults.
+
+Phases 1 and 5 (except Test 5.3) use only `helm template`. They do not need a cluster.
+
+---
+
+## Phase S: Setup
+
+### Step S.1: Prepare prerequisites
+
+Run this block as a separate `bash` script, not in the shared session.
+
 ```bash
 #!/bin/bash
 set -e
@@ -67,11 +81,19 @@ echo ""
 echo "PASS: all prerequisites met"
 ```
 
-### Environment variables
+**Expected result:**
 
-Set these before running the plan. All values have sensible defaults.
+- The output includes `PASS: oc found at`.
+- The output includes `PASS: helm found at`.
+- The output includes `PASS: jq found at`.
+- The output includes `PASS: all prerequisites met`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
-```bash
+
+### Step S.2: Set environment variables
+
+```bash run
 # Two distinct namespaces for multi-namespace testing, unique per run
 export WANAKU_TEST_RUN_ID="${WANAKU_TEST_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
 export WANAKU_NAMESPACE_A="${WANAKU_NAMESPACE_A:-wanaku-crb-a-${WANAKU_TEST_RUN_ID}}"
@@ -90,13 +112,21 @@ export WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-quay.io/wanaku/wanaku-ope
 export WANAKU_CONTROLLERS="wanaku-router wanaku-service-catalog wanaku-semantic-router wanaku-integration"
 ```
 
-Phases 1 and 5 (except Test 5.3) use only `helm template`. They do not need a cluster.
+**Expected result:**
 
----
+- The commands exit with code 0 (inferred).
+
 
 ## Phase 0: OpenShift Login
 
+### Step 0.1: Log in to OpenShift
+
 Follow [common/openshift-login.md](common/openshift-login.md) to log in to the target OpenShift cluster using a service account token.
+
+**Expected result:**
+
+- `oc whoami` shows the service account.
+
 
 ---
 
@@ -105,6 +135,8 @@ Follow [common/openshift-login.md](common/openshift-login.md) to log in to the t
 ### Test 1.1: Verify `validating-clusterrolebinding.yaml` uses `Release.Namespace` in name
 
 **Description:** The fix must change the `metadata.name` field from `{{ .Chart.Name }}-crd-validating-role-binding` to `{{ .Release.Namespace }}-crd-validating-role-binding`. This test reads the template file and verifies the pattern.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 TEMPLATE_FILE="${WANAKU_CHART_DIR}/templates/validating-clusterrolebinding.yaml"
@@ -128,9 +160,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: metadata.name uses .Release.Namespace prefix`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.2: Verify consistency with other ClusterRoleBindings in `clusterrolebinding.yaml`
 
 **Description:** All ClusterRoleBindings in `clusterrolebinding.yaml` use `{{ .Release.Namespace }}-` as a name prefix. After the fix, `validating-clusterrolebinding.yaml` must follow the same convention.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CRB_FILE="${WANAKU_CHART_DIR}/templates/clusterrolebinding.yaml"
@@ -149,11 +190,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: all ClusterRoleBinding names in clusterrolebinding.yaml use .Release.Namespace`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.3: Verify all cluster-scoped resource names across all templates use `Release.Namespace`
 
 **Description:** Audit all ClusterRole and ClusterRoleBinding templates to confirm no cluster-scoped resource name uses `.Chart.Name` as a unique identifier prefix. Uses of `.Chart.Name` in labels or subjects (namespace-scoped references like ServiceAccount names) are acceptable.
 
-```bash
+```bash run
 FAIL=0
 
 for TEMPLATE in "${WANAKU_CHART_DIR}"/templates/*.yaml; do
@@ -176,9 +224,17 @@ if [ "${FAIL}" -eq 0 ]; then
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: no cluster-scoped resource names use .Chart.Name`.
+- The output contains no line starting with `FAIL:`.
+
+
 ### Test 1.4: Verify Helm template renders unique names per namespace
 
 **Description:** Use `helm template` to render the chart with two different namespace values and confirm the ClusterRoleBinding names are distinct.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # Render for namespace "alpha"
@@ -217,9 +273,20 @@ echo "${NAME_BETA}" | grep -q "^beta-" && \
   { echo "FAIL: beta name does not start with namespace prefix"; exit 1; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: ClusterRoleBinding names are unique per namespace`.
+- The output includes `PASS: alpha name starts with namespace prefix`.
+- The output includes `PASS: beta name starts with namespace prefix`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.5: Verify all ClusterRoleBinding names are unique within a single rendered chart
 
 **Description:** Render the full chart and verify that no two ClusterRoleBindings share the same name.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # Print metadata.name only: roleRef.name has the same indentation, so track the top-level section
@@ -250,9 +317,18 @@ fi
 echo "PASS: all ${TOTAL} ClusterRoleBinding names are unique"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: all <TOTAL> ClusterRoleBinding names are unique`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.6: Verify roleRef still points to the correct ClusterRole
 
 **Description:** The fix only changes the ClusterRoleBinding `metadata.name`. The `roleRef.name` must still reference the namespace-prefixed ClusterRole.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 RENDERED=$(helm template test-release "${WANAKU_CHART_DIR}" \
@@ -269,9 +345,18 @@ fi
 echo "PASS: roleRef points to the correct namespace-prefixed ClusterRole"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: roleRef points to the correct namespace-prefixed ClusterRole`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.7: Verify subjects still reference the correct ServiceAccount and namespace
 
 **Description:** The ServiceAccount subject must reference the correct namespace.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 RENDERED=$(helm template test-release "${WANAKU_CHART_DIR}" \
@@ -288,11 +373,20 @@ fi
 echo "PASS: subject references the correct namespace"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: subject references the correct namespace`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 1.8: Verify the rendered ClusterRoles match the controllers
 
 **Description:** The chart renders one ClusterRole per controller and the CRD validation ClusterRole, each with the
 namespace prefix. No ClusterRole for a removed CRD (`WanakuCapability`, `WanakuCamelRoute`,
 `WanakuCamelCodeExecutionEngine`) is rendered.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 ROLES=$(helm template test-release "${WANAKU_CHART_DIR}" --namespace testns 2>/dev/null \
@@ -314,6 +408,14 @@ echo "${ROLES}" | grep -E "capability|camel" && { echo "FAIL: ClusterRole for a 
   || echo "PASS: no ClusterRole for a removed CRD"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: the chart renders exactly the 5 expected ClusterRoles`.
+- The output includes `PASS: no ClusterRole for a removed CRD`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 2: Multi-Namespace Installation Test
@@ -330,7 +432,15 @@ oc new-project "${WANAKU_NAMESPACE_B}" --display-name="Wanaku CRB Test B" 2>/dev
 echo "namespace-b=$?"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: namespace <NS> exists`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 **Verification:**
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
@@ -353,7 +463,15 @@ helm install wanaku-operator-a "${WANAKU_CHART_DIR}" \
   --set app.imagePullPolicy=Always
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator installed in <WANAKU_NAMESPACE_A>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 **Verification:**
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 helm status wanaku-operator-a --namespace "${WANAKU_NAMESPACE_A}" -o json \
@@ -370,6 +488,8 @@ fi
 ### Test 2.3: Install operator in namespace B (the collision test)
 
 **Description:** This is the core test. Before the fix, this step would fail with: `Error: INSTALLATION FAILED: unable to continue with install: ClusterRoleBinding "wanaku-operator-crd-validating-role-binding" in namespace "" exists and cannot be imported into the current release: invalid ownership metadata`. After the fix, it should succeed.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 helm install wanaku-operator-b "${WANAKU_CHART_DIR}" \
@@ -388,7 +508,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator installed in <WANAKU_NAMESPACE_B> (no name collision)`.
+- The output includes `PASS: operator deployed in <WANAKU_NAMESPACE_B>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 **Verification:**
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 helm status wanaku-operator-b --namespace "${WANAKU_NAMESPACE_B}" -o json \
@@ -405,6 +534,8 @@ fi
 ### Test 2.4: Verify both ClusterRoleBindings exist with distinct names
 
 **Description:** After both installs, there should be two separate ClusterRoleBindings with namespace-specific names.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CRB_A="${WANAKU_NAMESPACE_A}-crd-validating-role-binding"
@@ -427,7 +558,17 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: ClusterRoleBinding <CRB_A> exists`.
+- The output includes `PASS: ClusterRoleBinding <CRB_B> exists`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.5: Verify each ClusterRoleBinding references the correct ServiceAccount namespace
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 SA_NS_A=$(oc get clusterrolebinding "${WANAKU_NAMESPACE_A}-crd-validating-role-binding" \
@@ -451,7 +592,17 @@ fi
 echo "PASS: CRB B references correct namespace"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: CRB A references correct namespace`.
+- The output includes `PASS: CRB B references correct namespace`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.6: Verify each ClusterRoleBinding references its own namespace-scoped ClusterRole
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 ROLE_A=$(oc get clusterrolebinding "${WANAKU_NAMESPACE_A}-crd-validating-role-binding" \
@@ -475,9 +626,19 @@ fi
 echo "PASS: CRB B references correct ClusterRole"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: CRB A references correct ClusterRole`.
+- The output includes `PASS: CRB B references correct ClusterRole`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.7: Verify the old collision-causing name does NOT exist
 
 **Description:** After the fix, the static name `wanaku-operator-crd-validating-role-binding` should not be created by either install.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 oc get clusterrolebinding wanaku-operator-crd-validating-role-binding > /dev/null 2>&1
@@ -488,9 +649,18 @@ fi
 echo "PASS: old static name does not exist"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: old static name does not exist`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.8: Verify all other ClusterRoleBindings from both installs are non-conflicting
 
 **Description:** The four ClusterRoleBindings in `clusterrolebinding.yaml` (router, service-catalog, semantic-router, integration) should also exist in pairs with namespace prefixes. The namespaced RoleBindings must exist in each namespace.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 FAIL=0
@@ -524,11 +694,21 @@ if [ "${FAIL}" -ne 0 ]; then
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: <CRB_NAME> exists`.
+- The output includes `PASS: RoleBinding <RB> exists in <NS>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 3: Operator Health Verification
 
 ### Test 3.1: Verify operator pods are running in both namespaces
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
@@ -549,11 +729,20 @@ for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator in <NS> is Running`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 3.2: Verify operator health endpoints in both namespaces
 
 **Description:** The operator Deployment uses the Quarkus health endpoints (`/q/health/live`, `/q/health/ready`,
 `/q/health/started`) on port 8081 as probes. A Ready pod proves that the readiness probe succeeds. Each operator must
 have the RBAC to start, so a missing binding shows up as a pod that does not become Ready.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
@@ -572,7 +761,17 @@ for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator in <NS> is Ready (readiness probe /q/health/ready succeeds)`.
+- The output includes `PASS: operator in <NS> has zero restarts` or `WARN: operator in <NS> restarted <RESTARTS> time(s)`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 3.3: Verify CRDs are installed (cluster-scoped, shared)
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
@@ -586,6 +785,16 @@ for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanti
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: CRD wanakurouters.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakuservicecatalogs.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakusemanticrouters.wanaku.ai exists`.
+- The output includes `PASS: CRD wanakuintegrations.wanaku.ai exists`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 4: Independent Uninstallation Test
@@ -593,6 +802,8 @@ done
 ### Test 4.1: Uninstall operator from namespace A without affecting namespace B
 
 **Description:** Removing the operator from one namespace must not break the other.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 helm uninstall wanaku-operator-a --namespace "${WANAKU_NAMESPACE_A}"
@@ -607,7 +818,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator uninstalled from <WANAKU_NAMESPACE_A>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 4.2: Verify namespace B ClusterRoleBinding is unaffected
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CRB_B="${WANAKU_NAMESPACE_B}-crd-validating-role-binding"
@@ -621,9 +841,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: <CRB_B> still exists after uninstalling namespace A`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 4.3: Verify namespace A ClusterRoleBinding is cleaned up
 
-```bash
+```bash run
 CRB_A="${WANAKU_NAMESPACE_A}-crd-validating-role-binding"
 
 # Helm should have removed the CRB owned by release A
@@ -636,7 +863,14 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: <CRB_A> was removed with the Helm release` or `WARN: <CRB_A> still exists after uninstall (Helm may not clean up cluster-scoped resources by default)`.
+
+
 ### Test 4.4: Verify operator in namespace B is still healthy
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 POD_STATUS=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
@@ -650,6 +884,13 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: operator in <WANAKU_NAMESPACE_B> is still Running`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 5: Edge Cases
@@ -657,6 +898,8 @@ fi
 ### Test 5.1: Namespace with special characters (hyphens)
 
 **Description:** Verify the naming works correctly with hyphenated namespace names, which are the most common pattern in Kubernetes.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # This is implicitly tested by the default namespace names (wanaku-test-a, wanaku-test-b)
@@ -677,9 +920,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: hyphenated namespace name renders correctly`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 5.2: Verify naming consistency across all ClusterRoleBinding templates
 
 **Description:** After the fix, the naming pattern for the validating ClusterRoleBinding should be `<namespace>-crd-validating-role-binding`, following the same `<namespace>-<description>` pattern as the other four: `<namespace>-wanaku-router-crd-validating-role-binding`, `<namespace>-wanaku-service-catalog-crd-validating-role-binding`, `<namespace>-wanaku-semantic-router-crd-validating-role-binding`, `<namespace>-wanaku-integration-crd-validating-role-binding`.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 RENDERED=$(helm template test-release "${WANAKU_CHART_DIR}" --namespace testns 2>/dev/null)
@@ -708,9 +960,18 @@ if [ "${FAIL}" -ne 0 ]; then
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: <NAME> has namespace prefix`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 5.3: Verify re-installation after uninstall works cleanly
 
 **Description:** Uninstall and re-install in the same namespace to verify there are no leftover resources that cause conflicts.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 # Uninstall from namespace B
@@ -742,13 +1003,21 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: re-installation in <WANAKU_NAMESPACE_B> succeeded`.
+- The output includes `PASS: ClusterRoleBinding recreated after re-install`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 5.4: Verify ClusterRoleBinding names with JOSDK_ALL_NAMESPACES
 
 **Description:** When a controller watches all namespaces (`JOSDK_ALL_NAMESPACES`), the chart grants its ClusterRole
 with a ClusterRoleBinding instead of a RoleBinding. That ClusterRoleBinding is cluster-scoped, so its name must also
 have the namespace prefix. Otherwise a second release collides in the same way as in issue #1376.
 
-```bash
+```bash run
 RENDER_ARGS=""
 for C in ROUTER SERVICE_CATALOG SEMANTIC_ROUTER INTEGRATION; do
   RENDER_ARGS="${RENDER_ARGS} --set app.envs.QUARKUS_OPERATOR_SDK_CONTROLLERS_WANAKU_${C}_NAMESPACES=JOSDK_ALL_NAMESPACES"
@@ -778,13 +1047,20 @@ fi
 > `wanaku-semantic-router-role-binding` and `wanaku-integration-role-binding` for the `JOSDK_ALL_NAMESPACES`
 > ClusterRoleBinding. This test then reports FAIL. Record the result and report the issue if it is still open.
 
+**Expected result:**
+
+- The output includes `PASS: 9 ClusterRoleBindings rendered (5 validating + 4 controller)`.
+- The output includes `PASS: all ClusterRoleBinding names have the namespace prefix`.
+- The output contains no line starting with `FAIL:`.
+
+
 ---
 
 ## Phase 6: Cleanup
 
 ### Step 6.1: Uninstall Helm releases
 
-```bash
+```bash run
 helm uninstall wanaku-operator-a --namespace "${WANAKU_NAMESPACE_A}" 2>/dev/null || true
 echo "PASS: release A uninstalled (or already removed)"
 
@@ -792,9 +1068,15 @@ helm uninstall wanaku-operator-b --namespace "${WANAKU_NAMESPACE_B}" 2>/dev/null
 echo "PASS: release B uninstalled (or already removed)"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: release A uninstalled (or already removed)`.
+- The output includes `PASS: release B uninstalled (or already removed)`.
+
+
 ### Step 6.2: Clean up cluster-scoped resources
 
-```bash
+```bash run
 for NS in "${WANAKU_NAMESPACE_A}" "${WANAKU_NAMESPACE_B}"; do
   for SUFFIX in crd-validating-role-binding $(for C in ${WANAKU_CONTROLLERS}; do echo "${C}-crd-validating-role-binding"; done); do
     oc delete clusterrolebinding "${NS}-${SUFFIX}" --ignore-not-found=true 2>/dev/null || true
@@ -811,6 +1093,11 @@ oc delete clusterrolebinding wanaku-operator-crd-validating-role-binding --ignor
 echo "PASS: cluster-scoped resources cleaned up"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: cluster-scoped resources cleaned up`.
+
+
 ### Step 6.3: Delete namespaces (optional)
 
 ```bash
@@ -824,9 +1111,14 @@ echo "PASS: cluster-scoped resources cleaned up"
 echo "SKIP: namespace deletion (uncomment to enable)"
 ```
 
+**Expected result:**
+
+- The output includes `SKIP: namespace deletion (uncomment to enable)`.
+
+
 ### Step 6.4: Verify cleanup
 
-```bash
+```bash run
 echo "--- Remaining Wanaku ClusterRoleBindings ---"
 oc get clusterrolebinding | grep -E "wanaku|crd-validating" || echo "(none)"
 
@@ -838,12 +1130,19 @@ helm list --namespace "${WANAKU_NAMESPACE_A}" 2>/dev/null || echo "(namespace ma
 helm list --namespace "${WANAKU_NAMESPACE_B}" 2>/dev/null || echo "(namespace may not exist)"
 ```
 
+**Expected result:**
+
+- The commands display remaining Wanaku ClusterRoleBindings, ClusterRoles and Helm releases, or the existing fallback messages (inferred).
+
+
 ---
 
 ## Test Summary Matrix
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
+| S | S.1 | Prepare prerequisites | High |
+| S | S.2 | Set environment variables | High |
 | 0 | -- | OpenShift login | Critical |
 | 1 | 1.1 | Template uses `.Release.Namespace` in name | Critical |
 | 1 | 1.2 | Consistency with other ClusterRoleBindings | Critical |

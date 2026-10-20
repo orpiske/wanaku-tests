@@ -1,4 +1,4 @@
-# Common: Start Wanaku Barn Locally
+# Procedure: Start Wanaku Barn Locally
 
 Reusable steps for building and starting the Wanaku Barn backend locally, next to Wanaku Server.
 
@@ -36,16 +36,24 @@ Barn does not enforce authentication and does not serve MCP. There is no OIDC re
 | `WANAKU_BARN_URL` | Barn base URL (`http://localhost:8180`). Use it as `--host` for `service`, `data-store` and `backup` commands. |
 | `WANAKU_BARN_PID` | PID of the background Barn process |
 
-## Steps
+## Phase 1: Start Wanaku Barn Locally
 
-### 1. Build the project
+### Step 1: Build the project
 
-```bash
+```bash run
 cd "${WANAKU_REPO_ROOT:-.}"
 mvn -DskipTests clean package
 ```
 
+**Expected result:**
+
+- The verification output includes `PASS: <FILE> exists` for `CLI_JAR` and `BARN_JAR`.
+- The verification output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 **Verification:**
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 VERSION=$(cat core/core-util/target/classes/version.txt)
@@ -61,11 +69,11 @@ for FILE in "${CLI_JAR}" "${BARN_JAR}"; do
 done
 ```
 
-### 2. Start Barn
+### Step 2: Start Barn
 
 Each run uses a new Wanaku home directory, so the Infinispan store does not contain data from earlier runs.
 
-```bash
+```bash run
 export WANAKU_BARN_PORT="${WANAKU_BARN_PORT:-8180}"
 export WANAKU_BARN_URL="http://localhost:${WANAKU_BARN_PORT}"
 export WANAKU_BARN_HOME="${WANAKU_BARN_HOME:-$(mktemp -d)}"
@@ -79,9 +87,15 @@ export WANAKU_BARN_PID
 echo "Wanaku Barn started with PID ${WANAKU_BARN_PID} (home: ${WANAKU_BARN_HOME})"
 ```
 
-### 3. Wait for health
+**Expected result:**
+
+- The output includes `Wanaku Barn started with PID` (inferred).
+
+### Step 3: Wait for health
 
 `curl` is used here to test HTTP-level readiness.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 MAX_RETRIES=30
@@ -102,7 +116,15 @@ for i in $(seq 1 ${MAX_RETRIES}); do
 done
 ```
 
-### 4. Verify the CLI can connect
+**Expected result:**
+
+- The output includes `PASS: Wanaku Barn is healthy (attempt <i>)`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+### Step 4: Verify the CLI can connect
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 java -jar "${CLI_JAR}" service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain
@@ -115,7 +137,15 @@ else
 fi
 ```
 
-## Optional: connect Barn to Wanaku Server
+**Expected result:**
+
+- The output includes `PASS: CLI can connect to Wanaku Barn`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+## Phase O: Optional: connect Barn to Wanaku Server
+
+### Step O.1: Optional: connect Barn to Wanaku Server
 
 The admin UI of Wanaku Server reaches Barn through the `wanaku-barn` plugin service. The operator writes the same
 configuration (see `RouterResourceFactory.serverConfig`). Plans that use the Barn pages in the admin UI must start
@@ -146,6 +176,11 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
   || echo "FAIL: plugin proxy returned HTTP ${HTTP_CODE}"
 ```
 
+**Expected result:**
+
+- When the plan uses the Barn admin UI plugin, the output includes `PASS: Wanaku Server proxies requests to Barn`; otherwise this optional connection is not required.
+- The output contains no line starting with `FAIL:`.
+
 ## Restart
 
 A Barn that restarts on an existing store keeps its data, but `/q/health/ready` can stay `DOWN` (caches
@@ -154,13 +189,6 @@ instead of waiting for readiness indefinitely.
 
 ## Shutdown
 
-```bash
-if [ -n "${WANAKU_BARN_PID}" ]; then
-  kill "${WANAKU_BARN_PID}" 2>/dev/null || true
-  wait "${WANAKU_BARN_PID}" 2>/dev/null || true
-  echo "PASS: Wanaku Barn stopped"
-fi
-rm -rf "${WANAKU_BARN_HOME}"
-```
+The entry plan runs the original shutdown block in its local cleanup unit.
 
 Do **not** use `kill -9`. It bypasses shutdown hooks and can leave the Infinispan store in an inconsistent state.

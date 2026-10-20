@@ -36,10 +36,7 @@ automatable.
 
 The plan calls the CLI as `wanaku`. To use the CLI jar from a local build, define a shell function:
 
-```bash
-CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
-wanaku() { java -jar "${CLI_JAR}" "$@"; }
-```
+The executable block is in Step S.1 below.
 
 ### Output formats
 
@@ -54,7 +51,26 @@ wanaku() { java -jar "${CLI_JAR}" "$@"; }
 
 ### Environment variables
 
-```bash
+The executable block is in Step S.2 below.
+
+---
+
+## Phase S: Setup
+
+### Step S.1: Define CLI invocation
+
+```bash run
+CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+wanaku() { java -jar "${CLI_JAR}" "$@"; }
+```
+
+**Expected result:**
+
+- The commands complete without errors (inferred).
+
+### Step S.2: Set environment variables
+
+```bash run
 export FWD_NAMESPACE="${FWD_NAMESPACE:-default}"
 export FWD_AUTO_NAMESPACE="${FWD_AUTO_NAMESPACE:-fwd-auto-ns}"
 export FWD_SECOND_NAMESPACE="${FWD_SECOND_NAMESPACE:-fwd-second}"
@@ -65,44 +81,67 @@ export DS_WORK_DIR="${DS_WORK_DIR:-$(mktemp -d)}"
 TAB=$(printf '\t')
 ```
 
----
+**Expected result:**
+
+- The commands complete without errors (inferred).
 
 ## Phase 0: Prerequisites
 
 ### Test 0.1: Verify the required tools
 
-```bash
+```bash run
 for CMD in java mvn npx curl jq; do
   command -v "${CMD}" > /dev/null 2>&1 && echo "PASS [0.1]: ${CMD} available" || echo "FAIL [0.1]: ${CMD} not found"
 done
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [0.1]: java available`.
+- The output includes `PASS [0.1]: mvn available`.
+- The output includes `PASS [0.1]: npx available`.
+- The output includes `PASS [0.1]: curl available`.
+- The output includes `PASS [0.1]: jq available`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 1: Environment Setup
 
 ### Step 1.1: Start Wanaku Server
 
-Follow [common/start-server.md](common/start-server.md). The optional step 2b is not necessary. After completion,
+Follow [common/start-server.md](common/start-server.md).
+
+ The optional step 2b is not necessary. After completion,
 `WANAKU_SERVER_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR` must be set.
+
+**Expected result:**
+
+- The invoked procedure completes successfully (inferred).
 
 ### Step 1.2: Start Wanaku Barn
 
-Follow [common/start-barn.md](common/start-barn.md). After completion, `WANAKU_BARN_URL`, `WANAKU_BARN_PID` and
+Follow [common/start-barn.md](common/start-barn.md).
+
+After completion, `WANAKU_BARN_URL`, `WANAKU_BARN_PID` and
 `CLI_JAR` must be set.
+
+**Expected result:**
+
+- The invoked procedure completes successfully (inferred).
 
 ### Step 1.3: Start the MCP reference server
 
 Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${FWD_NAMESPACE}"`.
 After completion, `TEST_MCP_URL` must be set and the forward `everything` must exist.
 
----
+**Expected result:**
+
+- The invoked procedure completes successfully (inferred).
 
 ## Phase 2: Forward Lifecycle (Wanaku Server)
 
 ### Test 2.1: List the forwards
 
-```bash
+```bash run
 OUTPUT=$(wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "^everything${TAB}${TEST_MCP_URL}"; then
@@ -112,12 +151,17 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS [2.1]: forward 'everything' listed with its address`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 2.2: Add a forward to an unreachable address
 
 Wanaku Server stores a forward even when discovery fails. The forward is then unavailable, and `statusMessage`
 contains the error. The CLI does not show these fields, so the test reads them with `curl`.
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name fwd-unreachable --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" --plain
 EXIT_CODE=$?
@@ -133,12 +177,20 @@ echo "${FWD_JSON}" | jq -r '.data.statusMessage' | grep -q "failed to connect" \
   && echo "PASS [2.2]: statusMessage reports the connection error" || echo "FAIL [2.2]: ${FWD_JSON}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [2.2]: add exits 0`.
+- The output includes `PASS [2.2]: fwd-unreachable listed`.
+- The output includes `PASS [2.2]: forward is unavailable`.
+- The output includes `PASS [2.2]: statusMessage reports the connection error`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 2.3: Re-register a forward with the same name
 
 Wanaku Server has no update route for forwards. A second `add` with the same name replaces the entry. It does not
 return a conflict.
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name fwd-unreachable --service "http://localhost:59997/mcp" --namespace "${FWD_NAMESPACE}" --plain
 [ $? -eq 0 ] && echo "PASS [2.3]: re-registration exits 0" || echo "FAIL [2.3]: re-registration failed"
@@ -152,20 +204,31 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS [2.3]: re-registration exits 0`.
+- The output includes `PASS [2.3]: one entry with the new address`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 2.4: A forward creates its namespace
 
 Wanaku Server lists a namespace when a forward refers to it. A separate `namespaces create` is not necessary.
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name fwd-auto-ns --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_AUTO_NAMESPACE}" --plain
 wanaku namespaces show "${FWD_AUTO_NAMESPACE}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 \
   && echo "PASS [2.4]: namespace ${FWD_AUTO_NAMESPACE} exists" || echo "FAIL [2.4]: namespace ${FWD_AUTO_NAMESPACE} missing"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [2.4]: namespace <FWD_AUTO_NAMESPACE> exists`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 2.5: Remove the forwards
 
-```bash
+```bash run
 for FWD in fwd-unreachable fwd-auto-ns; do
   OUTPUT=$(wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name "${FWD}" --plain 2>&1)
   echo "${OUTPUT}" | grep -q "Successfully removed forward reference '${FWD}'" \
@@ -176,13 +239,19 @@ echo "${OUTPUT}" | grep -q "^fwd-" && echo "FAIL [2.5]: test forwards still list
 echo "${OUTPUT}" | grep -q "^everything${TAB}" && echo "PASS [2.5]: 'everything' not affected" || echo "FAIL [2.5]: 'everything' missing"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [2.5]: fwd-unreachable removed`.
+- The output includes `PASS [2.5]: fwd-auto-ns removed`.
+- The output includes `PASS [2.5]: test forwards gone`.
+- The output includes `PASS [2.5]: 'everything' not affected`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 3: Discovery and Refresh (Wanaku Server)
 
 ### Test 3.1: The forward supplies tools, resources and prompts
 
-```bash
+```bash run
 wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}${FWD_NAMESPACE}${TAB}mcp-forward${TAB}${TEST_MCP_URL}" \
   && echo "PASS [3.1]: tool echo discovered in ${FWD_NAMESPACE}" || echo "FAIL [3.1]: tool echo missing"
 wanaku resources list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^architecture.md${TAB}" \
@@ -191,9 +260,16 @@ wanaku prompts list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^
   && echo "PASS [3.1]: prompt simple-prompt discovered" || echo "FAIL [3.1]: prompt simple-prompt missing"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.1]: tool echo discovered in <FWD_NAMESPACE>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [3.1]: resource architecture.md discovered`.
+- The output includes `PASS [3.1]: prompt simple-prompt discovered`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.2: Refresh a forward
 
-```bash
+```bash run
 OUTPUT=$(wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain 2>&1)
 echo "${OUTPUT}" | grep -q "Successfully refreshed forward reference 'everything'" \
   && echo "PASS [3.2]: refresh succeeded" || echo "FAIL [3.2]: ${OUTPUT}"
@@ -201,11 +277,17 @@ wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^ec
   && echo "PASS [3.2]: echo still present" || echo "FAIL [3.2]: echo missing after refresh"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.2]: refresh succeeded`.
+- The output includes `PASS [3.2]: echo still present`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.3: A refresh keeps a disabled tool disabled
 
 The enable and disable routes have no CLI command, so this test uses `curl`.
 
-```bash
+```bash run
 curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/disable"
 wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain > /dev/null
 ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq -r '.data.enabled')
@@ -215,11 +297,17 @@ ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq -r '.data.enable
 [ "${ENABLED}" = "true" ] && echo "PASS [3.3]: echo enabled again" || echo "FAIL [3.3]: enabled=${ENABLED}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.3]: echo stays disabled after refresh`.
+- The output includes `PASS [3.3]: echo enabled again`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.4: Refresh an unreachable forward
 
 The refresh of an unreachable forward succeeds with zero discovered entries. The CLI reports success.
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name fwd-refresh-down --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" --plain
 OUTPUT=$(wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name fwd-refresh-down --plain 2>&1)
@@ -230,9 +318,15 @@ wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "
 wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name fwd-refresh-down --plain > /dev/null 2>&1 || true
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.4]: refresh exits 0 (<OUTPUT>)`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [3.4]: forward still present after refresh`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.5: Removing a forward removes its discovered entries
 
-```bash
+```bash run
 wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name everything --plain > /dev/null
 wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
   && echo "FAIL [3.5]: echo still listed" || echo "PASS [3.5]: tools removed with the forward"
@@ -242,21 +336,33 @@ wanaku prompts list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^
   && echo "FAIL [3.5]: simple-prompt still listed" || echo "PASS [3.5]: prompts removed with the forward"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.5]: tools removed with the forward`.
+- The output includes `PASS [3.5]: resources removed with the forward`.
+- The output includes `PASS [3.5]: prompts removed with the forward`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.6: Adding the forward again restores the entries
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name everything --service "${TEST_MCP_URL}" --namespace "${FWD_NAMESPACE}" --plain
 wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^echo${TAB}" \
   && echo "PASS [3.6]: echo discovered again" || echo "FAIL [3.6]: echo not discovered"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.6]: echo discovered again`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.7: The same upstream registered in two namespaces
 
 Tool names are unique in the whole registry. When a second forward discovers a tool with the same name, the entry
 moves to the namespace of the second forward. This test records the current behavior and restores the state.
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name fwd-second --service "${TEST_MCP_URL}" --namespace "${FWD_SECOND_NAMESPACE}" --plain
 NS=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | awk -F'\t' '$1=="echo"{print $2}')
@@ -274,12 +380,18 @@ NS=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | awk -F'
 [ "${NS}" = "${FWD_NAMESPACE}" ] && echo "PASS [3.7]: echo restored in ${FWD_NAMESPACE}" || echo "FAIL [3.7]: echo namespace '${NS}'"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [3.7]: echo stays in <FWD_NAMESPACE>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [3.7]: echo restored in <FWD_NAMESPACE>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 3.8: Forwards survive a restart
 
-Follow the **Restart** section of [common/start-server.md](common/start-server.md) (stop with `SIGTERM`, then steps 3
+Use the **Restart** section of [common/start-server.md](common/start-server.md) (stop with `SIGTERM`, then steps 3
 and 4 with the same `WANAKU_SERVER_DATA_DIR`).
 
-```bash
+```bash run
 [ -f "${WANAKU_SERVER_DATA_DIR}/registry.json" ] && echo "PASS [3.8]: registry.json written" \
   || echo "FAIL [3.8]: registry.json missing"
 wanaku forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^everything${TAB}${TEST_MCP_URL}" \
@@ -288,13 +400,18 @@ wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain | grep -q "^ec
   && echo "PASS [3.8]: tools restored after restart" || echo "FAIL [3.8]: tools lost after restart"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [3.8]: registry.json written`.
+- The output includes `PASS [3.8]: forward restored after restart`.
+- The output includes `PASS [3.8]: tools restored after restart`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 4: Data Store — Add (Wanaku Barn)
 
 ### Test 4.1: Create the test file
 
-```bash
+```bash run
 cat > "${DS_WORK_DIR}/test-datastore.yaml" << 'YAMLEOF'
 name: test-config
 version: 1
@@ -305,9 +422,14 @@ YAMLEOF
 [ -s "${DS_WORK_DIR}/test-datastore.yaml" ] && echo "PASS [4.1]: test file created" || echo "FAIL [4.1]: test file missing"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [4.1]: test file created`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 4.2: Add a data store from the file
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth \
   --read-from-file "${DS_WORK_DIR}/test-datastore.yaml" --name "${DS_PREFIX}-main" --plain 2>&1)
 EXIT_CODE=$?
@@ -318,20 +440,28 @@ else
 fi
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [4.2]: data store added`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 5: Data Store — List and Get (Wanaku Barn)
 
 ### Test 5.1: The data store is listed
 
-```bash
+```bash run
 DS_ID=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $1}')
 [ -n "${DS_ID}" ] && echo "PASS [5.1]: ${DS_PREFIX}-main listed with ID ${DS_ID}" || echo "FAIL [5.1]: ${DS_PREFIX}-main not listed"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [5.1]: <DS_PREFIX>-main listed with ID <DS_ID>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 5.2: Get the data store by name and by ID
 
-```bash
+```bash run
 for SELECTOR in "--name ${DS_PREFIX}-main" "--id ${DS_ID}"; do
   rm -f "${DS_WORK_DIR}/retrieved.yaml"
   # shellcheck disable=SC2086 # word splitting of SELECTOR is intended
@@ -346,43 +476,62 @@ for SELECTOR in "--name ${DS_PREFIX}-main" "--id ${DS_ID}"; do
 done
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [5.2]: --name <DS_PREFIX>-main returns the original content`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [5.2]: --id <DS_ID> returns the original content`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 6: Data Store — Labels (Wanaku Barn)
 
 ### Test 6.1: Add labels
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id "${DS_ID}" \
   --label env=test --label type=yaml --plain 2>&1)
 echo "${OUTPUT}" | grep -q "(2 added, 0 updated)" && echo "PASS [6.1]: two labels added" || echo "FAIL [6.1]: ${OUTPUT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [6.1]: two labels added`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 6.2: The labels are listed
 
-```bash
+```bash run
 LABELS=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $4}' | tr -d '\r')
 for L in env=test type=yaml; do
   echo "${LABELS}" | grep -q "${L}" && echo "PASS [6.2]: label ${L} listed" || echo "FAIL [6.2]: labels are ${LABELS}"
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS [6.2]: label env=test listed`.
+- The output includes `PASS [6.2]: label type=yaml listed`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 6.3: Remove a label
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store label remove --host "${WANAKU_BARN_URL}" --no-auth --id "${DS_ID}" --label type --plain 2>&1)
 echo "${OUTPUT}" | grep -q "Removed label 'type' (was: 'yaml')" && echo "PASS [6.3]: label removed" || echo "FAIL [6.3]: ${OUTPUT}"
 LABELS=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t' -v n="${DS_PREFIX}-main" '$2==n{print $4}' | tr -d '\r')
 [ "${LABELS}" = "{env=test}" ] && echo "PASS [6.3]: only env=test remains" || echo "FAIL [6.3]: labels are ${LABELS}"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [6.3]: label removed`.
+- The output includes `PASS [6.3]: only env=test remains`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 7: Data Store — Remove (Wanaku Barn)
 
 ### Test 7.1: Remove the data store by name
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name "${DS_PREFIX}-main" --plain 2>&1)
 echo "${OUTPUT}" | grep -q "Successfully removed data store '${DS_PREFIX}-main'" \
   && echo "PASS [7.1]: data store removed" || echo "FAIL [7.1]: ${OUTPUT}"
@@ -390,13 +539,17 @@ wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | awk -F'\t
   && echo "FAIL [7.1]: data store still listed" || echo "PASS [7.1]: data store no longer listed"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [7.1]: data store removed`.
+- The output includes `PASS [7.1]: data store no longer listed`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 8: Data Store — Label Expressions (Wanaku Barn)
 
 ### Test 8.1: Add three labeled data stores
 
-```bash
+```bash run
 for i in 1 2 3; do
   echo "batch_item: ${i}" > "${DS_WORK_DIR}/batch-${i}.yaml"
   wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth \
@@ -407,16 +560,28 @@ for i in 1 2 3; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS [8.1]: <DS_PREFIX>-batch-1 added and labeled`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [8.1]: <DS_PREFIX>-batch-2 added and labeled`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [8.1]: <DS_PREFIX>-batch-3 added and labeled`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 8.2: Filter the list by label expression
 
-```bash
+```bash run
 COUNT=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PREFIX}-batch=true" --plain | grep -c "${TAB}${DS_PREFIX}-batch-")
 [ "${COUNT}" -eq 3 ] && echo "PASS [8.2]: label expression returns 3 data stores" || echo "FAIL [8.2]: found ${COUNT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [8.2]: label expression returns 3 data stores`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 8.3: Add a label to every match of an expression
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PREFIX}-batch=true" --label stage=two --plain 2>&1)
 echo "${OUTPUT}" | grep -q "Label update complete: 3 succeeded, 0 failed" \
   && echo "PASS [8.3]: label added to 3 data stores" || echo "FAIL [8.3]: ${OUTPUT}"
@@ -424,11 +589,17 @@ COUNT=$(wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth -e "${DS_PR
 [ "${COUNT}" -eq 3 ] && echo "PASS [8.3]: combined expression returns 3" || echo "FAIL [8.3]: found ${COUNT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [8.3]: label added to 3 data stores`.
+- The output includes `PASS [8.3]: combined expression returns 3`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 8.4: Remove the batch data stores
 
 `data-store remove` has no label expression option. Remove each entry by name.
 
-```bash
+```bash run
 for i in 1 2 3; do
   wanaku data-store remove --host "${WANAKU_BARN_URL}" --no-auth --name "${DS_PREFIX}-batch-${i}" --plain > /dev/null 2>&1 || true
 done
@@ -436,7 +607,10 @@ wanaku data-store list --host "${WANAKU_BARN_URL}" --no-auth --plain | grep -q "
   && echo "FAIL [8.4]: batch data stores still listed" || echo "PASS [8.4]: batch data stores removed"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [8.4]: batch data stores removed`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 9: Negative Tests
 
@@ -445,7 +619,7 @@ Picocli rejects a missing required option with exit code `2`. Command-level vali
 
 ### Test 9.1: Missing forward options are rejected
 
-```bash
+```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --service "${FWD_UNREACHABLE_URL}" --namespace "${FWD_NAMESPACE}" > /dev/null 2>&1
 [ $? -eq 2 ] && echo "PASS [9.1]: missing --name rejected" || echo "FAIL [9.1]: missing --name not rejected"
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-fwd --namespace "${FWD_NAMESPACE}" > /dev/null 2>&1
@@ -455,9 +629,16 @@ OUTPUT=$(wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth --name neg-
   && echo "PASS [9.1]: missing --namespace rejected" || echo "FAIL [9.1]: ${OUTPUT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [9.1]: missing --name rejected`.
+- The output includes `PASS [9.1]: missing --service rejected`.
+- The output includes `PASS [9.1]: missing --namespace rejected`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 9.2: Remove and refresh of an unknown forward fail
 
-```bash
+```bash run
 for ACTION in remove refresh; do
   OUTPUT=$(wanaku forwards "${ACTION}" --host "${WANAKU_SERVER_URL}" --no-auth --name does-not-exist-12345 --plain 2>&1)
   EXIT_CODE=$?
@@ -469,9 +650,15 @@ for ACTION in remove refresh; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS [9.2]: remove of an unknown forward rejected`.
+- The output includes `PASS [9.2]: refresh of an unknown forward rejected`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 9.3: Data store errors
 
-```bash
+```bash run
 OUTPUT=$(wanaku data-store add --host "${WANAKU_BARN_URL}" --no-auth --read-from-file "${DS_WORK_DIR}/missing.yaml" --name neg-ds --plain 2>&1)
 [ $? -eq 1 ] && echo "${OUTPUT}" | grep -q "Failed to read file" && echo "PASS [9.3]: missing file rejected" || echo "FAIL [9.3]: ${OUTPUT}"
 
@@ -493,24 +680,38 @@ OUTPUT=$(wanaku data-store label add --host "${WANAKU_BARN_URL}" --no-auth --id 
   && echo "PASS [9.3]: label without value rejected" || echo "FAIL [9.3]: ${OUTPUT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [9.3]: missing file rejected`.
+- The output includes `PASS [9.3]: get of unknown name rejected (<OUTPUT>)`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS [9.3]: get without --id or --name rejected`.
+- The output includes `PASS [9.3]: remove without --id or --name rejected`.
+- The output includes `PASS [9.3]: remove of unknown name rejected`.
+- The output includes `PASS [9.3]: label without value rejected`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
+
 ### Test 9.4: Each command group fails against the wrong component
 
 Wanaku Server has no data store API. Barn has no forward API.
 
-```bash
+```bash run
 wanaku data-store list --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1
 [ $? -eq 1 ] && echo "PASS [9.4]: data-store against Wanaku Server fails" || echo "FAIL [9.4]: data-store against Wanaku Server"
 wanaku forwards list --host "${WANAKU_BARN_URL}" --no-auth --plain > /dev/null 2>&1
 [ $? -eq 1 ] && echo "PASS [9.4]: forwards against Barn fails" || echo "FAIL [9.4]: forwards against Barn"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS [9.4]: data-store against Wanaku Server fails`.
+- The output includes `PASS [9.4]: forwards against Barn fails`.
+- The output contains no line starting with `FAIL:` or `FAIL [`.
 
 ## Phase 10: Cleanup
 
 ### Step 10.1: Remove the test data
 
-```bash
+```bash run
 for FWD in fwd-unreachable fwd-auto-ns fwd-refresh-down fwd-second; do
   wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth --name "${FWD}" --plain > /dev/null 2>&1 || true
 done
@@ -524,12 +725,27 @@ rm -rf "${DS_WORK_DIR}" 2>/dev/null || true
 echo "PASS [10.1]: test data removed"
 ```
 
+**Expected result:**
+
+- The output includes `PASS [10.1]: test data removed`.
+
 ### Step 10.2: Stop the processes
 
-Follow the **Shutdown** sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md),
+Use the **Shutdown** sections of [common/start-test-mcp-server.md](common/start-test-mcp-server.md),
 [common/start-barn.md](common/start-barn.md) and [common/start-server.md](common/start-server.md), in this order.
 
----
+```bash run
+if [ -n "${WANAKU_BARN_PID}" ]; then
+  kill "${WANAKU_BARN_PID}" 2>/dev/null || true
+  wait "${WANAKU_BARN_PID}" 2>/dev/null || true
+  echo "PASS: Wanaku Barn stopped"
+fi
+rm -rf "${WANAKU_BARN_HOME}"
+```
+
+**Expected result:**
+
+- If `WANAKU_BARN_PID` is set, the output includes `PASS: Wanaku Barn stopped`.
 
 ## Test Summary Matrix
 
@@ -546,3 +762,5 @@ Follow the **Shutdown** sections of [common/start-test-mcp-server.md](common/sta
 | 8 | 8.1-8.4 | Label expressions | Barn | High |
 | 9 | 9.1-9.4 | Negative tests | Both | High |
 | 10 | 10.1-10.2 | Cleanup | Both | Critical |
+| S | S.1 | Define CLI invocation | Setup |
+| S | S.2 | Set environment variables | Setup |
