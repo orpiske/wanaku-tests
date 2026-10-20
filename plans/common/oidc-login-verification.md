@@ -61,7 +61,8 @@ fi
 If the stored `wanaku-mcp-router` secret does not match Keycloak (for example after the realm was re-imported),
 regenerate it, re-read it and log in again:
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 if [ "${LOGIN_FAILED}" = "true" ]; then
@@ -93,7 +94,7 @@ if [ "${LOGIN_FAILED}" = "true" ]; then
 
   if [ $? -ne 0 ]; then
     echo "FAIL: OIDC login still failing after secret regeneration"
-    exit 1
+    return 1
   fi
   echo "PASS: OIDC login works after secret regeneration"
 fi
@@ -113,7 +114,8 @@ fi
 
 The CLI sends the token that `wanaku auth login` stored.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 # WANAKU_CLI_TLS_OPTS is not quoted on purpose: it holds zero or one option
@@ -122,7 +124,7 @@ OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU
 if [ $? -ne 0 ]; then
   echo "FAIL: management proxy rejected the token issued to wanaku-mcp-router"
   echo "${OUTPUT}"
-  exit 1
+  return 1
 fi
 echo "PASS: token accepted by the management proxy at ${WANAKU_ROUTER_URL}"
 ```
@@ -137,7 +139,8 @@ echo "PASS: token accepted by the management proxy at ${WANAKU_ROUTER_URL}"
 
 `--no-auth` makes the CLI send no token. The proxy must answer `401`, so the command must fail.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -145,7 +148,7 @@ OUTPUT=$(${WANAKU_CLI:-wanaku} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU
 if [ $? -eq 0 ]; then
   echo "FAIL: management proxy accepted a request without a token"
   echo "${OUTPUT}"
-  exit 1
+  return 1
 fi
 echo "PASS: management proxy rejected the request without a token"
 ```

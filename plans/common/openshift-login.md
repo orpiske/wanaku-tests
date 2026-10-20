@@ -22,13 +22,14 @@ oc login "${OPENSHIFT_API_URL}" --token="${OPENSHIFT_SA_TOKEN}" --insecure-skip-
 
 ### Step 2: Verify login
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 OC_USER=$(oc whoami 2>/dev/null)
 if [ -z "${OC_USER}" ]; then
   echo "FAIL: not logged in to ${OPENSHIFT_API_URL}"
-  exit 1
+  return 1
 fi
 echo "PASS: logged in as ${OC_USER}"
 # Expected: the service account name (e.g. system:serviceaccount:<namespace>:<sa-name>)
