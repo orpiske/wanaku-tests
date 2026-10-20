@@ -16,12 +16,12 @@ The plan has two parts:
 
 **Components:**
 
-| Component                                                        | Part 1                                        | Part 2                                                 |
-|------------------------------------------------------------------|-----------------------------------------------|--------------------------------------------------------|
-| Wanaku Server                                                    | Required (builtin or existing instance)       | Required (operator, `spec.server`)                     |
-| Wanaku Barn                                                      | Not used                                      | Not used (`spec.barn` is not enabled)                  |
+| Component                                     | Part 1                                        | Part 2                                                        |
+|-----------------------------------------------|-----------------------------------------------|---------------------------------------------------------------|
+| Wanaku Server                                 | Required (builtin or existing instance)       | Required (operator, `spec.server`)                            |
+| Wanaku Barn                                   | Not used                                      | Not used (`spec.barn` is not enabled)                         |
 | MCP test fixture (`fixtures/test-mcp-server`) | Required (reachable from the selected server) | Required (in-cluster Deployment, forward `infra-remediation`) |
-| Keycloak and oauth2-proxy                                        | Not used                                      | Required (`spec.auth.enabled: true`)                   |
+| Keycloak and oauth2-proxy                     | Not used                                      | Required (`spec.auth.enabled: true`)                          |
 
 Every step in Part 1 is automatable. In Part 2, only the OpenShift login is manual.
 
