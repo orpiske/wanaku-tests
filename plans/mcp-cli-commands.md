@@ -1058,13 +1058,14 @@ Capability; this plan does not need it. Barn is not deployed.
 
 ### Required tools
 
-| Tool                                     | Minimum version   | Verify command         |
-|------------------------------------------|-------------------|------------------------|
-| `oc`                                     | 4.12+             | `oc version --client`  |
-| `helm`                                   | 3.x               | `helm version --short` |
-| `wanaku` CLI and `wanaku-keycloak-admin` | build from source | `wanaku --version`     |
-| `openssl`                                | any               | `openssl version`      |
-| `curl`, `jq`                             | any / 1.6+        | `jq --version`         |
+| Tool                    | Minimum version                     | Verify command                    |
+|-------------------------|-------------------------------------|-----------------------------------|
+| `oc`                    | 4.12+                               | `oc version --client`             |
+| `helm`                  | 3.x                                 | `helm version --short`            |
+| `wanaku` CLI            | installed executable or local build | `wanaku --version`                |
+| `wanaku-keycloak-admin` | installed executable or local build | `wanaku-keycloak-admin --version` |
+| `openssl`               | any                                 | `openssl version`                 |
+| `curl`, `jq`            | any / 1.6+                          | `jq --version`                    |
 
 ### Environment variables
 
