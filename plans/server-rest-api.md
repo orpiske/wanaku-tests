@@ -35,6 +35,18 @@ the fail-safe default, so Phase 6 can verify a denial.
 
 Every step is automatable.
 
+### Response format
+
+Most management routes return this envelope:
+
+```json
+{"data": <payload>, "error": null}
+```
+
+For an error, `data` is `null` and `error` is a message string. `/openapi.json` returns the OpenAPI document without
+the envelope.
+
+
 ## Prerequisites
 
 ### Required tools
@@ -48,16 +60,7 @@ Every step is automatable.
 
 ### Environment variables
 
-```bash
-export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
-export REST_NS="${REST_NS:-rest-$(date +%s)}"
-export REST_DENIED_NS="${REST_DENIED_NS:-${REST_NS}-denied}"
-export REST_TOOL="${REST_TOOL:-echo}"
-export REST_RESOURCE="${REST_RESOURCE:-architecture.md}"
-export REST_RESOURCE_URI="${REST_RESOURCE_URI:-demo://resource/static/document/architecture.md}"
-export REST_PROMPT="${REST_PROMPT:-simple-prompt}"
-```
+
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -75,22 +78,33 @@ export REST_PROMPT="${REST_PROMPT:-simple-prompt}"
 Use `java -jar "${CLI_JAR}"` directly. Do **not** assign the full command to one variable (for example
 `WANAKU_CLI="java -jar path/to/jar"`), because zsh treats it as one token.
 
-### Response format
-
-Most management routes return this envelope:
-
-```json
-{"data": <payload>, "error": null}
-```
-
-For an error, `data` is `null` and `error` is a message string. `/openapi.json` returns the OpenAPI document without
-the envelope.
 
 ---
+
+## Phase S: Setup
+
+### Step S.1: Set environment variables
+
+```bash run
+export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
+export CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+export REST_NS="${REST_NS:-rest-$(date +%s)}"
+export REST_DENIED_NS="${REST_DENIED_NS:-${REST_NS}-denied}"
+export REST_TOOL="${REST_TOOL:-echo}"
+export REST_RESOURCE="${REST_RESOURCE:-architecture.md}"
+export REST_RESOURCE_URI="${REST_RESOURCE_URI:-demo://resource/static/document/architecture.md}"
+export REST_PROMPT="${REST_PROMPT:-simple-prompt}"
+```
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
 
 ## Phase 0: Prerequisite Verification
 
 ### Test 0.1: Verify required tools
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 TOOLS_OK=true
@@ -103,31 +117,61 @@ done
 [ "${TOOLS_OK}" = "true" ] || { echo "FAIL: missing prerequisites — aborting"; exit 1; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: java is available`.
+- The output includes `PASS: curl is available`.
+- The output includes `PASS: jq is available`.
+- The output includes `PASS: npx is available`.
+- The output includes `PASS: CLI jar found`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ---
 
 ## Phase 1: Setup
 
 ### Step 1.1: Start Wanaku Server
 
-Follow [common/start-server.md](common/start-server.md) steps 1 to 6. In step 2b, set
+Follow [common/start-server.md](common/start-server.md).
+
+steps 1 to 6. In step 2b, set
 `WANAKU_TEST_GOVERNED_NAMESPACES="${REST_NS}"`. Do not add `REST_DENIED_NS`.
+
 
 After completion, `WANAKU_SERVER_URL`, `WANAKU_MCP_BASE_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR` must
 be set.
 
+**Expected result:**
+
+- All invoked procedure steps pass (inferred).
+
 ### Step 1.2: Start the reference MCP server
 
-Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${REST_NS}"`.
+Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md).
+
+with `TEST_MCP_NAMESPACE="${REST_NS}"`.
 After completion, `TEST_MCP_URL`, `TEST_MCP_PID` and `TEST_MCP_FORWARD` must be set.
+
+**Expected result:**
+
+- All invoked procedure steps pass (inferred).
 
 ### Step 1.3: Create the denied namespace
 
-```bash
+```bash run
 java -jar "${CLI_JAR}" namespaces create "${REST_DENIED_NS}" --host "${WANAKU_SERVER_URL}" --no-auth
 [ $? -eq 0 ] && echo "PASS: namespace ${REST_DENIED_NS} created" || echo "FAIL: namespace not created"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: namespace <REST_DENIED_NS> created`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 1.4: The test entries were discovered
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for KIND in tools resources prompts; do
@@ -143,22 +187,36 @@ for KIND in tools resources prompts; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: tools entry '<NAME>' discovered`.
+- The output includes `PASS: resources entry '<NAME>' discovered`.
+- The output includes `PASS: prompts entry '<NAME>' discovered`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ---
 
 ## Phase 2: Service Routes
 
 ### Test 2.1: Health endpoints return the envelope
 
-```bash
+```bash run
 for PATH_ in /health /healthz; do
   STATUS=$(curl -s "${WANAKU_SERVER_URL}${PATH_}" | jq -r '.data.status')
   [ "${STATUS}" = "ok" ] && echo "PASS: ${PATH_} reports status ok" || echo "FAIL: ${PATH_} returned '${STATUS}'"
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: /health reports status ok`.
+- The output includes `PASS: /healthz reports status ok`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.2: Server information
 
-```bash
+```bash run
 RESPONSE=$(curl -s "${WANAKU_SERVER_URL}/api/v1/management/info")
 NAME=$(echo "${RESPONSE}" | jq -r '.data.name')
 VERSION=$(echo "${RESPONSE}" | jq -r '.data.version')
@@ -169,12 +227,17 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: server <NAME> version <VERSION>`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.3: Statistics match the registry
 
 The statistics route returns `toolsCount`, `resourcesCount`, `promptsCount`, `forwardsCount` and `dataStoresCount`.
 `dataStoresCount` is always `0`, because data stores belong to Barn.
 
-```bash
+```bash run
 STATS=$(curl -s "${WANAKU_SERVER_URL}/api/v1/management/statistics")
 API_TOOLS=$(echo "${STATS}" | jq '.data.toolsCount')
 API_FORWARDS=$(echo "${STATS}" | jq '.data.forwardsCount')
@@ -189,9 +252,15 @@ echo "${STATS}" | jq -e '.data.dataStoresCount == 0' > /dev/null \
   && echo "PASS: dataStoresCount is 0" || echo "FAIL: dataStoresCount is not 0"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: statistics match the registry (<API_TOOLS> tools, <API_FORWARDS> forwards)`.
+- The output includes `PASS: dataStoresCount is 0`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.4: OpenAPI document
 
-```bash
+```bash run
 DOC=$(curl -s "${WANAKU_SERVER_URL}/openapi.json")
 echo "${DOC}" | jq -e '.openapi | startswith("3.")' > /dev/null \
   && echo "PASS: OpenAPI version $(echo "${DOC}" | jq -r '.openapi')" || echo "FAIL: not an OpenAPI document"
@@ -203,16 +272,31 @@ V2=$(echo "${DOC}" | jq '[.paths | keys[] | select(startswith("/api/v2"))] | len
 [ "${V2}" -eq 0 ] && echo "PASS: no /api/v2 routes are documented" || echo "FAIL: ${V2} /api/v2 routes are documented"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: OpenAPI version`.
+- The output includes `PASS: /api/v1/tools/{name}/enable is documented`.
+- The output includes `PASS: /api/v1/tools/{name}/disable is documented`.
+- The output includes `PASS: /api/v1/audit/events is documented`.
+- The output includes `PASS: /api/v1/management/statistics is documented`.
+- The output includes `PASS: no /api/v2 routes are documented`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.5: CORS header on management responses
 
 The default value of `WANAKU_CORS_ORIGIN` is `*`.
 
-```bash
+```bash run
 ORIGIN=$(curl -s -D - -o /dev/null "${WANAKU_SERVER_URL}/api/v1/management/info" \
   | tr -d '\r' | awk 'tolower($1)=="access-control-allow-origin:" {print $2}')
 [ "${ORIGIN}" = "${WANAKU_CORS_ORIGIN:-*}" ] && echo "PASS: Access-Control-Allow-Origin is '${ORIGIN}'" \
   || echo "FAIL: Access-Control-Allow-Origin is '${ORIGIN}'"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: Access-Control-Allow-Origin is '<ORIGIN>'`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -220,7 +304,7 @@ ORIGIN=$(curl -s -D - -o /dev/null "${WANAKU_SERVER_URL}/api/v1/management/info"
 
 ### Test 3.1: A successful GET uses the envelope
 
-```bash
+```bash run
 RESPONSE=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/${REST_TOOL}")
 if echo "${RESPONSE}" | jq -e --arg n "${REST_TOOL}" '.error == null and .data.name == $n and (.data.enabled | type) == "boolean"' > /dev/null; then
   echo "PASS: tool returned in the envelope with an 'enabled' field"
@@ -229,9 +313,14 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: tool returned in the envelope with an 'enabled' field`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.2: Unknown entries return 404 with an error message
 
-```bash
+```bash run
 for ROUTE in tools/no-such-tool resources/no-such-resource prompts/no-such-prompt \
              forwards/no-such-forward namespaces/no-such-namespace; do
   RESPONSE=$(curl -s -w "\n%{http_code}" "${WANAKU_SERVER_URL}/api/v1/${ROUTE}")
@@ -245,25 +334,44 @@ for ROUTE in tools/no-such-tool resources/no-such-resource prompts/no-such-promp
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: GET tools/no-such-tool returns 404 (<ERROR>)`.
+- The output includes `PASS: GET resources/no-such-resource returns 404 (<ERROR>)`.
+- The output includes `PASS: GET prompts/no-such-prompt returns 404 (<ERROR>)`.
+- The output includes `PASS: GET forwards/no-such-forward returns 404 (<ERROR>)`.
+- The output includes `PASS: GET namespaces/no-such-namespace returns 404 (<ERROR>)`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.3: Invalid namespace name returns 400
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/namespaces" \
   -H "Content-Type: application/json" -d '{"name":"Bad Name"}')
 [ "${CODE}" = "400" ] && echo "PASS: invalid namespace name returns 400" || echo "FAIL: returned HTTP ${CODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: invalid namespace name returns 400`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.4: Malformed JSON returns 400
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/namespaces" \
   -H "Content-Type: application/json" -d '{bad')
 [ "${CODE}" = "400" ] && echo "PASS: malformed JSON returns 400" || echo "FAIL: returned HTTP ${CODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: malformed JSON returns 400`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.5: Forward without an address returns 400
 
-```bash
+```bash run
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/forwards" \
   -H "Content-Type: application/json" -d "{\"name\":\"${REST_NS}-noaddr\"}")
 CODE=$(echo "${RESPONSE}" | tail -1)
@@ -271,9 +379,14 @@ echo "${RESPONSE}" | head -1 | jq -r '.error' | grep -q "address" && [ "${CODE}"
   && echo "PASS: missing forward address returns 400" || echo "FAIL: returned HTTP ${CODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: missing forward address returns 400`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.6: Duplicate A2A agent returns 409
 
-```bash
+```bash run
 AGENT="{\"name\":\"${REST_NS}-agent\",\"namespace\":\"${REST_NS}\",\"description\":\"rest plan\",\"address\":\"http://localhost:9/\"}"
 FIRST=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/agents" \
   -H "Content-Type: application/json" -d "${AGENT}")
@@ -287,11 +400,16 @@ fi
 curl -s -o /dev/null -X DELETE "${WANAKU_SERVER_URL}/api/v1/agents/${REST_NS}/${REST_NS}-agent"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: duplicate agent returns 409`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.7: Creating an existing namespace does not duplicate it
 
 The namespace create route is idempotent. It returns `200` and keeps one entry.
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/namespaces" \
   -H "Content-Type: application/json" -d "{\"name\":\"${REST_NS}\"}")
 COUNT=$(java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null \
@@ -299,6 +417,11 @@ COUNT=$(java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --n
 [ "${CODE}" = "200" ] && [ "${COUNT}" -eq 1 ] && echo "PASS: namespace create is idempotent" \
   || echo "FAIL: HTTP ${CODE}, ${COUNT} entries named ${REST_NS}"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: namespace create is idempotent`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -309,7 +432,7 @@ stays in the management API with `"enabled": false`. MCP clients do not see it, 
 
 ### Test 4.1: Disable a tool
 
-```bash
+```bash run
 RESPONSE=$(curl -s -w "\n%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/${REST_TOOL}/disable")
 CODE=$(echo "${RESPONSE}" | tail -1)
 ENABLED=$(echo "${RESPONSE}" | head -1 | jq '.data.enabled')
@@ -317,16 +440,26 @@ ENABLED=$(echo "${RESPONSE}" | head -1 | jq '.data.enabled')
   || echo "FAIL: HTTP ${CODE}, enabled=${ENABLED}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: tool disabled`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.2: The disabled tool stays in the management API
 
-```bash
+```bash run
 ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools" | jq --arg n "${REST_TOOL}" '.data[] | select(.name == $n) | .enabled')
 [ "${ENABLED}" = "false" ] && echo "PASS: tool listed with enabled=false" || echo "FAIL: enabled=${ENABLED}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: tool listed with enabled=false`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.3: MCP clients do not see or call the disabled tool
 
-```bash
+```bash run
 MCP_URI="${WANAKU_MCP_BASE_URL}/${REST_NS}/mcp"
 java -jar "${CLI_JAR}" mcp tool list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null | awk '{print $1}' | grep -qx "${REST_TOOL}" \
   && echo "FAIL: disabled tool is in tools/list" || echo "PASS: disabled tool is not in tools/list"
@@ -340,18 +473,29 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: disabled tool is not in tools/list`.
+- The output includes `PASS: call to the disabled tool is rejected`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.4: The disabled state survives a forward refresh
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/forwards/${TEST_MCP_FORWARD}/refreshes")
 ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/${REST_TOOL}" | jq '.data.enabled')
 [ "${CODE}" = "200" ] && [ "${ENABLED}" = "false" ] && echo "PASS: refresh keeps the tool disabled" \
   || echo "FAIL: refresh HTTP ${CODE}, enabled=${ENABLED}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: refresh keeps the tool disabled`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.5: Enable the tool again
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/${REST_TOOL}/enable")
 OUTPUT=$(java -jar "${CLI_JAR}" mcp tool --uri "${MCP_URI}" --no-auth --name "${REST_TOOL}" --param message=rest-enabled --plain 2>&1)
 if [ "${CODE}" = "200" ] && echo "${OUTPUT}" | grep -q "Echo: rest-enabled"; then
@@ -361,9 +505,14 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: enabled tool answers through MCP`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.6: Disable and enable a resource
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/resources/${REST_RESOURCE}/disable")
 java -jar "${CLI_JAR}" mcp resource --uri "${MCP_URI}" --no-auth --resource-uri "${REST_RESOURCE_URI}" --plain > /dev/null 2>&1
 READ_WHILE_DISABLED=$?
@@ -377,9 +526,14 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: resource read follows the enabled state`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.7: Disable and enable a prompt
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/prompts/${REST_PROMPT}/disable")
 LISTED=$(java -jar "${CLI_JAR}" mcp prompt list --uri "${MCP_URI}" --no-auth --plain 2>/dev/null | awk '{print $1}' | grep -cx "${REST_PROMPT}")
 curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/prompts/${REST_PROMPT}/enable"
@@ -392,9 +546,14 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: prompt visibility follows the enabled state`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.8: Unknown entries return 404 (negative)
 
-```bash
+```bash run
 for KIND in tools resources prompts; do
   for ACTION in enable disable; do
     CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/${KIND}/no-such-entry/${ACTION}")
@@ -404,11 +563,21 @@ for KIND in tools resources prompts; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: enable unknown tools entry returns 404`.
+- The output includes `PASS: disable unknown tools entry returns 404`.
+- The output includes `PASS: enable unknown resources entry returns 404`.
+- The output includes `PASS: disable unknown resources entry returns 404`.
+- The output includes `PASS: enable unknown prompts entry returns 404`.
+- The output includes `PASS: disable unknown prompts entry returns 404`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.9: A deleted tool comes back after a refresh
 
 Deleting a discovered entry is not permanent. Disable the entry instead (Test 4.1).
 
-```bash
+```bash run
 DEL=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "${WANAKU_SERVER_URL}/api/v1/tools/get-sum")
 GONE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/api/v1/tools/get-sum")
 curl -s -o /dev/null -X POST "${WANAKU_SERVER_URL}/api/v1/forwards/${TEST_MCP_FORWARD}/refreshes"
@@ -416,6 +585,11 @@ BACK=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/api/v1/tools
 [ "${DEL}" = "200" ] && [ "${GONE}" = "404" ] && [ "${BACK}" = "200" ] \
   && echo "PASS: deleted tool rediscovered by refresh" || echo "FAIL: delete ${DEL}, after delete ${GONE}, after refresh ${BACK}"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: deleted tool rediscovered by refresh`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -426,7 +600,7 @@ metrics.
 
 ### Test 5.1: Metrics sections are present
 
-```bash
+```bash run
 KEYS=$(curl -s "${WANAKU_SERVER_URL}/api/v1/metrics" | jq -r '.data | keys | join(",")')
 for SECTION in filters pipeline audit gauges evaluators; do
   echo "${KEYS}" | tr ',' '\n' | grep -qx "${SECTION}" \
@@ -434,15 +608,29 @@ for SECTION in filters pipeline audit gauges evaluators; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: metrics section 'filters' present`.
+- The output includes `PASS: metrics section 'pipeline' present`.
+- The output includes `PASS: metrics section 'audit' present`.
+- The output includes `PASS: metrics section 'gauges' present`.
+- The output includes `PASS: metrics section 'evaluators' present`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 5.2: The tool call filter counter increases
 
-```bash
+```bash run
 BEFORE=$(curl -s "${WANAKU_SERVER_URL}/api/v1/metrics" | jq '.data.filters.wanaku_tool_call.duration.count // 0')
 java -jar "${CLI_JAR}" mcp tool --uri "${MCP_URI}" --no-auth --name "${REST_TOOL}" --param message=metrics --plain > /dev/null 2>&1
 AFTER=$(curl -s "${WANAKU_SERVER_URL}/api/v1/metrics" | jq '.data.filters.wanaku_tool_call.duration.count // 0')
 [ "${AFTER}" -gt "${BEFORE}" ] && echo "PASS: wanaku_tool_call count ${BEFORE} -> ${AFTER}" \
   || echo "FAIL: wanaku_tool_call count did not increase (${BEFORE} -> ${AFTER})"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: wanaku_tool_call count <BEFORE> -> <AFTER>`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -454,16 +642,22 @@ header.
 
 ### Test 6.1: Audit store health and schema
 
-```bash
+```bash run
 HEALTHY=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/health" | jq '.data.healthy')
 SCHEMA=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/schema" | jq -r '.data.schema_version')
 [ "${HEALTHY}" = "true" ] && echo "PASS: audit store healthy" || echo "FAIL: audit store healthy=${HEALTHY}"
 [ "${SCHEMA}" = "1.0" ] && echo "PASS: audit schema 1.0" || echo "FAIL: audit schema ${SCHEMA}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: audit store healthy`.
+- The output includes `PASS: audit schema 1.0`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.2: A denied call is audited with its request ID
 
-```bash
+```bash run
 DENIED_RID="${REST_NS}-denied-$$"
 curl -s -X POST "${WANAKU_MCP_BASE_URL}/${REST_DENIED_NS}/mcp" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
@@ -480,9 +674,15 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: call in <REST_DENIED_NS> denied with -32003`.
+- The output includes `PASS: denial audited (event`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.3: An allowed call is audited
 
-```bash
+```bash run
 ALLOWED_RID="${REST_NS}-allowed-$$"
 curl -s -o /dev/null -X POST "${WANAKU_MCP_BASE_URL}/${REST_NS}/mcp" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
@@ -493,17 +693,27 @@ DECISIONS=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/events?correlation_id=${A
   || echo "FAIL: decisions for ${ALLOWED_RID}: '${DECISIONS}'"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: allowed call audited with decision allow`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.4: Get one event by ID
 
-```bash
+```bash run
 EVENT_ID=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/events?correlation_id=${DENIED_RID}" | jq -r '.data.events[0].event_id')
 GOT=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/events/${EVENT_ID}" | jq -r '.data.event_id')
 [ "${GOT}" = "${EVENT_ID}" ] && echo "PASS: event ${EVENT_ID} retrieved by ID" || echo "FAIL: got '${GOT}'"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: event <EVENT_ID> retrieved by ID`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.5: Filters and pagination
 
-```bash
+```bash run
 PAGE=$(curl -s "${WANAKU_SERVER_URL}/api/v1/audit/events?decision=block&namespace=${REST_DENIED_NS}&limit=1&offset=0")
 echo "${PAGE}" | jq -e '.data.limit == 1 and (.data.events | length) <= 1 and .data.total >= 1' > /dev/null \
   && echo "PASS: decision/namespace filter with limit=1 works" || echo "FAIL: unexpected page: ${PAGE}"
@@ -511,12 +721,23 @@ echo "${PAGE}" | jq -e --arg ns "${REST_DENIED_NS}" '[.data.events[] | select(.n
   && echo "PASS: page contains only matching events" || echo "FAIL: page contains non-matching events"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: decision/namespace filter with limit=1 works`.
+- The output includes `PASS: page contains only matching events`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.6: Unknown event ID returns 404 (negative)
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/api/v1/audit/events/no-such-event")
 [ "${CODE}" = "404" ] && echo "PASS: unknown audit event returns 404" || echo "FAIL: returned HTTP ${CODE}"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: unknown audit event returns 404`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -524,7 +745,7 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/api/v1/audit
 
 ### Test 7.1: Java router endpoints return 404
 
-```bash
+```bash run
 for ROUTE in /api/v2/tool-calls/history /api/v2/tool-calls/notifications /api/v2/code-execution-engine/execute \
              /q/health/ready /q/openapi /q/metrics /api/v1/capabilities /api/v1/management/discovery /api/v1/data-store; do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}${ROUTE}")
@@ -532,32 +753,60 @@ for ROUTE in /api/v2/tool-calls/history /api/v2/tool-calls/notifications /api/v2
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: /api/v2/tool-calls/history returns 404`.
+- The output includes `PASS: /api/v2/tool-calls/notifications returns 404`.
+- The output includes `PASS: /api/v2/code-execution-engine/execute returns 404`.
+- The output includes `PASS: /q/health/ready returns 404`.
+- The output includes `PASS: /q/openapi returns 404`.
+- The output includes `PASS: /q/metrics returns 404`.
+- The output includes `PASS: /api/v1/capabilities returns 404`.
+- The output includes `PASS: /api/v1/management/discovery returns 404`.
+- The output includes `PASS: /api/v1/data-store returns 404`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 7.2: Forwards cannot be updated in place
 
 There is no `PUT /api/v1/forwards/{name}`. Remove and add the forward instead.
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "${WANAKU_SERVER_URL}/api/v1/forwards/${TEST_MCP_FORWARD}" \
   -H "Content-Type: application/json" -d '{}')
 [ "${CODE}" = "404" ] && echo "PASS: PUT on a forward returns 404" || echo "FAIL: returned HTTP ${CODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: PUT on a forward returns 404`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 7.3: Refresh of an unknown forward returns 404
 
-```bash
+```bash run
 CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_SERVER_URL}/api/v1/forwards/no-such-forward/refreshes")
 [ "${CODE}" = "404" ] && echo "PASS: refresh of unknown forward returns 404" || echo "FAIL: returned HTTP ${CODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: refresh of unknown forward returns 404`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 7.4: Bare /mcp path is rejected
 
-```bash
+```bash run
 MESSAGE=$(curl -s -X POST "${WANAKU_MCP_BASE_URL}/mcp" \
   -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | jq -r '.error.message')
 echo "${MESSAGE}" | grep -q "use /{namespace}/mcp" && echo "PASS: bare /mcp rejected (${MESSAGE})" \
   || echo "FAIL: unexpected answer '${MESSAGE}'"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: bare /mcp rejected (<MESSAGE>)`.
+- The output contains no line starting with `FAIL:`.
 
 ---
 
@@ -567,21 +816,44 @@ All cleanup steps are idempotent.
 
 ### Step 8.1: Remove the test namespaces
 
-```bash
+```bash run
 for NS in "${REST_DENIED_NS}" "${REST_NS}"; do
   java -jar "${CLI_JAR}" namespaces delete "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth 2>/dev/null || true
 done
 echo "PASS: test namespaces removed (or already absent)"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: test namespaces removed (or already absent)`.
+
 ### Step 8.2: Stop the reference MCP server
 
-Follow the [Shutdown](common/start-test-mcp-server.md#shutdown) section of
+Use the [Shutdown](common/start-test-mcp-server.md#shutdown) section of
 [common/start-test-mcp-server.md](common/start-test-mcp-server.md). It removes the forward and its discovered entries.
+
+Remove the forward first. Wanaku Server also removes the entries that it discovered from the forward.
+
+The entry plan runs the original shutdown block in its local cleanup unit.
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
 
 ### Step 8.3: Stop Wanaku Server
 
-Follow the [Shutdown](common/start-server.md#shutdown) section of [common/start-server.md](common/start-server.md).
+Use the [Shutdown](common/start-server.md#shutdown) section of [common/start-server.md](common/start-server.md).
+
+Stop the server with the PID captured at startup. Then remove the data directory of the run.
+
+The entry plan runs the original shutdown block in its local cleanup unit.
+
+Do **not** use `kill -9`. It bypasses the orderly Pingora shutdown and the final registry snapshot. If Pingora worker
+processes remain, find them with `lsof -ti :8081` and stop them with `SIGTERM`.
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
 
 ---
 
@@ -630,3 +902,4 @@ Follow the [Shutdown](common/start-server.md#shutdown) section of [common/start-
 | 8 | 8.1 | Remove the test namespaces | High |
 | 8 | 8.2 | Stop the reference MCP server | Critical |
 | 8 | 8.3 | Stop Wanaku Server | Critical |
+| Setup | S.1 | Set environment variables | Setup |

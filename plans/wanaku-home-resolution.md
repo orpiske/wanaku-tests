@@ -49,22 +49,7 @@ Tests run locally, with no authentication, and are fully automatable.
 
 ### Environment variables
 
-```bash
-export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
-export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
-export HOME_TEST_ROOT="${HOME_TEST_ROOT:-$(mktemp -d)}"
-export HOME_BARN_PORT="${HOME_BARN_PORT:-8180}"
-export HOME_BARN_JGROUPS_PORT="${HOME_BARN_JGROUPS_PORT:-46700}"
-export HOME_SERVER_MGMT_PORT="${HOME_SERVER_MGMT_PORT:-8080}"
-export HOME_SERVER_MCP_PORT="${HOME_SERVER_MCP_PORT:-8081}"
-export HOME_SERVER_INFERENCE_PORT="${HOME_SERVER_INFERENCE_PORT:-8083}"
-export HOME_SERVER_A2A_PORT="${HOME_SERVER_A2A_PORT:-8084}"
-export HOME_NS="${HOME_NS:-home-$(date +%s)}"
-export HOME_BARN_URL="http://localhost:${HOME_BARN_PORT}"
-export WANAKU_SERVER_URL="http://localhost:${HOME_SERVER_MGMT_PORT}"
-export WANAKU_MCP_BASE_URL="http://localhost:${HOME_SERVER_MCP_PORT}"
-unset WANAKU_HOME WANAKU_CREDENTIALS WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
-```
+The executable block is in Step S.1 below.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -95,9 +80,36 @@ processes, and its caches can fail to start. The helpers below set `-Djgroups.mc
 
 ---
 
+## Phase S: Setup
+
+### Step S.1: Set environment variables
+
+```bash run
+export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
+export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
+export HOME_TEST_ROOT="${HOME_TEST_ROOT:-$(mktemp -d)}"
+export HOME_BARN_PORT="${HOME_BARN_PORT:-8180}"
+export HOME_BARN_JGROUPS_PORT="${HOME_BARN_JGROUPS_PORT:-46700}"
+export HOME_SERVER_MGMT_PORT="${HOME_SERVER_MGMT_PORT:-8080}"
+export HOME_SERVER_MCP_PORT="${HOME_SERVER_MCP_PORT:-8081}"
+export HOME_SERVER_INFERENCE_PORT="${HOME_SERVER_INFERENCE_PORT:-8083}"
+export HOME_SERVER_A2A_PORT="${HOME_SERVER_A2A_PORT:-8084}"
+export HOME_NS="${HOME_NS:-home-$(date +%s)}"
+export HOME_BARN_URL="http://localhost:${HOME_BARN_PORT}"
+export WANAKU_SERVER_URL="http://localhost:${HOME_SERVER_MGMT_PORT}"
+export WANAKU_MCP_BASE_URL="http://localhost:${HOME_SERVER_MCP_PORT}"
+unset WANAKU_HOME WANAKU_CREDENTIALS WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
+```
+
+**Expected result:**
+
+- The commands complete without errors (inferred).
+
 ## Phase 0: Prerequisites Verification
 
 ### Test 0.1: Verify required tools
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for TOOL in java curl jq npx; do
@@ -108,7 +120,19 @@ JAVA_VERSION=$(java -version 2>&1 | grep -m1 'version' | sed 's/[^"]*"\([0-9]*\)
 [ "${JAVA_VERSION}" -ge 21 ] && echo "PASS: Java ${JAVA_VERSION}" || { echo "FAIL: Java ${JAVA_VERSION} < 21"; exit 1; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: java found`.
+- The output includes `PASS: curl found`.
+- The output includes `PASS: jq found`.
+- The output includes `PASS: npx found`.
+- The output includes `PASS: Java <JAVA_VERSION>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ### Test 0.2: Verify the test root is not the default home
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 case "${HOME_TEST_ROOT}" in
@@ -117,11 +141,17 @@ esac
 mkdir -p "${HOME_TEST_ROOT}" && echo "PASS: test root ${HOME_TEST_ROOT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: test root <HOME_TEST_ROOT>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ### Test 0.3: Record the state of the real default home
 
 Phase 10 compares this listing with the state after the run.
 
-```bash
+```bash run
 REAL_HOME_SNAPSHOT_BEFORE="${HOME_TEST_ROOT}/real-home-before.txt"
 if [ -d "${HOME}/.wanaku" ]; then
   find "${HOME}/.wanaku" -type f -exec ls -l --time-style=+%s {} \; 2>/dev/null | sort > "${REAL_HOME_SNAPSHOT_BEFORE}"
@@ -131,7 +161,13 @@ fi
 echo "PASS: recorded $(wc -l < "${REAL_HOME_SNAPSHOT_BEFORE}" | tr -d ' ') files of ${HOME}/.wanaku"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: recorded`.
+
 ### Test 0.4: Verify the ports are free
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for PORT in "${HOME_BARN_PORT}" "${HOME_SERVER_MGMT_PORT}" "${HOME_SERVER_MCP_PORT}"; do
@@ -143,19 +179,77 @@ for PORT in "${HOME_BARN_PORT}" "${HOME_SERVER_MGMT_PORT}" "${HOME_SERVER_MCP_PO
 done
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: port <HOME_BARN_PORT> is free`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: port <HOME_SERVER_MGMT_PORT> is free`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: port <HOME_SERVER_MCP_PORT> is free`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
 ## Phase 1: Build and Helpers
 
 ### Step 1.1: Build Barn and the CLI
 
-Follow [common/start-barn.md](common/start-barn.md) step 1 only. Do not start Barn. After completion, `CLI_JAR` and
+Use [common/start-barn.md](common/start-barn.md) step 1 only. Do not start Barn. After completion, `CLI_JAR` and
 `BARN_JAR` must be set.
+
+```bash run
+cd "${WANAKU_REPO_ROOT:-.}"
+mvn -DskipTests clean package
+```
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+VERSION=$(cat core/core-util/target/classes/version.txt)
+CLI_JAR="apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
+BARN_JAR="apps/wanaku-barn-backend/target/quarkus-app/quarkus-run.jar"
+
+for FILE in "${CLI_JAR}" "${BARN_JAR}"; do
+  if [ ! -f "${FILE}" ]; then
+    echo "FAIL: ${FILE} not found"
+    exit 1
+  fi
+  echo "PASS: ${FILE} exists"
+done
+```
+
+**Expected result:**
+
+- The output includes `PASS: <CLI_JAR> exists` and `PASS: <BARN_JAR> exists`, using the resolved JAR paths.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
 ### Step 1.2: Build Wanaku Server
 
-Follow [common/start-server.md](common/start-server.md) step 1 only. Do not start the server. After completion,
+Use [common/start-server.md](common/start-server.md) step 1 only. Do not start the server. After completion,
 `WANAKU_SERVER_BIN` must be set.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
+
+if [ -z "${WANAKU_SERVER_BIN}" ]; then
+  (cd "${WANAKU_SERVER_REPO_ROOT}" && cargo build --release -p wanaku-server)
+  WANAKU_SERVER_BIN="${WANAKU_SERVER_REPO_ROOT}/target/release/wanaku-server"
+fi
+
+if [ -x "${WANAKU_SERVER_BIN}" ]; then
+  echo "PASS: ${WANAKU_SERVER_BIN} exists"
+else
+  echo "FAIL: ${WANAKU_SERVER_BIN} not found or not executable"
+  exit 1
+fi
+export WANAKU_SERVER_BIN
+```
+
+**Expected result:**
+
+- The output includes `PASS: <WANAKU_SERVER_BIN> exists`, using the resolved binary path.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
 ### Step 1.3: Write the pipeline configuration
 
@@ -163,6 +257,8 @@ The MCP, inference and A2A listener ports come from the pipeline configuration. 
 embedded default with the ports of this plan. A file passed with `--pipeline-config` replaces the embedded default
 completely. The environment overrides of the embedded default (`WANAKU_A2A_LISTEN`, `WANAKU_CORS_ORIGIN` and the
 inference upstream) then do not apply. This plan does not need them.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 HOME_PIPELINE="${HOME_TEST_ROOT}/pipeline.yaml"
@@ -174,11 +270,17 @@ grep -q "0.0.0.0:${HOME_SERVER_MCP_PORT}" "${HOME_PIPELINE}" \
   && echo "PASS: pipeline configuration written to ${HOME_PIPELINE}" || { echo "FAIL: MCP port not set"; exit 1; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: pipeline configuration written to <HOME_PIPELINE>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ### Step 1.4: Define the helper functions
 
 The helpers poll the health endpoints. They do not use fixed waits. Run the remaining phases in the same shell.
 
-```bash
+```bash run
 # wait_http URL EXPECTED_CODE MAX_SECONDS
 wait_http() {
   _i=0
@@ -229,13 +331,13 @@ echo "PASS: helper functions defined"
 
 The Barn helper waits for `/q/health/live`, not for `/q/health/ready`. Phase 6 explains why.
 
----
+**Expected result:**
 
-## Phase 2: Barn Default Home
+- The blocks define the helper functions without errors (inferred).
 
 ### Test 2.1: Start Barn without overrides
 
-```bash
+```bash run
 unset WANAKU_HOME
 BARN_USER_HOME="${HOME_TEST_ROOT}/barn-user-home"
 mkdir -p "${BARN_USER_HOME}"
@@ -243,37 +345,60 @@ start_barn "${HOME_TEST_ROOT}/barn-default.log" -Duser.home="${BARN_USER_HOME}" 
   && echo "PASS: Barn started with the default home" || { echo "FAIL: Barn did not start"; tail -20 "${HOME_TEST_ROOT}/barn-default.log"; }
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn started with the default home`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.2: Barn is ready
 
-```bash
+```bash run
 wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 \
   && echo "PASS: Barn is ready" || echo "FAIL: Barn is not ready"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn is ready`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.3: The store is in the default home
 
-```bash
+```bash run
 [ -d "${BARN_USER_HOME}/.wanaku/barn" ] \
   && echo "PASS: store created at ${BARN_USER_HOME}/.wanaku/barn" \
   || echo "FAIL: store not found at ${BARN_USER_HOME}/.wanaku/barn"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: store created at <BARN_USER_HOME>/.wanaku/barn`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 2.4: The CLI can connect
 
-```bash
+```bash run
 java -jar "${CLI_JAR}" service catalog list --host "${HOME_BARN_URL}" --no-auth --plain
 [ $? -eq 0 ] && echo "PASS: CLI connected to Barn" || echo "FAIL: CLI cannot connect to Barn"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: CLI connected to Barn`.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 2.5: Stop Barn
 
-```bash
+```bash run
 STOPPED_PID="${BARN_PID}"
 stop_barn
 kill -0 "${STOPPED_PID}" 2>/dev/null && echo "FAIL: Barn still running" || echo "PASS: Barn stopped"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn stopped`.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 3: Barn WANAKU_HOME Override
 
@@ -281,7 +406,7 @@ This phase also uses the `local` profile, which writes the log file into the Wan
 
 ### Test 3.1: Start Barn with WANAKU_HOME
 
-```bash
+```bash run
 export WANAKU_HOME="${HOME_TEST_ROOT}/barn-env-home"
 BARN_USER_HOME_2="${HOME_TEST_ROOT}/barn-user-home-2"
 mkdir -p "${BARN_USER_HOME_2}"
@@ -290,64 +415,95 @@ start_barn "${HOME_TEST_ROOT}/barn-env.log" -Duser.home="${BARN_USER_HOME_2}" -D
 wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 && echo "PASS: Barn is ready" || echo "FAIL: Barn is not ready"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn started with WANAKU_HOME=<WANAKU_HOME>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: Barn is ready`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.2: The store and the log are in WANAKU_HOME
 
-```bash
+```bash run
 [ -d "${WANAKU_HOME}/barn" ] && echo "PASS: store at ${WANAKU_HOME}/barn" || echo "FAIL: store not at ${WANAKU_HOME}/barn"
 LOG_FILE="${WANAKU_HOME}/local/logs/wanaku-router.log"
 [ -s "${LOG_FILE}" ] && echo "PASS: log file ${LOG_FILE} has content" || echo "FAIL: log file ${LOG_FILE} missing or empty"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: store at <WANAKU_HOME>/barn`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: log file <LOG_FILE> has content`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 3.3: The default home was not used
 
-```bash
+```bash run
 [ -e "${BARN_USER_HOME_2}/.wanaku" ] \
   && echo "FAIL: ${BARN_USER_HOME_2}/.wanaku exists — WANAKU_HOME was ignored" \
   || echo "PASS: default home not created"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: default home not created`.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 3.4: Stop Barn
 
-```bash
+```bash run
 stop_barn
 unset WANAKU_HOME
 echo "PASS: Barn stopped"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn stopped`.
 
 ## Phase 4: Barn System Property Override
 
 ### Test 4.1: Start Barn with -Dwanaku.home
 
-```bash
+```bash run
 unset WANAKU_HOME
 BARN_SYSPROP_HOME="${HOME_TEST_ROOT}/barn-sysprop-home"
 start_barn "${HOME_TEST_ROOT}/barn-sysprop.log" -Duser.home="${BARN_USER_HOME_2}" -Dwanaku.home="${BARN_SYSPROP_HOME}" \
   && echo "PASS: Barn started with -Dwanaku.home" || echo "FAIL: Barn did not start"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn started with -Dwanaku.home`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 4.2: The store is under the system property path
 
-```bash
+```bash run
 [ -d "${BARN_SYSPROP_HOME}/barn" ] && echo "PASS: store at ${BARN_SYSPROP_HOME}/barn" \
   || echo "FAIL: store not at ${BARN_SYSPROP_HOME}/barn"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: store at <BARN_SYSPROP_HOME>/barn`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 4.3: Stop Barn
 
-```bash
+```bash run
 stop_barn
 echo "PASS: Barn stopped"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn stopped`.
 
 ## Phase 5: Barn Precedence (System Property Wins)
 
 ### Test 5.1: Start Barn with both overrides
 
-```bash
+```bash run
 PRECEDENCE_ENV_DIR="${HOME_TEST_ROOT}/precedence-env"
 PRECEDENCE_SYSPROP_DIR="${HOME_TEST_ROOT}/precedence-sysprop"
 export WANAKU_HOME="${PRECEDENCE_ENV_DIR}"
@@ -355,30 +511,43 @@ start_barn "${HOME_TEST_ROOT}/barn-precedence.log" -Duser.home="${BARN_USER_HOME
   && echo "PASS: Barn started with both overrides" || echo "FAIL: Barn did not start"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn started with both overrides`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 5.2: The system property path wins
 
-```bash
+```bash run
 [ -d "${PRECEDENCE_SYSPROP_DIR}/barn" ] && echo "PASS: store under the system property path" \
   || echo "FAIL: store not under ${PRECEDENCE_SYSPROP_DIR}"
 [ -e "${PRECEDENCE_ENV_DIR}/barn" ] && echo "FAIL: store also under the WANAKU_HOME path" \
   || echo "PASS: WANAKU_HOME path not used"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: store under the system property path`.
+- The output includes `PASS: WANAKU_HOME path not used`.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 5.3: Stop Barn
 
-```bash
+```bash run
 stop_barn
 unset WANAKU_HOME
 echo "PASS: Barn stopped"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn stopped`.
 
 ## Phase 6: Barn Data Survives a Restart
 
 ### Test 6.1: Create a data store in a fresh home
 
-```bash
+```bash run
 export WANAKU_HOME="${HOME_TEST_ROOT}/barn-persist-home"
 start_barn "${HOME_TEST_ROOT}/barn-persist-1.log" -Duser.home="${BARN_USER_HOME_2}" || echo "FAIL: Barn did not start"
 wait_http "${HOME_BARN_URL}/q/health/ready" 200 60 || echo "FAIL: Barn is not ready"
@@ -390,14 +559,24 @@ java -jar "${CLI_JAR}" data-store add --host "${HOME_BARN_URL}" --no-auth \
 stop_barn
 ```
 
+**Expected result:**
+
+- The output includes `PASS: data store <HOME_NS>-entry created`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 6.2: Restart with the same home and read the data store
 
-```bash
+```bash run
 start_barn "${HOME_TEST_ROOT}/barn-persist-2.log" -Duser.home="${BARN_USER_HOME_2}" || echo "FAIL: Barn did not restart"
 java -jar "${CLI_JAR}" data-store list --host "${HOME_BARN_URL}" --no-auth --plain 2>/dev/null \
   | awk '{print $2}' | grep -qx "${HOME_NS}-entry" \
   && echo "PASS: data store survived the restart" || echo "FAIL: data store lost after the restart"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: data store survived the restart`.
+- The output contains no line starting with `FAIL:`.
 
 ### Test 6.3: Barn is ready after the restart
 
@@ -408,7 +587,7 @@ stays `DOWN` with `"failedCaches": "catalog-version,catalog-version-counter"`. T
 uses them. The data is intact (Test 6.2). In Kubernetes, a readiness probe on `/q/health/ready` would keep the
 restarted pod out of service. Report a failure of this test as a Barn defect.
 
-```bash
+```bash run
 if wait_http "${HOME_BARN_URL}/q/health/ready" 200 60; then
   echo "PASS: Barn is ready after the restart"
 else
@@ -418,13 +597,16 @@ stop_barn
 unset WANAKU_HOME
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn is ready after the restart`.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 7: Barn Negative Tests
 
 ### Test 7.1: Empty WANAKU_HOME falls back to the default
 
-```bash
+```bash run
 export WANAKU_HOME=""
 BARN_USER_HOME_3="${HOME_TEST_ROOT}/barn-user-home-3"
 mkdir -p "${BARN_USER_HOME_3}"
@@ -436,11 +618,17 @@ stop_barn
 unset WANAKU_HOME
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Barn started with an empty WANAKU_HOME`.
+- The output includes `PASS: empty WANAKU_HOME ignored, default home used`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 7.2: WANAKU_HOME below a regular file stops Barn
 
 Barn cannot create its store. It must exit with an error. It must not run without a store.
 
-```bash
+```bash run
 NOT_A_DIR="${HOME_TEST_ROOT}/not-a-directory"
 : > "${NOT_A_DIR}"
 export WANAKU_HOME="${NOT_A_DIR}/home"
@@ -462,7 +650,10 @@ fi
 unset WANAKU_HOME
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: Barn exited`.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 8: CLI Home Resolution
 
@@ -472,7 +663,7 @@ parent directory.
 
 ### Test 8.1: WANAKU_HOME selects the credentials file
 
-```bash
+```bash run
 CLI_USER_HOME="${HOME_TEST_ROOT}/cli-user-home"
 CLI_ENV_HOME="${HOME_TEST_ROOT}/cli-env-home"
 mkdir -p "${CLI_USER_HOME}"
@@ -482,33 +673,54 @@ WANAKU_HOME="${CLI_ENV_HOME}" java -Duser.home="${CLI_USER_HOME}" -jar "${CLI_JA
 [ -e "${CLI_USER_HOME}/.wanaku" ] && echo "FAIL: default home also created" || echo "PASS: default home not used"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: credentials stored at <CLI_ENV_HOME>/credentials`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: default home not used`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.2: auth status reports the resolved file
 
-```bash
+```bash run
 OUTPUT=$(WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" auth status 2>/dev/null)
 echo "${OUTPUT}" | grep -q "Credentials File: ${CLI_ENV_HOME}/credentials" \
   && echo "PASS: auth status shows ${CLI_ENV_HOME}/credentials" || echo "FAIL: unexpected status: ${OUTPUT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: auth status shows <CLI_ENV_HOME>/credentials`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.3: The credentials file is private
 
-```bash
+```bash run
 MODE=$(stat -c '%a' "${CLI_ENV_HOME}/credentials" 2>/dev/null || stat -f '%Lp' "${CLI_ENV_HOME}/credentials")
 [ "${MODE}" = "600" ] && echo "PASS: credentials file mode 600" || echo "FAIL: credentials file mode ${MODE}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: credentials file mode 600`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.4: Another home does not see the token (negative)
 
-```bash
+```bash run
 OUTPUT=$(WANAKU_HOME="${HOME_TEST_ROOT}/cli-other-home" java -jar "${CLI_JAR}" auth token --get 2>&1)
 EXIT_CODE=$?
 [ "${EXIT_CODE}" -ne 0 ] && echo "${OUTPUT}" | grep -q "No valid API token" \
   && echo "PASS: no token in another home (exit ${EXIT_CODE})" || echo "FAIL: token visible from another home"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: no token in another home`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.5: The system property wins over WANAKU_HOME
 
-```bash
+```bash run
 CLI_SYSPROP_HOME="${HOME_TEST_ROOT}/cli-sysprop-home"
 CLI_ENV_HOME_2="${HOME_TEST_ROOT}/cli-env-home-2"
 WANAKU_HOME="${CLI_ENV_HOME_2}" java -Duser.home="${CLI_USER_HOME}" -Dwanaku.home="${CLI_SYSPROP_HOME}" \
@@ -517,9 +729,14 @@ WANAKU_HOME="${CLI_ENV_HOME_2}" java -Duser.home="${CLI_USER_HOME}" -Dwanaku.hom
   && echo "PASS: -Dwanaku.home wins" || echo "FAIL: precedence not respected"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: -Dwanaku.home wins`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.6: Default and empty WANAKU_HOME use ${user.home}/.wanaku
 
-```bash
+```bash run
 for VALUE in unset empty; do
   CLI_DEFAULT_HOME="${HOME_TEST_ROOT}/cli-default-${VALUE}"
   mkdir -p "${CLI_DEFAULT_HOME}"
@@ -533,9 +750,15 @@ for VALUE in unset empty; do
 done
 ```
 
+**Expected result:**
+
+- The output includes `PASS: unset WANAKU_HOME uses the default home`.
+- The output includes `PASS: empty WANAKU_HOME uses the default home`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.7: WANAKU_CREDENTIALS wins over the home
 
-```bash
+```bash run
 CLI_EXPLICIT="${HOME_TEST_ROOT}/cli-explicit/creds"
 WANAKU_HOME="${HOME_TEST_ROOT}/cli-env-home-3" WANAKU_CREDENTIALS="${CLI_EXPLICIT}" \
   java -jar "${CLI_JAR}" auth login --api-token=home-token-explicit > /dev/null 2>&1
@@ -543,9 +766,14 @@ WANAKU_HOME="${HOME_TEST_ROOT}/cli-env-home-3" WANAKU_CREDENTIALS="${CLI_EXPLICI
   && echo "PASS: WANAKU_CREDENTIALS selects the file" || echo "FAIL: WANAKU_CREDENTIALS ignored"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: WANAKU_CREDENTIALS selects the file`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.8: The cloud target is stored in the home
 
-```bash
+```bash run
 WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" cloud target set --context home-ctx -n home-ns --router home-router
 grep -q "^router=home-router$" "${CLI_ENV_HOME}/cloud.properties" 2>/dev/null \
   && echo "PASS: cloud target stored in ${CLI_ENV_HOME}/cloud.properties" || echo "FAIL: cloud.properties not written"
@@ -554,14 +782,23 @@ echo "${OUTPUT}" | grep -q "router: home-router" && echo "PASS: cloud target sho
   || echo "FAIL: unexpected output: ${OUTPUT}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: cloud target stored in <CLI_ENV_HOME>/cloud.properties`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: cloud target show reads it back`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 8.9: Logout removes the credentials file
 
-```bash
+```bash run
 WANAKU_HOME="${CLI_ENV_HOME}" java -jar "${CLI_JAR}" auth logout > /dev/null 2>&1
 [ ! -e "${CLI_ENV_HOME}/credentials" ] && echo "PASS: credentials removed by logout" || echo "FAIL: credentials still present"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: credentials removed by logout`.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 9: Wanaku Server Persistence Path
 
@@ -570,7 +807,7 @@ server instance (helpers of Step 1.4).
 
 ### Test 9.1: Default path is $HOME/.wanaku/server
 
-```bash
+```bash run
 unset WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
 SERVER_HOME="${HOME_TEST_ROOT}/server-home"
 mkdir -p "${SERVER_HOME}"
@@ -583,9 +820,14 @@ jq -e --arg ns "${HOME_NS}-default" '[.namespaces[].name] | index($ns) != null' 
 stop_server
 ```
 
+**Expected result:**
+
+- The output includes `PASS: registry.json written to <REGISTRY>`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.2: The server ignores WANAKU_HOME
 
-```bash
+```bash run
 SERVER_HOME_2="${HOME_TEST_ROOT}/server-home-2"
 SERVER_WANAKU_HOME="${HOME_TEST_ROOT}/server-wanaku-home"
 mkdir -p "${SERVER_HOME_2}" "${SERVER_WANAKU_HOME}"
@@ -599,9 +841,14 @@ unset WANAKU_HOME
   && echo "PASS: registry under \$HOME/.wanaku/server, WANAKU_HOME untouched" || echo "FAIL: server used WANAKU_HOME"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: registry under $HOME/.wanaku/server, WANAKU_HOME untouched`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.3: WANAKU_PERSIST_PATH selects the directory
 
-```bash
+```bash run
 export WANAKU_PERSIST_BACKEND=file
 export WANAKU_PERSIST_PATH="${HOME_TEST_ROOT}/server-data"
 start_server "${HOME_TEST_ROOT}/server-data-1.log" "${SERVER_HOME}" || echo "FAIL: server did not start"
@@ -609,15 +856,24 @@ java -jar "${CLI_JAR}" namespaces create "${HOME_NS}" --host "${WANAKU_SERVER_UR
 [ $? -eq 0 ] && echo "PASS: namespace ${HOME_NS} created" || echo "FAIL: namespace not created"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: namespace <HOME_NS> created`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 9.4: Register a forward
 
 Follow [common/start-test-mcp-server.md](common/start-test-mcp-server.md) with `TEST_MCP_NAMESPACE="${HOME_NS}"`. It
 uses `WANAKU_SERVER_URL` of this plan. After completion, `TEST_MCP_URL`, `TEST_MCP_PID` and `TEST_MCP_FORWARD` must be
 set.
 
+**Expected result:**
+
+- The invoked procedure completes successfully (inferred).
+
 ### Test 9.5: registry.json contains the namespace, the forward and the tools
 
-```bash
+```bash run
 REGISTRY="${WANAKU_PERSIST_PATH}/registry.json"
 i=0
 until jq -e --arg f "${TEST_MCP_FORWARD}" '[.forwards[].name] | index($f) != null' "${REGISTRY}" > /dev/null 2>&1; do
@@ -630,12 +886,17 @@ jq -e --arg ns "${HOME_NS}" --arg f "${TEST_MCP_FORWARD}" \
   || echo "FAIL: registry.json incomplete"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: registry.json has the namespace, the forward and`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.6: Change state and stop the server in an orderly way
 
 The enable/disable route has no CLI command, so `curl` is used. The namespace is created immediately before the
 shutdown, so the final flush must write it.
 
-```bash
+```bash run
 curl -s -o /dev/null -X PUT "${WANAKU_SERVER_URL}/api/v1/tools/echo/disable"
 java -jar "${CLI_JAR}" namespaces create "${HOME_NS}-late" --host "${WANAKU_SERVER_URL}" --no-auth > /dev/null 2>&1
 stop_server
@@ -643,9 +904,14 @@ grep -q "registry persistence flushed during shutdown" "${HOME_TEST_ROOT}/server
   && echo "PASS: registry flushed during the orderly shutdown" || echo "FAIL: no flush message in the log"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: registry flushed during the orderly shutdown`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.7: The registry is reloaded after the restart
 
-```bash
+```bash run
 start_server "${HOME_TEST_ROOT}/server-data-2.log" "${SERVER_HOME}" || echo "FAIL: server did not restart"
 NAMESPACES=$(java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null | awk 'NR>1 {print $1}')
 for NS in "${HOME_NS}" "${HOME_NS}-late"; do
@@ -658,19 +924,31 @@ ENABLED=$(curl -s "${WANAKU_SERVER_URL}/api/v1/tools/echo" | jq '.data.enabled')
 [ "${ENABLED}" = "false" ] && echo "PASS: tool 'echo' is still disabled" || echo "FAIL: tool 'echo' enabled=${ENABLED}"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: namespace <HOME_NS> reloaded`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: namespace <HOME_NS>-late reloaded`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: forward <TEST_MCP_FORWARD> reloaded`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: tool 'echo' is still disabled`.
+- The output contains no line starting with `FAIL:`.
+
 ### Step 9.8: Stop the reference MCP server and the server
 
-Follow the [Shutdown](common/start-test-mcp-server.md#shutdown) section of
+Use the [Shutdown](common/start-test-mcp-server.md#shutdown) section of
 [common/start-test-mcp-server.md](common/start-test-mcp-server.md). Then stop the server:
 
-```bash
+```bash run
 stop_server
 echo "PASS: server stopped"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: server stopped`.
+
 ### Test 9.9: WANAKU_PERSIST_BACKEND=none writes nothing
 
-```bash
+```bash run
 export WANAKU_PERSIST_BACKEND=none
 unset WANAKU_PERSIST_PATH
 SERVER_HOME_NONE="${HOME_TEST_ROOT}/server-home-none"
@@ -688,11 +966,17 @@ stop_server
 unset WANAKU_PERSIST_BACKEND
 ```
 
+**Expected result:**
+
+- The output includes `PASS: nothing written with persistence disabled`.
+- The output includes `PASS: namespace not restored without persistence`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.10: Unusable WANAKU_PERSIST_PATH (negative)
 
 The server starts, serves requests and logs each failed write. It does not exit.
 
-```bash
+```bash run
 export WANAKU_PERSIST_BACKEND=file
 export WANAKU_PERSIST_PATH="${NOT_A_DIR}/server"
 start_server "${HOME_TEST_ROOT}/server-invalid.log" "${SERVER_HOME}" \
@@ -704,12 +988,18 @@ grep -q "failed to persist registry" "${HOME_TEST_ROOT}/server-invalid.log" \
 stop_server
 ```
 
+**Expected result:**
+
+- The output includes `PASS: server started with an unusable persistence path`.
+- The output includes `PASS: write failure logged`.
+- The output contains no line starting with `FAIL:`.
+
 ### Test 9.11: Corrupt registry.json (negative)
 
 The server logs the load failure and starts with an empty registry. It does not overwrite the file until the
 registry changes.
 
-```bash
+```bash run
 export WANAKU_PERSIST_PATH="${HOME_TEST_ROOT}/server-corrupt"
 mkdir -p "${WANAKU_PERSIST_PATH}"
 echo '{not json' > "${WANAKU_PERSIST_PATH}/registry.json"
@@ -723,13 +1013,18 @@ stop_server
 unset WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: server started with a corrupt registry.json`.
+- The output includes `PASS: load failure logged`.
+- The output includes `PASS: corrupt file kept unchanged`.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 10: Default Home Isolation
 
 ### Test 10.1: The real default home is unchanged
 
-```bash
+```bash run
 REAL_HOME_SNAPSHOT_AFTER="${HOME_TEST_ROOT}/real-home-after.txt"
 if [ -d "${HOME}/.wanaku" ]; then
   find "${HOME}/.wanaku" -type f -exec ls -l --time-style=+%s {} \; 2>/dev/null | sort > "${REAL_HOME_SNAPSHOT_AFTER}"
@@ -746,7 +1041,10 @@ fi
 
 The snapshot uses GNU `ls --time-style`. On macOS, use `stat -f '%m %z %N'` instead.
 
----
+**Expected result:**
+
+- The output includes `PASS: <HOME>/.wanaku unchanged by the test run`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output contains no line starting with `FAIL:`.
 
 ## Phase 11: Cleanup
 
@@ -754,7 +1052,7 @@ All cleanup steps are idempotent.
 
 ### Step 11.1: Stop the remaining processes
 
-```bash
+```bash run
 stop_barn 2>/dev/null || true
 stop_server 2>/dev/null || true
 if [ -n "${TEST_MCP_PID}" ]; then
@@ -764,21 +1062,31 @@ fi
 echo "PASS: all test processes stopped (or already absent)"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: all test processes stopped (or already absent)`.
+
 ### Step 11.2: Remove the temporary directories
 
-```bash
+```bash run
 rm -rf "${HOME_TEST_ROOT}" 2>/dev/null || true
 echo "PASS: ${HOME_TEST_ROOT} removed"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: <HOME_TEST_ROOT> removed`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+
 ### Step 11.3: Unset the test variables
 
-```bash
+```bash run
 unset WANAKU_HOME WANAKU_CREDENTIALS WANAKU_PERSIST_PATH WANAKU_PERSIST_BACKEND HOME_TEST_ROOT
 echo "PASS: test environment variables cleared"
 ```
 
----
+**Expected result:**
+
+- The output includes `PASS: test environment variables cleared`.
 
 ## Test Summary
 
@@ -836,3 +1144,4 @@ echo "PASS: test environment variables cleared"
 | 11 | 11.1 | Stop the remaining processes | Critical |
 | 11 | 11.2 | Remove the temporary directories | Critical |
 | 11 | 11.3 | Unset the test variables | Medium |
+| S | S.1 | Set environment variables | Setup |

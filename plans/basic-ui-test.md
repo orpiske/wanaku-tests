@@ -51,33 +51,11 @@ Every step is automatable.
 `cargo-component` and the `wasm32-wasip1` target build the evaluator action that the repository `wanaku.yaml`
 loads at startup. Install them with:
 
-```bash
-rustup target add wasm32-wasip1
-cargo install cargo-component --version 0.21.1 --locked
-```
-
 Playwright downloads Chromium from `cdn.playwright.dev`. The host must be able to reach it.
 
 ### Prerequisite check
 
-```bash
-for TOOL in node yarn npx cargo java curl jq; do
-  command -v "${TOOL}" > /dev/null 2>&1 \
-    && echo "PASS: ${TOOL} found" \
-    || { echo "FAIL: ${TOOL} not found"; exit 1; }
-done
-cargo component --version > /dev/null 2>&1 \
-  && echo "PASS: cargo-component found" \
-  || { echo "FAIL: cargo-component not found"; exit 1; }
-```
-
 ### Environment variables
-
-```bash
-export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
-export WANAKU_E2E_DIR="${WANAKU_E2E_DIR:-${WANAKU_SERVER_REPO_ROOT}/tests/e2e/ui}"
-export CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
-```
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -91,9 +69,72 @@ sets it from `WANAKU_SERVER_URL`.
 
 ---
 
+## Phase S: Setup
+
+### Step S.1: Install evaluator build tools
+
+```bash run
+rustup target add wasm32-wasip1
+cargo install cargo-component --version 0.21.1 --locked
+```
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+
+### Step S.2: Prepare prerequisites
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+for TOOL in node yarn npx cargo java curl jq; do
+  command -v "${TOOL}" > /dev/null 2>&1 \
+    && echo "PASS: ${TOOL} found" \
+    || { echo "FAIL: ${TOOL} not found"; exit 1; }
+done
+cargo component --version > /dev/null 2>&1 \
+  && echo "PASS: cargo-component found" \
+  || { echo "FAIL: cargo-component not found"; exit 1; }
+```
+
+**Expected result:**
+
+- The output includes `PASS: node found`.
+- The output includes `PASS: yarn found`.
+- The output includes `PASS: npx found`.
+- The output includes `PASS: cargo found`.
+- The output includes `PASS: java found`.
+- The output includes `PASS: curl found`.
+- The output includes `PASS: jq found`.
+- The output includes `PASS: cargo-component found`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
+### Step S.3: Set environment variables
+
+```bash run
+export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
+export WANAKU_E2E_DIR="${WANAKU_E2E_DIR:-${WANAKU_SERVER_REPO_ROOT}/tests/e2e/ui}"
+export CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+```
+
+**Expected result:**
+
+- The commands exit with code 0 (inferred).
+
+
 ## Phase 0: Manual Prerequisites
 
+### Step 0.1: Confirm prerequisites
+
 There are no manual prerequisites. The plan starts its own Wanaku Server.
+
+**Expected result:**
+
+- There are no manual prerequisites.
+
 
 ---
 
@@ -104,6 +145,8 @@ There are no manual prerequisites. The plan starts its own Wanaku Server.
 The repository `wanaku.yaml` configures the `safety-gate` evaluator with a WASM processor. Wanaku Server does not
 start if the WASM file is missing (`fatal: evaluator startup failed: configuration_invalid`). This step follows the
 `build-evaluator-actions` CI action of the `wanaku-ai/wanaku` repository.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 mkdir -p "${WANAKU_SERVER_REPO_ROOT}/actions/dist"
@@ -118,11 +161,20 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: evaluator action built`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Step 1.2: Prepare the server configuration
 
 The Evaluators spec expects the LLM connections from the repository `wanaku.yaml` (for example `local-llama`). The
 processor path in that file is relative to the current directory. Write a copy with an absolute path, so the server
 can start from any directory.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export WANAKU_SERVER_DATA_DIR="${WANAKU_SERVER_DATA_DIR:-$(mktemp -d)}"
@@ -138,9 +190,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: server configuration written to <WANAKU_SERVER_CONFIG>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Step 1.3: Start Wanaku Server
 
-Follow [common/start-server.md](common/start-server.md) steps 1 to 6. Do **not** run step 2b: the configuration of
+Use [common/start-server.md](common/start-server.md) steps 1 to 6. Do **not** run step 2b: the configuration of
 step 1.2 already contains a `governance` section, and the suite does not call tools. Step 3 passes
 `WANAKU_SERVER_CONFIG` with `--wanaku-config`.
 
@@ -150,6 +209,156 @@ default (cargo feature `ui`, which runs `yarn build` in `ui/admin`). `make build
 
 After completion, `WANAKU_SERVER_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DATA_DIR` must be set.
 
+#### Procedure step 1: Build Wanaku Server
+
+Skip this step when `WANAKU_SERVER_BIN` points to a prebuilt binary.
+
+The default build embeds the admin UI. It builds the UI with Node.js and Yarn. To build without the admin UI (headless),
+add `--no-default-features`. The headless build is sufficient for CLI and MCP test plans.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+export WANAKU_SERVER_REPO_ROOT="${WANAKU_SERVER_REPO_ROOT:-../wanaku}"
+
+if [ -z "${WANAKU_SERVER_BIN}" ]; then
+  (cd "${WANAKU_SERVER_REPO_ROOT}" && cargo build --release -p wanaku-server)
+  WANAKU_SERVER_BIN="${WANAKU_SERVER_REPO_ROOT}/target/release/wanaku-server"
+fi
+
+if [ -x "${WANAKU_SERVER_BIN}" ]; then
+  echo "PASS: ${WANAKU_SERVER_BIN} exists"
+else
+  echo "FAIL: ${WANAKU_SERVER_BIN} not found or not executable"
+  exit 1
+fi
+export WANAKU_SERVER_BIN
+```
+
+#### Procedure step 2: Verify the ports are free
+
+A server left over from an earlier run makes the test results unreliable.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+export WANAKU_SERVER_MGMT_PORT="${WANAKU_SERVER_MGMT_PORT:-8080}"
+for PORT in "${WANAKU_SERVER_MGMT_PORT}" 8081; do
+  if curl -s -o /dev/null "http://localhost:${PORT}/" 2>/dev/null; then
+    echo "FAIL: port ${PORT} is already in use — stop the process that uses it"
+    exit 1
+  fi
+  echo "PASS: port ${PORT} is free"
+done
+```
+
+#### Procedure step 3: Start Wanaku Server
+
+Each run uses a new data directory. This keeps the run independent of `$HOME/.wanaku/server` and of earlier runs.
+Authentication is disabled by default in Wanaku Server, so no extra configuration is necessary.
+
+The server process inherits the exported environment. Export other variables before this step when the plan needs
+them, for example `RUST_LOG`, `PRAXIS_LOG_FORMAT=json` or `WANAKU_AUTH_ISSUER`.
+
+```bash
+export WANAKU_SERVER_DATA_DIR="${WANAKU_SERVER_DATA_DIR:-$(mktemp -d)}"
+export WANAKU_SERVER_LOG="${WANAKU_SERVER_LOG:-${WANAKU_SERVER_DATA_DIR}/wanaku-server.log}"
+export WANAKU_SERVER_URL="http://localhost:${WANAKU_SERVER_MGMT_PORT}"
+export WANAKU_MCP_BASE_URL="http://localhost:8081"
+
+WANAKU_MGMT_LISTEN="0.0.0.0:${WANAKU_SERVER_MGMT_PORT}" \
+WANAKU_PERSIST_BACKEND=file \
+WANAKU_PERSIST_PATH="${WANAKU_SERVER_DATA_DIR}" \
+  "${WANAKU_SERVER_BIN}" ${WANAKU_SERVER_CONFIG:+--wanaku-config "${WANAKU_SERVER_CONFIG}"} \
+  > "${WANAKU_SERVER_LOG}" 2>&1 &
+WANAKU_SERVER_PID=$!
+export WANAKU_SERVER_PID
+echo "Wanaku Server started with PID ${WANAKU_SERVER_PID} (data: ${WANAKU_SERVER_DATA_DIR})"
+```
+
+#### Procedure step 4: Wait for health
+
+`curl` is used here to test HTTP-level readiness. `GET /health` returns the standard response envelope.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+MAX_RETRIES=30
+for i in $(seq 1 ${MAX_RETRIES}); do
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health" 2>/dev/null || echo "000")
+  if [ "${HTTP_CODE}" = "200" ]; then
+    echo "PASS: Wanaku Server is healthy (attempt ${i})"
+    break
+  fi
+  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
+    echo "FAIL: Wanaku Server not healthy after ${MAX_RETRIES} attempts (last HTTP ${HTTP_CODE})"
+    tail -20 "${WANAKU_SERVER_LOG}"
+    kill "${WANAKU_SERVER_PID}" 2>/dev/null || true
+    exit 1
+  fi
+  sleep 1
+done
+```
+
+#### Procedure step 5: Verify the MCP listener
+
+The MCP listener accepts only `/<namespace>/mcp`. The `default` namespace always exists.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_MCP_BASE_URL}/default/mcp" \
+  -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}')
+if [ "${HTTP_CODE}" = "200" ]; then
+  echo "PASS: MCP endpoint ${WANAKU_MCP_BASE_URL}/default/mcp answers"
+else
+  echo "FAIL: MCP endpoint returned HTTP ${HTTP_CODE}"
+  exit 1
+fi
+```
+
+#### Procedure step 6: Verify the CLI can connect
+
+Use the CLI jar from this repository (see
+[contributing-test-plans.md](../../../docs/contributing-test-plans.md#use-the-wanaku-cli-not-raw-api-clients)).
+Wanaku Server has no built-in authentication, so pass `--no-auth`.
+
+Run this block as a separate `bash` script, not in the shared session.
+
+```bash
+CLI_JAR="${CLI_JAR:-apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+java -jar "${CLI_JAR}" tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain
+EXIT_CODE=$?
+if [ "${EXIT_CODE}" -eq 0 ]; then
+  echo "PASS: CLI can connect to Wanaku Server"
+else
+  echo "FAIL: CLI cannot connect to Wanaku Server (exit code ${EXIT_CODE})"
+  exit 1
+fi
+```
+
+**Expected result:**
+
+- The output includes `PASS: <WANAKU_SERVER_BIN> exists`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+- The output includes `PASS: port <WANAKU_SERVER_MGMT_PORT> is free`.
+- The output includes `PASS: port 8081 is free`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+- The commands exit with code 0 (inferred).
+- The output includes `PASS: Wanaku Server is healthy`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+- The output includes `PASS: MCP endpoint <WANAKU_MCP_BASE_URL>/default/mcp answers`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+- The output includes `PASS: CLI can connect to Wanaku Server`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 2: Verify Server Connectivity
@@ -157,6 +366,8 @@ After completion, `WANAKU_SERVER_URL`, `WANAKU_SERVER_PID` and `WANAKU_SERVER_DA
 `curl` is used in this phase to test HTTP-level reachability. The admin UI has no CLI equivalent.
 
 ### Test 2.1: Server health check
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health")
@@ -168,7 +379,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Wanaku Server healthy at <WANAKU_SERVER_URL>`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.2: Admin UI is embedded and served at /admin/
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 BODY=$(curl -s "${WANAKU_SERVER_URL}/admin/")
@@ -180,9 +400,16 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: admin UI served at <WANAKU_SERVER_URL>/admin/`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 2.3: Root path redirects to the admin UI
 
-```bash
+```bash run
 LOCATION=$(curl -s -D - -o /dev/null "${WANAKU_SERVER_URL}/" | tr -d '\r' | awk 'tolower($1)=="location:" {print $2}')
 if [ "${LOCATION}" = "/admin/" ]; then
   echo "PASS: / redirects to /admin/"
@@ -191,12 +418,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: / redirects to /admin/`.
+- The output contains no line starting with `FAIL:`.
+
+
 ### Test 2.4: Missing UI asset returns 404 (negative)
 
 Unknown hash routes (for example `#/tool-calls`) are handled by the single-page application. Unknown static files
 must return `404`.
 
-```bash
+```bash run
 HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/admin/assets/does-not-exist.js")
 if [ "${HTTP_STATUS}" = "404" ]; then
   echo "PASS: missing asset returns 404"
@@ -205,7 +438,15 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: missing asset returns 404`.
+- The output contains no line starting with `FAIL:`.
+
+
 ### Test 2.5: Server loaded the e2e configuration
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 CONNECTIONS=$(curl -s "${WANAKU_SERVER_URL}/api/v1/evaluators/llm-connections" | jq -r '.data[]')
@@ -217,11 +458,20 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: LLM connection 'local-llama' is configured`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ---
 
 ## Phase 3: Install Dependencies
 
 ### Step 3.1: Install Node.js dependencies
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 (cd "${WANAKU_E2E_DIR}" && yarn install --frozen-lockfile)
@@ -233,9 +483,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: dependencies installed`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Step 3.2: Install the Playwright browser
 
 Add `--with-deps` on a fresh Linux host to install the system libraries of Chromium.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 (cd "${WANAKU_E2E_DIR}" && npx playwright install chromium)
@@ -247,10 +506,19 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Chromium installed`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+
 ### Test 3.3: The suite is discovered
 
 `--list` does not need a browser or a server. The suite has 108 tests in 16 files at the time of writing. Use the
 count as a sanity check, not as a fixed value.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 LIST=$(cd "${WANAKU_E2E_DIR}" && WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}" npx playwright test --list 2>&1)
@@ -263,6 +531,13 @@ else
   exit 1
 fi
 ```
+
+**Expected result:**
+
+- The output includes `PASS: <TOTAL> tests discovered`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 
 ---
 
@@ -278,7 +553,7 @@ These specs cover the Tools, Resources and Prompts toggles, the Dashboard tiles 
 Forwards), Namespaces (create, invalid name, delete, MCP address column) and Forwards (add, address validation,
 delete, details, status).
 
-```bash
+```bash run
 (cd "${WANAKU_E2E_DIR}" && WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}" npx playwright test \
   tests/dashboard.spec.ts tests/tools.spec.ts tests/resources.spec.ts tests/prompts.spec.ts \
   tests/namespaces.spec.ts tests/forwards.spec.ts --reporter=line)
@@ -290,9 +565,15 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: core registry page tests passed`.
+- The output contains no line starting with `FAIL:`.
+
+
 ### Test 4.2: Complete suite
 
-```bash
+```bash run
 (cd "${WANAKU_E2E_DIR}" && WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}" npx playwright test --reporter=line)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ]; then
@@ -303,11 +584,22 @@ else
 fi
 ```
 
-### Test 4.3 (optional): Headed mode for visual verification
+**Expected result:**
+
+- The output includes `PASS: all Playwright tests passed`.
+- The output contains no line starting with `FAIL:`.
+
+
+### Test 4.3: Headed mode for visual verification (optional)
 
 ```bash
 (cd "${WANAKU_E2E_DIR}" && WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}" npx playwright test --headed tests/tools.spec.ts)
 ```
+
+**Expected result:**
+
+- The headed Playwright command exits with code 0 (inferred).
+
 
 ---
 
@@ -315,7 +607,7 @@ fi
 
 ### Test 5.1: Test report was generated
 
-```bash
+```bash run
 if [ -f "${WANAKU_E2E_DIR}/playwright-report/index.html" ]; then
   echo "PASS: test report generated"
 else
@@ -323,12 +615,18 @@ else
 fi
 ```
 
+**Expected result:**
+
+- The output includes `PASS: test report generated`.
+- The output contains no line starting with `FAIL:`.
+
+
 ### Test 5.2: The suite removed its namespaces and forwards
 
 The specs create entries with the `e2e-` prefix and delete them in `afterEach`. A leftover entry shows a cleanup
 defect in the suite.
 
-```bash
+```bash run
 LEFTOVER_NS=$(java -jar "${CLI_JAR}" namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null \
   | awk 'NR>1 {print $1}' | grep -c '^e2e-')
 LEFTOVER_FW=$(java -jar "${CLI_JAR}" forwards list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null \
@@ -340,11 +638,22 @@ else
 fi
 ```
 
-### Test 5.3 (optional): View the HTML report
+**Expected result:**
+
+- The output includes `PASS: no e2e- namespaces or forwards remain`.
+- The output contains no line starting with `FAIL:`.
+
+
+### Test 5.3: View the HTML report (optional)
 
 ```bash
 (cd "${WANAKU_E2E_DIR}" && npx playwright show-report)
 ```
+
+**Expected result:**
+
+- The HTML report viewer starts (inferred).
+
 
 ---
 
@@ -354,8 +663,20 @@ All cleanup steps are idempotent.
 
 ### Step 6.1: Stop Wanaku Server
 
-Follow the [Shutdown](common/start-server.md#shutdown) section of [common/start-server.md](common/start-server.md).
+Use the [Shutdown](common/start-server.md#shutdown) section of [common/start-server.md](common/start-server.md).
 It stops the server and removes `WANAKU_SERVER_DATA_DIR`, which also contains `wanaku-e2e.yaml`.
+
+Stop the server with the PID captured at startup. Then remove the data directory of the run.
+
+The entry plan runs the original shutdown block in its local cleanup unit.
+
+Do **not** use `kill -9`. It bypasses the orderly Pingora shutdown and the final registry snapshot. If Pingora worker
+processes remain, find them with `lsof -ti :8081` and stop them with `SIGTERM`.
+
+**Expected result:**
+
+- The server is stopped and its data directory is removed (inferred).
+
 
 ### Step 6.2: Remove the test artifacts (optional)
 
@@ -364,12 +685,21 @@ rm -rf "${WANAKU_E2E_DIR}/playwright-report" "${WANAKU_E2E_DIR}/test-results" 2>
 echo "PASS: Playwright artifacts removed"
 ```
 
+**Expected result:**
+
+- The output includes `PASS: Playwright artifacts removed`.
+
+
 ---
 
 ## Test Summary
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
+| S | S.1 | Install evaluator build tools | High |
+| S | S.2 | Prepare prerequisites | High |
+| S | S.3 | Set environment variables | High |
+| 0 | 0.1 | Confirm prerequisites | High |
 | 1 | 1.1 | Build the evaluator action | Critical |
 | 1 | 1.2 | Prepare the server configuration | Critical |
 | 1 | 1.3 | Start Wanaku Server | Critical |

@@ -1,4 +1,4 @@
-# Common: Container Runtime Detection
+# Procedure: Container Runtime Detection
 
 Reusable steps for detecting and configuring a local container runtime (Docker or Podman). Use this when a test plan needs to run containers locally (e.g., databases, Keycloak, supporting services).
 
@@ -18,11 +18,13 @@ Reusable steps for detecting and configuring a local container runtime (Docker o
 |----------|-------------|
 | `CONTAINER_RUNTIME` | The detected runtime command (`docker` or `podman`) |
 
-## Steps
+## Phase 1: Container Runtime Detection
 
-### 1. Detect container runtime
+### Step 1: Detect container runtime
 
 If `CONTAINER_RUNTIME` is already set (e.g., by the caller), skip auto-detection. Otherwise, prefer `docker` over `podman`.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 if [ -n "${CONTAINER_RUNTIME}" ]; then
@@ -49,7 +51,15 @@ fi
 export CONTAINER_RUNTIME
 ```
 
-### 2. Verify the runtime is functional
+**Expected result:**
+
+- The output includes `PASS: <CONTAINER_RUNTIME> found at` or `PASS: <CONTAINER_RUNTIME> (pre-set) found at`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+### Step 2: Verify the runtime is functional
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 ${CONTAINER_RUNTIME} info > /dev/null 2>&1
@@ -61,13 +71,19 @@ else
 fi
 ```
 
-## Helper functions
+**Expected result:**
 
-### Start a container (idempotent)
+- The output includes `PASS: <CONTAINER_RUNTIME> is functional`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+## Phase H: Helper functions
+
+### Step H.1: Start a container (idempotent)
 
 Starts a named container if it is not already running. Skips gracefully if the container exists.
 
-```bash
+```bash run
 start_container_if_absent() {
   local NAME="$1"
   shift
@@ -88,11 +104,15 @@ start_container_if_absent() {
 }
 ```
 
-### Stop and remove a container (idempotent)
+**Expected result:**
+
+- The block defines the function without errors (inferred).
+
+### Step H.2: Stop and remove a container (idempotent)
 
 Stops and removes a named container. No-ops if it does not exist.
 
-```bash
+```bash run
 stop_container() {
   local NAME="$1"
 
@@ -101,6 +121,10 @@ stop_container() {
   echo "PASS: container '${NAME}' stopped and removed (or was not running)"
 }
 ```
+
+**Expected result:**
+
+- The block defines the function without errors (inferred).
 
 ## Usage
 

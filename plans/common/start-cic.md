@@ -1,4 +1,4 @@
-# Common: Run the Camel Integration Capability Locally
+# Procedure: Run the Camel Integration Capability Locally
 
 Reusable steps for running a local [Camel Integration Capability](https://github.com/wanaku-ai/camel-integration-capability)
 (CIC) runtime that serves a Wanaku Barn service catalog as MCP tools, and for registering it with Wanaku Server.
@@ -46,9 +46,11 @@ on Linux. On macOS and Windows, set `CIC_BARN_URL` and `CIC_SERVER_URL` to `http
 |----------|-------------|
 | `CIC_MCP_URL` | MCP endpoint of the runtime (`http://localhost:9190/mcp`) |
 
-## Steps
+## Phase 1: Run the Camel Integration Capability Locally
 
-### 1. Start the runtime
+### Step 1: Start the runtime
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 export CIC_IMAGE="${CIC_IMAGE:-quay.io/wanaku/camel-integration-capability:latest}"
@@ -83,9 +85,17 @@ ${CONTAINER_RUNTIME} run -d --name "${CIC_NAME}" --network host \
   || { echo "FAIL: could not start the CIC container"; exit 1; }
 ```
 
-### 2. Wait for the runtime to become ready
+**Expected result:**
+
+- The output includes `PASS: CIC container '<CIC_NAME>' started`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+### Step 2: Wait for the runtime to become ready
 
 The runtime downloads the catalog and its dependencies before it is ready. The first start can take some minutes.
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 for i in $(seq 1 60); do
@@ -103,7 +113,15 @@ for i in $(seq 1 60); do
 done
 ```
 
-### 3. Register the runtime with Wanaku Server
+**Expected result:**
+
+- The output includes `PASS: CIC runtime is ready (attempt <i>)`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+### Step 3: Register the runtime with Wanaku Server
+
+Run this block as a separate `bash` script, not in the shared session.
 
 ```bash
 if [ "${CIC_SELF_REGISTER}" = "true" ]; then
@@ -128,12 +146,12 @@ name, the latest discovery replaces the entry. Use tool names that are unique on
 After this step, the catalog tools are in `wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth` and MCP clients
 can call them at `${WANAKU_MCP_BASE_URL}/${CIC_NAMESPACE}/mcp`.
 
+**Expected result:**
+
+- The output includes `PASS: forward '<CIC_NAME>' is registered`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ## Shutdown
 
-```bash
-java -jar "${CLI_JAR}" forwards remove --host "${WANAKU_SERVER_URL}" --no-auth \
-  --name "${CIC_NAME:-cic-test}" 2>/dev/null || true
-${CONTAINER_RUNTIME} stop "${CIC_NAME:-cic-test}" > /dev/null 2>&1 || true
-${CONTAINER_RUNTIME} rm "${CIC_NAME:-cic-test}" > /dev/null 2>&1 || true
-echo "PASS: CIC runtime stopped and its forward removed"
-```
+The entry plan runs the original shutdown block in its local cleanup unit.

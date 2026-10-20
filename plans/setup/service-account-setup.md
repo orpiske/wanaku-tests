@@ -1,4 +1,4 @@
-# Service Account Setup for Test Plans
+# Test Plan: Service Account Setup for Test Plans
 
 Running operator test plans with your personal (admin) credentials is dangerous. This guide creates a dedicated service account with only the permissions the test plans require.
 
@@ -10,11 +10,13 @@ No permission change is needed for that split: the service account already has c
 
 - `oc` CLI logged in as a cluster admin (one-time setup)
 
-## Quick Start
+## Phase 1: Quick Start
+
+### Step 1.1: Create service account credentials
 
 From the repository root:
 
-```bash
+```bash run
 # Create the service account and RBAC
 ./tests/plans/setup/create-service-account.sh
 
@@ -22,13 +24,23 @@ From the repository root:
 export OPENSHIFT_SA_TOKEN=$(oc create token wanaku-test-runner -n wanaku-test-infra --duration=8760h)
 ```
 
+**Expected result:**
+
+- The setup script creates the service account and RBAC and the token command exits with code 0 (inferred).
+
+### Step 1.2: Log in as the service account
+
 Then log in as the service account instead of your admin user:
 
-```bash
+```bash run
 oc login <cluster-api-url> --token=${OPENSHIFT_SA_TOKEN}
 oc whoami
 # Expected: system:serviceaccount:wanaku-test-infra:wanaku-test-runner
 ```
+
+**Expected result:**
+
+- The output includes `system:serviceaccount:wanaku-test-infra:wanaku-test-runner`.
 
 ## What the Service Account Can Do
 
@@ -45,16 +57,30 @@ oc whoami
 
 The `create-service-account.sh` script prints a token valid for 1 year. For CI systems, store it as a secret (e.g., GitHub Actions `OPENSHIFT_SA_TOKEN`). Reuse the same service-account namespace across runs unless you intentionally want to recreate the infrastructure.
 
+## Phase 2: Token Rotation
+
+### Step 2.1: Rotate the token
+
 To rotate the token:
 
-```bash
+```bash run
 oc create token wanaku-test-runner -n wanaku-test-infra --duration=8760h
 ```
 
-## Teardown
+**Expected result:**
+
+- The token command exits with code 0 (inferred).
+
+## Phase 3: Teardown
+
+### Step 3.1: Remove the service account
 
 To remove the service account and all RBAC resources:
 
-```bash
+```bash run
 ./tests/plans/setup/teardown-service-account.sh
 ```
+
+**Expected result:**
+
+- The teardown script exits with code 0 (inferred).
