@@ -22,6 +22,14 @@ covered by [camel-integration-capability.md](camel-integration-capability.md).
 
 Every step is fully automatable.
 
+When Saci runs this plan, invoked procedures execute before their parent step. A parent's `Follow` instruction
+refers to those completed procedure steps; do not locate the Markdown file in the worker or repeat the procedure.
+Assess the parent criteria using the preceding procedure results and any additional state checks needed for evidence.
+
+Run command blocks in Saci's shared Bash session, including procedure blocks, so helper functions and exported
+variables remain available to later tests. Source each block in that session; a top-level `return 1` fails the
+block without terminating the session. Do not execute blocks as separate scripts or enable `set -e` globally.
+
 **Hard timeout rule:** Any single operation (oc wait, polling loop, port-forward setup, etc.) that takes longer than **3 minutes** MUST be considered broken. Mark the test as FAIL immediately and abort — do not wait longer. All `--timeout` values in this plan MUST NOT exceed `180s`.
 
 > [!NOTE]
@@ -40,7 +48,7 @@ Every step is fully automatable.
 | `curl`          | any (HTTP-level checks only) | `curl --version`          |
 | `jq`            | 1.6+                         | `jq --version`            |
 | `openssl`       | any (cookie secret)          | `openssl version`         |
-| `zip`, `base64` | any                          | `zip --version`           |
+| `tar`           | any (source archive)         | `tar --version`           |
 | `wanaku` CLI    | build from source            | `${WANAKU_CLI} --version` |
 
 ### Environment variables
@@ -64,6 +72,15 @@ Provide these inputs to the test environment before Step 0.1:
 All later phases require a successful login and identity verification in Step 0.1. Use a Saci run policy that
 stops on failure so a rejected identity cannot proceed to namespace creation or deployment.
 
+Step S.0 reuses the current directory when it contains the Wanaku Barn operator chart and realm configuration;
+otherwise it downloads those assets from `wanaku-ai/wanaku-barn`. Set `WANAKU_BARN_REF` to a branch, tag or commit
+(default: `main`) to select the source version. To use an existing checkout instead, explicitly set
+`WANAKU_REPO_ROOT` to its root; an invalid explicit path fails rather than triggering a download. Downloaded
+sources are isolated in a temporary directory and removed after Helm teardown in Step 10.1.
+
+Supply `WANAKU_KEYCLOAK_ADMIN_CLI` if its executable is not named `wanaku-keycloak-admin`. Both CLIs must already
+exist in the worker; the plan does not build or download executable binaries.
+
 All image tags default to `latest` and can be overridden. The setup phase sets the environment variables after
 Step 1.1 creates and verifies the unique `WANAKU_NAMESPACE` for this run.
 
@@ -81,17 +98,17 @@ Log in to the target OpenShift cluster using the token for the provisioned `wana
 Follow [common/openshift-login.md](common/openshift-login.md).
 
 After the login procedure, verify the exact identity before creating the test namespace. Reject personal accounts
-and other service accounts. Run this block as a separate `bash` script, not in the shared session.
+and other service accounts. Run this block in the shared Bash session.
 
-```bash
+```bash run
 EXPECTED_IDENTITY="system:serviceaccount:${WANAKU_SA_NAMESPACE:-wanaku-test-infra}:wanaku-test-runner"
 if ! ACTUAL_IDENTITY=$(oc whoami 2>/dev/null); then
   echo "FAIL: cannot verify the logged-in service account"
-  exit 1
+  return 1
 fi
 if [ "${ACTUAL_IDENTITY}" != "${EXPECTED_IDENTITY}" ]; then
   echo "FAIL: logged-in identity is not the configured wanaku-test-runner service account"
-  exit 1
+  return 1
 fi
 echo "PASS: logged in as the configured wanaku-test-runner service account"
 ```
@@ -120,13 +137,62 @@ Follow [common/namespace-setup.md](common/namespace-setup.md).
 
 ## Phase S: Setup
 
+### Step S.0: Prepare the operator Helm chart and realm configuration
+
+Reuse a supplied Wanaku Barn checkout, or download its source archive from the official repository. Keep the
+chart available through Helm teardown. Run this block in the shared Bash session.
+
+```bash run
+WANAKU_DOWNLOADED_SOURCE_DIR=""
+export WANAKU_BARN_REF="${WANAKU_BARN_REF:-main}"
+if [ -n "${WANAKU_REPO_ROOT+x}" ]; then
+  if [ ! -r "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_REPO_ROOT}/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL: supplied WANAKU_REPO_ROOT lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT
+  echo "PASS: existing Wanaku Barn source assets reused"
+elif [ -r "./apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+    && [ -r "./deploy/auth/wanaku-config.json" ]; then
+  export WANAKU_REPO_ROOT="${PWD}"
+  echo "PASS: existing Wanaku Barn source assets reused"
+else
+  for CMD in curl tar; do
+    command -v "${CMD}" > /dev/null 2>&1 || { echo "FAIL: ${CMD} is required to download source assets"; return 1; }
+  done
+  WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
+  mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
+  curl --fail --location --connect-timeout 10 --max-time 120 \
+    "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
+    --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    || { echo "FAIL: Wanaku Barn source archive download failed"; return 1; }
+  tar -xzf "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    --strip-components=1 -C "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" \
+    || { echo "FAIL: Wanaku Barn source archive extraction failed"; return 1; }
+  if [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL: downloaded source lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT="${WANAKU_DOWNLOADED_SOURCE_DIR}/repo"
+  echo "PASS: Wanaku Barn source assets downloaded"
+fi
+```
+
+**Expected result:**
+
+- The output includes `PASS: existing Wanaku Barn source assets reused` or `PASS: Wanaku Barn source assets downloaded`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
 ### Test S.1: Prerequisite check script
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
-for CMD in oc helm curl jq openssl base64; do
+for CMD in oc helm curl jq openssl tar; do
   if ! command -v "${CMD}" > /dev/null 2>&1; then
     echo "FAIL: ${CMD} is not installed"
     FAIL=1
@@ -142,7 +208,24 @@ else
   echo "PASS: the Wanaku CLI runs"
 fi
 
-[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: one or more prerequisites missing"; exit 1; }
+if ! ${WANAKU_KEYCLOAK_ADMIN_CLI:-wanaku-keycloak-admin} --help > /dev/null 2>&1; then
+  echo "FAIL: the Keycloak admin CLI does not run"
+  FAIL=1
+else
+  echo "PASS: the Keycloak admin CLI runs"
+fi
+
+for ASSET in "${WANAKU_REPO_ROOT:-.}/deploy/auth/wanaku-config.json" \
+    "${WANAKU_REPO_ROOT:-.}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml"; do
+  if [ -r "${ASSET}" ]; then
+    echo "PASS: required deployment asset is readable: ${ASSET}"
+  else
+    echo "FAIL: required deployment asset is missing or unreadable: ${ASSET}"
+    FAIL=1
+  fi
+done
+
+[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: one or more prerequisites missing"; return 1; }
 ```
 
 **Expected result:**
@@ -152,8 +235,10 @@ fi
 - The output includes `PASS: curl found at`.
 - The output includes `PASS: jq found at`.
 - The output includes `PASS: openssl found at`.
-- The output includes `PASS: base64 found at`.
+- The output includes `PASS: tar found at`.
 - The output includes `PASS: the Wanaku CLI runs`.
+- The output includes `PASS: the Keycloak admin CLI runs`.
+- The output includes `PASS: required deployment asset is readable:` for the realm configuration and operator chart.
 - The output includes `PASS: all prerequisites met`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
@@ -242,7 +327,7 @@ start_barn_port_forward() {
     -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 &
   BARN_PF_PID=$!
   for i in $(seq 1 30); do
-    if curl -s -o /dev/null -f "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; then
+    if curl --connect-timeout 1 --max-time 2 -s -o /dev/null -f "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; then
       echo "PASS: Barn reachable at http://localhost:${BARN_LOCAL_PORT} (attempt ${i})"
       export WANAKU_BARN_URL="http://localhost:${BARN_LOCAL_PORT}"
       return 0
@@ -278,14 +363,14 @@ Follow [common/keycloak-setup.md](common/keycloak-setup.md).
 Keycloak is used only in Phase 6. After completion,
 verify these variables are set:
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 for VAR_NAME in KEYCLOAK_URL WANAKU_CLIENT_SECRET WANAKU_AUTH_SECRET_NAME WANAKU_AUTH_ISSUER_URL WANAKU_AUTH_INTERNAL_ISSUER_URL WANAKU_TEST_USER WANAKU_TEST_PASS; do
   eval "VAL=\${${VAR_NAME}}"
   if [ -z "${VAL}" ]; then
     echo "FAIL: ${VAR_NAME} is not set"
-    exit 1
+    return 1
   fi
   echo "PASS: ${VAR_NAME} is set"
 done
@@ -366,7 +451,7 @@ oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180
 **Description:** `Ready` is `True` only when every other condition is `True`. Without authentication, `AuthConfigured`
 is `True` with the reason `AuthDisabled`, and the operator records one `Warning` event.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -394,7 +479,7 @@ oc get events -n "${WANAKU_NAMESPACE}" --field-selector "involvedObject.name=${W
   && echo "PASS: Warning event AuthDisabled recorded" \
   || echo "WARN: no AuthDisabled Warning event found (events may have expired)"
 
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -416,7 +501,7 @@ oc get events -n "${WANAKU_NAMESPACE}" --field-selector "involvedObject.name=${W
 **Description:** The operator creates the `<router>-server` Deployment with the requested image, the global pull
 policy, the persistence settings and the `/healthz` probes on the named `management` port.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 DEPLOYMENT="${WANAKU_ROUTER_NAME}-server"
@@ -442,7 +527,7 @@ check "wanaku.yaml mount" "$(dep_jsonpath '{.spec.template.spec.containers[0].vo
   && echo "PASS: pod template has the wanaku.ai/server-config-hash annotation" \
   || { echo "FAIL: wanaku.ai/server-config-hash annotation missing"; FAIL=1; }
 
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -469,18 +554,18 @@ check "wanaku.yaml mount" "$(dep_jsonpath '{.spec.template.spec.containers[0].vo
 
 **Description:** The `server-<router>` ClusterIP Service exposes the four listener ports.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 SVC="server-${WANAKU_ROUTER_NAME}"
 SVC_TYPE=$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.type}')
-[ "${SVC_TYPE}" = "ClusterIP" ] && echo "PASS: ${SVC} is ClusterIP" || { echo "FAIL: ${SVC} type is '${SVC_TYPE}'"; exit 1; }
+[ "${SVC_TYPE}" = "ClusterIP" ] && echo "PASS: ${SVC} is ClusterIP" || { echo "FAIL: ${SVC} type is '${SVC_TYPE}'"; return 1; }
 
 PORTS=$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{range .spec.ports[*]}{.name}={.port}{" "}{end}')
 echo "ports: ${PORTS}"
 for EXPECTED in management=8080 mcp=8081 inference=8083 a2a=8084; do
-  echo " ${PORTS} " | grep -q " ${EXPECTED} " && echo "PASS: port ${EXPECTED}" || { echo "FAIL: port ${EXPECTED} missing"; exit 1; }
+  echo " ${PORTS} " | grep -q " ${EXPECTED} " && echo "PASS: port ${EXPECTED}" || { echo "FAIL: port ${EXPECTED} missing"; return 1; }
 done
 ```
 
@@ -499,7 +584,7 @@ done
 **Description:** With `spec.barn.enabled: true`, the operator creates the `<router>-barn` Deployment and the
 `barn-<router>` Service. Barn listens on 8180. The Service exposes 8080. The probes use the Quarkus health endpoints.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 DEPLOYMENT="${WANAKU_ROUTER_NAME}-barn"
@@ -521,7 +606,7 @@ check "Barn Service port" "$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o
 check "Barn Service targetPort" "$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].targetPort}')" "8180"
 check "status.barnUrl" "$(router_jsonpath '{.status.barnUrl}')" "http://barn-${WANAKU_ROUTER_NAME}:8080"
 
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -545,7 +630,7 @@ check "status.barnUrl" "$(router_jsonpath '{.status.barnUrl}')" "http://barn-${W
 **Description:** The Server stores `registry.json` on the `server-volume-claim` PVC. Barn stores its data on the
 `<router>-barn-data` PVC, with the size from `spec.barn.storage.size`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -554,7 +639,7 @@ for PVC in server-volume-claim "${WANAKU_ROUTER_NAME}-barn-data"; do
   check "PVC ${PVC} phase" "${PHASE}" "Bound"
 done
 check "Barn PVC size" "$(oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.resources.requests.storage}')" "1Gi"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -570,7 +655,7 @@ check "Barn PVC size" "$(oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANA
 **Description:** The operator writes `<router>-server-config`. Its `wanaku.yaml` points the `wanaku-barn` plugin
 service `wanaku-barn-api` at the Barn Service.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 CONFIG=$(oc get configmap "${WANAKU_ROUTER_NAME}-server-config" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}')
@@ -580,7 +665,7 @@ for TEXT in "id: wanaku-barn" "wanaku-barn-api:" "target: http://barn-${WANAKU_R
   echo "${CONFIG}" | grep -q "${TEXT}" && echo "PASS: wanaku.yaml contains '${TEXT}'" \
     || { echo "FAIL: wanaku.yaml does not contain '${TEXT}'"; FAIL=1; }
 done
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -597,7 +682,7 @@ done
 `/` to the management port 8080. The `<router>-mcp` Route sends `/` to the MCP port 8081. Both use edge TLS
 termination with a redirect from HTTP.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -613,7 +698,7 @@ for ENTRY in "${WANAKU_ROUTER_NAME}:8080" "${WANAKU_ROUTER_NAME}-mcp:8081"; do
   check "Route ${ROUTE} TLS" "$(route_jsonpath '{.spec.tls.termination}')" "edge"
   check "Route ${ROUTE} admitted" "$(route_jsonpath '{.status.ingress[0].conditions[?(@.type=="Admitted")].status}')" "True"
 done
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 
 export WANAKU_ROUTER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
 export WANAKU_ROUTER_MCP_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
@@ -643,7 +728,7 @@ echo "mcp:        ${WANAKU_ROUTER_MCP_URL}"
 **Description:** `status.host` contains the management URL. `status.endpoints` contains one URL per exposed listener
 and, for the standard Server variant, the admin UI URL.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -658,7 +743,7 @@ case "${STREAMABLE}" in
   "https://${MCP_HOST}/"*) echo "PASS: status.streamableEndpoint=${STREAMABLE}" ;;
   *) echo "FAIL: status.streamableEndpoint='${STREAMABLE}'"; FAIL=1 ;;
 esac
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 > [!WARNING]
@@ -682,7 +767,7 @@ esac
 **Description:** All operator-managed resources have an owner reference to the `WanakuRouter`. Kubernetes uses it to
 delete them in Phase 9.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 ROUTER_UID=$(router_jsonpath '{.metadata.uid}')
@@ -701,7 +786,7 @@ for DEPLOYMENT in "${WANAKU_ROUTER_NAME}-server" "${WANAKU_ROUTER_NAME}-barn"; d
     "$(oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" \
     "wanaku-operator"
 done
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -732,18 +817,18 @@ Authentication is disabled in this phase. Use `--no-auth` for the CLI.
 **Description:** `GET /health` and `GET /healthz` return `200` with the response envelope `{"data":{"status":"ok"},"error":null}`.
 `curl` is used because this test checks HTTP-level behavior.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 for PATH_SUFFIX in /health /healthz; do
-  BODY=$(curl -s ${CURL_TLS_OPTS} -w '\n%{http_code}' "${WANAKU_ROUTER_URL}${PATH_SUFFIX}")
+  BODY=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -w '\n%{http_code}' "${WANAKU_ROUTER_URL}${PATH_SUFFIX}")
   CODE=$(echo "${BODY}" | tail -1)
   STATUS=$(echo "${BODY}" | sed '$d' | jq -r '.data.status' 2>/dev/null)
   if [ "${CODE}" = "200" ] && [ "${STATUS}" = "ok" ]; then
     echo "PASS: ${PATH_SUFFIX} returns 200 and status ok"
   else
     echo "FAIL: ${PATH_SUFFIX} returned HTTP ${CODE}, status '${STATUS}'"
-    exit 1
+    return 1
   fi
 done
 ```
@@ -759,7 +844,7 @@ done
 
 **Description:** The CLI lists the namespaces through the management Route. The `default` namespace always exists.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} namespaces list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -769,7 +854,7 @@ if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "^default"; then
   echo "PASS: namespace 'default' listed through ${WANAKU_ROUTER_URL}"
 else
   echo "FAIL: namespaces list failed (exit code ${EXIT_CODE})"
-  exit 1
+  return 1
 fi
 ```
 
@@ -783,7 +868,7 @@ fi
 
 **Description:** Namespace names are DNS labels. The Server rejects a name with uppercase letters or underscores.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 export OP_TEST_NAMESPACE="${OP_TEST_NAMESPACE:-op-test-ns}"
@@ -792,7 +877,7 @@ OUTPUT=$(${WANAKU_CLI} namespaces create "${OP_TEST_NAMESPACE}" --host "${WANAKU
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "Namespace created: ${OP_TEST_NAMESPACE}" \
   && echo "PASS: namespace ${OP_TEST_NAMESPACE} created" \
-  || { echo "FAIL: namespace ${OP_TEST_NAMESPACE} not created"; exit 1; }
+  || { echo "FAIL: namespace ${OP_TEST_NAMESPACE} not created"; return 1; }
 
 # Negative test
 OUTPUT=$(${WANAKU_CLI} namespaces create "Bad_NS" --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth 2>&1)
@@ -802,7 +887,7 @@ if [ "${EXIT_CODE}" -ne 0 ] && echo "${OUTPUT}" | grep -q "lowercase alphanumeri
   echo "PASS: invalid namespace name rejected"
 else
   echo "FAIL: invalid namespace name was not rejected (exit code ${EXIT_CODE})"
-  exit 1
+  return 1
 fi
 ```
 
@@ -818,18 +903,18 @@ fi
 **Description:** The MCP endpoint is `<mcp-route>/<namespace>/mcp` (Streamable HTTP). No forward exists, so the tool
 list is empty. The bare `/mcp` path is rejected with the JSON-RPC error `-32600`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 EXIT_CODE=$?
 echo "${OUTPUT}"
 [ "${EXIT_CODE}" -eq 0 ] && echo "PASS: MCP endpoint ${WANAKU_ROUTER_MCP_URL}/default/mcp answers" \
-  || { echo "FAIL: MCP tool list failed (exit code ${EXIT_CODE})"; exit 1; }
+  || { echo "FAIL: MCP tool list failed (exit code ${EXIT_CODE})"; return 1; }
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${OP_TEST_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 [ $? -eq 0 ] && echo "PASS: namespace endpoint /${OP_TEST_NAMESPACE}/mcp answers" \
-  || { echo "FAIL: namespace endpoint failed: ${OUTPUT}"; exit 1; }
+  || { echo "FAIL: namespace endpoint failed: ${OUTPUT}"; return 1; }
 
 # Negative test: bare /mcp
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -838,7 +923,7 @@ if [ "${EXIT_CODE}" -ne 0 ] && echo "${OUTPUT}" | grep -q "invalid MCP endpoint 
   echo "PASS: bare /mcp rejected (-32600 invalid MCP endpoint path)"
 else
   echo "FAIL: bare /mcp was not rejected (exit code ${EXIT_CODE}): ${OUTPUT}"
-  exit 1
+  return 1
 fi
 ```
 
@@ -856,16 +941,16 @@ fi
 proxies `/api/plugins/wanaku-barn/wanaku-barn-api/...` to `http://barn-<router>:8080`. `curl` is used because this
 test checks HTTP-level routing.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-CODE=$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/admin/")
-[ "${CODE}" = "200" ] && echo "PASS: admin UI returns 200" || { echo "FAIL: admin UI returned HTTP ${CODE}"; exit 1; }
+CODE=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/admin/")
+[ "${CODE}" = "200" ] && echo "PASS: admin UI returns 200" || { echo "FAIL: admin UI returned HTTP ${CODE}"; return 1; }
 
-CODE=$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' \
+CODE=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' \
   "${WANAKU_ROUTER_URL}/api/plugins/wanaku-barn/wanaku-barn-api/api/v1/service-catalog")
 [ "${CODE}" = "200" ] && echo "PASS: the Server proxies the Barn service catalog API" \
-  || { echo "FAIL: Barn plugin proxy returned HTTP ${CODE} (404 'service wanaku-barn-api not found' means the wanaku.yaml is not loaded)"; exit 1; }
+  || { echo "FAIL: Barn plugin proxy returned HTTP ${CODE} (404 'service wanaku-barn-api not found' means the wanaku.yaml is not loaded)"; return 1; }
 ```
 
 **Expected result:**
@@ -877,16 +962,16 @@ CODE=$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' \
 
 ### Test 4.6: Verify Barn with the CLI
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-start_barn_port_forward || exit 1
+start_barn_port_forward || return 1
 
 OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 EXIT_CODE=$?
 echo "${OUTPUT}"
 [ "${EXIT_CODE}" -eq 0 ] && echo "PASS: the CLI can list the Barn service catalogs" \
-  || { echo "FAIL: service catalog list failed (exit code ${EXIT_CODE})"; stop_barn_port_forward; exit 1; }
+  || { echo "FAIL: service catalog list failed (exit code ${EXIT_CODE})"; stop_barn_port_forward; return 1; }
 
 stop_barn_port_forward
 ```
@@ -903,7 +988,7 @@ stop_barn_port_forward
 **Description:** The Server writes `registry.json` to `/data/registry` on the `server-volume-claim` PVC. A namespace
 created in Test 4.3 must still exist after the pod is replaced.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OLD_POD=$(oc get pods -l "app=${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
@@ -915,7 +1000,7 @@ oc wait pod -l "app=${WANAKU_ROUTER_NAME}-server" --for=condition=Ready --timeou
 OUTPUT=$(${WANAKU_CLI} namespaces list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "^${OP_TEST_NAMESPACE}" \
   && echo "PASS: namespace ${OP_TEST_NAMESPACE} persisted across the pod restart" \
-  || { echo "FAIL: namespace ${OP_TEST_NAMESPACE} lost after the pod restart"; echo "${OUTPUT}"; exit 1; }
+  || { echo "FAIL: namespace ${OP_TEST_NAMESPACE} lost after the pod restart"; echo "${OUTPUT}"; return 1; }
 ```
 
 **Expected result:**
@@ -934,7 +1019,7 @@ echo "${OUTPUT}" | grep -q "^${OP_TEST_NAMESPACE}" \
 **Description:** `wanaku service package` writes the Base64-encoded ZIP that the operator expects under the
 `catalog.zip` key.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 export OP_CATALOG_NAME="${OP_CATALOG_NAME:-op-test-catalog}"
@@ -961,7 +1046,7 @@ cat > "${TEMP_DIR}/catalog/${OP_CATALOG_NAME}/${OP_CATALOG_NAME}.camel.yaml" <<'
 ROUTES
 
 ${WANAKU_CLI} service package --path="${TEMP_DIR}/catalog" -o "${TEMP_DIR}/catalog.b64"
-[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; exit 1; }
+[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; return 1; }
 
 oc create configmap op-test-catalog-data --from-file=catalog.zip="${TEMP_DIR}/catalog.b64" \
   --dry-run=client -o yaml | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -986,7 +1071,7 @@ echo "configmap-has-catalog-zip=$?"
 
 ### Test 5.2: Create a WanakuServiceCatalog
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -1001,12 +1086,12 @@ spec:
       configMapRef: op-test-catalog-data
 EOF
 
-wait_cr_condition wanakuservicecatalog op-test-service-catalogs Ready True ReconciliationSucceeded || exit 1
+wait_cr_condition wanakuservicecatalog op-test-service-catalogs Ready True ReconciliationSucceeded || return 1
 
 DEPLOYED=$(oc get wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.deployedCatalogs[*]}')
 echo " ${DEPLOYED} " | grep -q " ${OP_CATALOG_NAME} " \
   && echo "PASS: ${OP_CATALOG_NAME} listed in status.deployedCatalogs" \
-  || { echo "FAIL: status.deployedCatalogs is '${DEPLOYED}'"; exit 1; }
+  || { echo "FAIL: status.deployedCatalogs is '${DEPLOYED}'"; return 1; }
 ```
 
 **Expected result:**
@@ -1018,16 +1103,16 @@ echo " ${DEPLOYED} " | grep -q " ${OP_CATALOG_NAME} " \
 
 ### Test 5.3: Verify the catalog is stored in Barn
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-start_barn_port_forward || exit 1
+start_barn_port_forward || return 1
 OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 stop_barn_port_forward
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
   && echo "PASS: ${OP_CATALOG_NAME} is stored in Barn" \
-  || { echo "FAIL: ${OP_CATALOG_NAME} not found in Barn"; exit 1; }
+  || { echo "FAIL: ${OP_CATALOG_NAME} not found in Barn"; return 1; }
 ```
 
 **Expected result:**
@@ -1039,7 +1124,7 @@ echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
 
 ### Test 5.4: Negative test - missing ConfigMap
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -1054,7 +1139,7 @@ spec:
       configMapRef: this-configmap-does-not-exist
 EOF
 
-wait_cr_condition wanakuservicecatalog op-bad-missing-configmap Ready False DeploymentError || exit 1
+wait_cr_condition wanakuservicecatalog op-bad-missing-configmap Ready False DeploymentError || return 1
 oc get wanakuservicecatalog op-bad-missing-configmap -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "this-configmap-does-not-exist" \
   && echo "PASS: the message names the missing ConfigMap" || echo "FAIL: the message does not name the ConfigMap"
@@ -1070,7 +1155,7 @@ oc delete wanakuservicecatalog op-bad-missing-configmap -n "${WANAKU_NAMESPACE}"
 
 ### Test 5.5: Negative test - ConfigMap without the catalog.zip key
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -1085,7 +1170,7 @@ spec:
       configMapRef: op-test-catalog-nokey
 EOF
 
-wait_cr_condition wanakuservicecatalog op-bad-no-key Ready False DeploymentError || exit 1
+wait_cr_condition wanakuservicecatalog op-bad-no-key Ready False DeploymentError || return 1
 oc get wanakuservicecatalog op-bad-no-key -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "catalog.zip" \
   && echo "PASS: the message names the missing catalog.zip key" || echo "FAIL: the message does not name catalog.zip"
@@ -1101,7 +1186,7 @@ oc delete wanakuservicecatalog op-bad-no-key -n "${WANAKU_NAMESPACE}" --ignore-n
 
 ### Test 5.6: Negative test - non-existent routerRef
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -1116,7 +1201,7 @@ spec:
       configMapRef: op-test-catalog-data
 EOF
 
-wait_cr_condition wanakuservicecatalog op-bad-router-ref Ready False ValidationError || exit 1
+wait_cr_condition wanakuservicecatalog op-bad-router-ref Ready False ValidationError || return 1
 oc delete wanakuservicecatalog op-bad-router-ref -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 ```
 
@@ -1136,16 +1221,16 @@ oc delete wanakuservicecatalog op-bad-router-ref -n "${WANAKU_NAMESPACE}" --igno
 **Description:** `spec.auth.issuerUrl` and `spec.auth.secretName` are required when `spec.auth.enabled` is `true`.
 Validation fails before the operator changes any resource.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge \
   -p "{\"spec\":{\"auth\":{\"enabled\":true,\"secretName\":\"${WANAKU_AUTH_SECRET_NAME}\"}}}"
 
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || return 1
 router_jsonpath '{.status.conditions[?(@.type=="Reconciled")].message}' | grep -q "spec.auth.issuerUrl is required" \
   && echo "PASS: the message names spec.auth.issuerUrl" || echo "FAIL: unexpected validation message"
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready False ValidationError || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready False ValidationError || return 1
 ```
 
 **Expected result:**
@@ -1160,18 +1245,18 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready False ValidationErr
 
 **Description:** The operator does not deploy the oauth2-proxy Deployment while the Secret is missing.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge \
   -p "{\"spec\":{\"auth\":{\"enabled\":true,\"issuerUrl\":\"${WANAKU_AUTH_ISSUER_URL}\",\"internalIssuerUrl\":\"${WANAKU_AUTH_INTERNAL_ISSUER_URL}\",\"clientId\":\"wanaku-mcp-router\",\"secretName\":\"op-missing-secret\"}}}"
 
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured False SecretNotFound || exit 1
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready False || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured False SecretNotFound || return 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready False || return 1
 
 if oc get deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1; then
   echo "FAIL: oauth2-proxy Deployment exists although the Secret is missing"
-  exit 1
+  return 1
 fi
 echo "PASS: no oauth2-proxy Deployment without a valid Secret"
 ```
@@ -1186,7 +1271,7 @@ echo "PASS: no oauth2-proxy Deployment without a valid Secret"
 
 ### Test 6.3: Negative test - invalid cookie secret
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc create secret generic op-bad-cookie-secret \
@@ -1198,7 +1283,7 @@ oc label secret op-bad-cookie-secret wanaku-test=true --overwrite -n "${WANAKU_N
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge \
   -p '{"spec":{"auth":{"secretName":"op-bad-cookie-secret"}}}'
 
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured False InvalidCookieSecret || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured False InvalidCookieSecret || return 1
 ```
 
 **Expected result:**
@@ -1212,20 +1297,20 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured False Inva
 **Description:** With the Secret from [common/keycloak-setup.md](common/keycloak-setup.md) step 9, the operator
 deploys the two oauth2-proxy containers and points both Routes at the proxy Service.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge \
   -p "{\"spec\":{\"auth\":{\"secretName\":\"${WANAKU_AUTH_SECRET_NAME}\"}}}"
 
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured True Configured || exit 1
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthProxyAvailable True Available || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured True Configured || return 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthProxyAvailable True Available || return 1
 oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
 ```
 
 **Verification - oauth2-proxy resources:**
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -1251,7 +1336,7 @@ check "MCP Route port" "$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_
 SERVER_ENV='{.spec.template.spec.containers[0].env[?(@.name=="%s")].value}'
 check "WANAKU_AUTH_ISSUER" "$(oc get deployment "${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}" -o jsonpath="$(printf "${SERVER_ENV}" WANAKU_AUTH_ISSUER)")" "${WANAKU_AUTH_ISSUER_URL}"
 check "WANAKU_AUTH_UPSTREAM_ISSUER" "$(oc get deployment "${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}" -o jsonpath="$(printf "${SERVER_ENV}" WANAKU_AUTH_UPSTREAM_ISSUER)")" "${WANAKU_AUTH_INTERNAL_ISSUER_URL}"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1277,17 +1362,17 @@ check "WANAKU_AUTH_UPSTREAM_ISSUER" "$(oc get deployment "${WANAKU_ROUTER_NAME}-
 **Description:** Health endpoints do not need a token. Management API and MCP requests without a token get `401`.
 They are not redirected to the login page. `curl` is used because this test checks HTTP status codes.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
-check "/health without token" "$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/health")" "200"
-check "/api/v1/namespaces without token" "$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/api/v1/namespaces")" "401"
-check "/default/mcp without token" "$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' -X POST \
+check "/health without token" "$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/health")" "200"
+check "/api/v1/namespaces without token" "$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/api/v1/namespaces")" "401"
+check "/default/mcp without token" "$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' -X POST \
   -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}' \
   "${WANAKU_ROUTER_MCP_URL}/default/mcp")" "401"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1305,15 +1390,15 @@ check "/default/mcp without token" "$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '
 document at `/.well-known/oauth-authorization-server`. Without `WANAKU_AUTH_ISSUER`, the list is empty. The proxy lets
 `/.well-known/*` pass without a token.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 MCP_HOST=$(echo "${WANAKU_ROUTER_MCP_URL}" | sed 's|^https://||')
-BODY=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_MCP_URL}/.well-known/oauth-protected-resource/default/mcp")
+BODY=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_MCP_URL}/.well-known/oauth-protected-resource/default/mcp")
 echo "${BODY}"
 echo "${BODY}" | jq -e '.authorization_servers | length > 0' > /dev/null \
   && echo "PASS: authorization_servers is not empty" \
-  || { echo "FAIL: authorization_servers is empty (WANAKU_AUTH_ISSUER not applied?)"; exit 1; }
+  || { echo "FAIL: authorization_servers is empty (WANAKU_AUTH_ISSUER not applied?)"; return 1; }
 echo "${BODY}" | jq -r '.authorization_servers[0]' | grep -q "${MCP_HOST}" \
   && echo "PASS: authorization server is the MCP host" \
   || echo "FAIL: authorization server is not ${MCP_HOST}"
@@ -1344,16 +1429,16 @@ without a token fails.
 
 ### Test 6.8: Verify the token through the MCP proxy
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --plain 2>&1)
-[ $? -eq 0 ] && echo "PASS: MCP proxy accepts the token" || { echo "FAIL: MCP proxy rejected the token: ${OUTPUT}"; exit 1; }
+[ $? -eq 0 ] && echo "PASS: MCP proxy accepts the token" || { echo "FAIL: MCP proxy rejected the token: ${OUTPUT}"; return 1; }
 
 # Negative test: no token
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 [ $? -ne 0 ] && echo "PASS: MCP proxy rejects requests without a token" \
-  || { echo "FAIL: MCP proxy accepted a request without a token"; exit 1; }
+  || { echo "FAIL: MCP proxy accepted a request without a token"; return 1; }
 ```
 
 **Expected result:**
@@ -1368,7 +1453,7 @@ OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp
 **Description:** The operator stores the Secret `resourceVersion` in the `wanaku.ai/auth-secret-version` pod
 annotation. A Secret change rolls the proxy pods.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 PROXY="${WANAKU_ROUTER_NAME}-oauth2-proxy"
@@ -1388,7 +1473,7 @@ for i in $(seq 1 30); do
   sleep 3
 done
 [ "${NEW_VERSION}" != "${OLD_VERSION}" ] && echo "PASS: auth-secret-version changed (${OLD_VERSION} -> ${NEW_VERSION})" \
-  || { echo "FAIL: auth-secret-version did not change"; exit 1; }
+  || { echo "FAIL: auth-secret-version did not change"; return 1; }
 oc rollout status "deployment/${PROXY}" --timeout=180s -n "${WANAKU_NAMESPACE}"
 ```
 
@@ -1405,7 +1490,7 @@ oc rollout status "deployment/${PROXY}" --timeout=180s -n "${WANAKU_NAMESPACE}"
 
 ### Test 7.1: Add an environment variable to the Server
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge \
@@ -1417,7 +1502,7 @@ for i in $(seq 1 30); do
   [ "${VALUE}" = "info" ] && break
   sleep 3
 done
-[ "${VALUE}" = "info" ] && echo "PASS: RUST_LOG added to the Server Deployment" || { echo "FAIL: RUST_LOG='${VALUE}'"; exit 1; }
+[ "${VALUE}" = "info" ] && echo "PASS: RUST_LOG added to the Server Deployment" || { echo "FAIL: RUST_LOG='${VALUE}'"; return 1; }
 oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "${WANAKU_NAMESPACE}"
 ```
 
@@ -1432,20 +1517,20 @@ oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "$
 **Description:** An invalid `spec.server.variant` or `spec.exposure.type` sets `Reconciled=False` with the reason
 `ValidationError`. The operator does not change the workloads.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"server":{"variant":"invalid"}}}'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || return 1
 router_jsonpath '{.status.conditions[?(@.type=="Reconciled")].message}' | grep -q "spec.server.variant must be standard or headless" \
   && echo "PASS: variant validation message" || echo "FAIL: unexpected validation message"
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=json -p '[{"op":"remove","path":"/spec/server/variant"}]'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || return 1
 
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"exposure":{"type":"Bogus"}}}'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Reconciled False ValidationError || return 1
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=json -p '[{"op":"remove","path":"/spec/exposure"}]'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || return 1
 ```
 
 **Expected result:**
@@ -1463,17 +1548,17 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || exit 1
 **Description:** With `spec.barn.enabled: false`, the operator deletes the Barn Deployment, the Barn Service and the
 Server configuration ConfigMap. It keeps the Barn PVC. A `WanakuServiceCatalog` for this router then fails validation.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":false}}}'
 
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 120 || exit 1
-wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || exit 1
-wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || exit 1
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 120 || return 1
+wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || return 1
+wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || return 1
 
 oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 \
-  && echo "PASS: Barn PVC kept" || { echo "FAIL: Barn PVC was deleted"; exit 1; }
+  && echo "PASS: Barn PVC kept" || { echo "FAIL: Barn PVC was deleted"; return 1; }
 
 oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
 [ -z "$(router_jsonpath '{.status.conditions[?(@.type=="BarnAvailable")].status}')" ] \
@@ -1492,7 +1577,7 @@ spec:
     - name: no-barn-catalog
       configMapRef: op-test-catalog-data
 EOF
-wait_cr_condition wanakuservicecatalog op-bad-no-barn Ready False ValidationError || exit 1
+wait_cr_condition wanakuservicecatalog op-bad-no-barn Ready False ValidationError || return 1
 oc get wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "spec.barn.enabled must be true" \
   && echo "PASS: the message names spec.barn.enabled" || echo "FAIL: unexpected message"
@@ -1514,19 +1599,19 @@ oc delete wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" --ignore-
 
 ### Test 7.4: Enable Wanaku Barn again and verify the data is kept
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":true}}}'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || return 1
 oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
 
-start_barn_port_forward || exit 1
+start_barn_port_forward || return 1
 OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 stop_barn_port_forward
 echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
   && echo "PASS: ${OP_CATALOG_NAME} is still in Barn after Barn was enabled again" \
-  || { echo "FAIL: Barn data was lost"; echo "${OUTPUT}"; exit 1; }
+  || { echo "FAIL: Barn data was lost"; echo "${OUTPUT}"; return 1; }
 ```
 
 **Expected result:**
@@ -1568,19 +1653,19 @@ RESTARTS=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.
 **Description:** The operator removes the deployed catalogs from Barn before it releases the resource. Barn keeps a
 removed catalog in its removed list, so it can be restored.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc delete wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=120s
-wait_for_deletion wanakuservicecatalog op-test-service-catalogs "${WANAKU_NAMESPACE}" 60 || exit 1
+wait_for_deletion wanakuservicecatalog op-test-service-catalogs "${WANAKU_NAMESPACE}" 60 || return 1
 
-start_barn_port_forward || exit 1
+start_barn_port_forward || return 1
 ACTIVE=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 REMOVED=$(${WANAKU_CLI} service removed --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 stop_barn_port_forward
 
 echo "${ACTIVE}" | grep -q "^${OP_CATALOG_NAME}" \
-  && { echo "FAIL: ${OP_CATALOG_NAME} is still an active catalog"; exit 1; } \
+  && { echo "FAIL: ${OP_CATALOG_NAME} is still an active catalog"; return 1; } \
   || echo "PASS: ${OP_CATALOG_NAME} is no longer an active catalog"
 echo "${REMOVED}" | grep -q "^${OP_CATALOG_NAME}" \
   && echo "PASS: ${OP_CATALOG_NAME} is in the Barn removed list" \
@@ -1603,7 +1688,7 @@ echo "${REMOVED}" | grep -q "^${OP_CATALOG_NAME}" \
 
 ### Test 9.1: Delete the router and verify the managed resources are removed
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}"
@@ -1620,7 +1705,7 @@ wait_for_deletion route "${WANAKU_ROUTER_NAME}-mcp" "${WANAKU_NAMESPACE}" 60 || 
 wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion pvc server-volume-claim "${WANAKU_NAMESPACE}" 120 || FAIL=1
 wait_for_deletion pvc "${WANAKU_ROUTER_NAME}-barn-data" "${WANAKU_NAMESPACE}" 120 || FAIL=1
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1654,11 +1739,17 @@ Follow [common/cleanup.md](common/cleanup.md).
 stop_barn_port_forward 2>/dev/null || true
 rm -rf "${WANAKU_CREDENTIALS}"
 echo "PASS: local credentials removed"
+if [ -n "${WANAKU_DOWNLOADED_SOURCE_DIR}" ]; then
+  rm -rf "${WANAKU_DOWNLOADED_SOURCE_DIR}" || return 1
+  unset WANAKU_DOWNLOADED_SOURCE_DIR
+fi
+echo "PASS: downloaded source assets removed or no download was owned"
 ```
 
 **Expected result:**
 
 - The output includes `PASS: local credentials removed`.
+- The output includes `PASS: downloaded source assets removed or no download was owned`.
 
 
 ---
@@ -1667,6 +1758,7 @@ echo "PASS: local credentials removed"
 
 | Phase | Test ID | Test Name                                                              | Priority |
 |-------|---------|------------------------------------------------------------------------|----------|
+| S     | S.0     | Prepare the operator Helm chart and realm configuration                 | Critical |
 | S     | S.1     | Prerequisite check script                                              | Critical |
 | S     | S.2     | Environment variables                                                  | Critical |
 | S     | S.3-S.5 | Deletion, condition and Barn port-forward helpers                      | Critical |

@@ -35,13 +35,14 @@ export WANAKU_OPERATOR_PULL_POLICY="${WANAKU_OPERATOR_PULL_POLICY:-Always}"
 
 ### Step 2: Verify the Helm chart exists
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 CHART_DIR="${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator"
 if [ ! -f "${CHART_DIR}/Chart.yaml" ]; then
   echo "FAIL: Helm chart not found at ${CHART_DIR}"
-  exit 1
+  return 1
 fi
 echo "PASS: Helm chart found"
 ```
@@ -97,14 +98,15 @@ oc wait deployment/wanaku-operator \
 
 ### Step 5: Verify the operator pod is running
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 OPERATOR_POD_STATUS=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
   -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].status.phase}')
 if [ "${OPERATOR_POD_STATUS}" != "Running" ]; then
   echo "FAIL: operator pod status is '${OPERATOR_POD_STATUS}', expected 'Running'"
-  exit 1
+  return 1
 fi
 echo "PASS: operator pod is Running"
 
@@ -112,7 +114,7 @@ OPERATOR_IMAGE=$(oc get deployment wanaku-operator -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.spec.template.spec.containers[0].image}')
 if [ "${OPERATOR_IMAGE}" != "${WANAKU_OPERATOR_IMAGE}" ]; then
   echo "FAIL: operator image is '${OPERATOR_IMAGE}', expected '${WANAKU_OPERATOR_IMAGE}'"
-  exit 1
+  return 1
 fi
 echo "PASS: operator image is ${OPERATOR_IMAGE}"
 
@@ -123,7 +125,7 @@ for CONTROLLER in ROUTER SERVICE_CATALOG SEMANTIC_ROUTER INTEGRATION; do
     -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"${ENV_NAME}\")].value}")
   if [ "${VALUE}" != "JOSDK_WATCH_CURRENT" ]; then
     echo "FAIL: ${ENV_NAME} is '${VALUE}', expected 'JOSDK_WATCH_CURRENT'"
-    exit 1
+    return 1
   fi
   echo "PASS: ${ENV_NAME}=${VALUE}"
 done
@@ -147,13 +149,14 @@ installed the CRDs, apply the current CRDs before you continue:
 `oc apply -f "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/crds/"`. A CRD that does not match
 the operator causes an empty `status` on the custom resources.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
   if ! oc get crd "${CRD}" > /dev/null 2>&1; then
     echo "FAIL: CRD ${CRD} not found"
-    exit 1
+    return 1
   fi
   echo "PASS: CRD ${CRD} exists"
 done
@@ -177,7 +180,8 @@ done
 
 ### Step 7: Verify RBAC resources were created
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 # Check ClusterRoles
@@ -185,7 +189,7 @@ for ROLE_SUFFIX in wanaku-router-cluster-role wanaku-service-catalog-cluster-rol
   ROLE_NAME="${WANAKU_NAMESPACE}-${ROLE_SUFFIX}"
   if ! oc get clusterrole "${ROLE_NAME}" > /dev/null 2>&1; then
     echo "FAIL: ClusterRole ${ROLE_NAME} not found"
-    exit 1
+    return 1
   fi
   echo "PASS: ClusterRole ${ROLE_NAME} exists"
 done
@@ -196,7 +200,7 @@ for CRB in crd-validating-role-binding wanaku-router-crd-validating-role-binding
     wanaku-integration-crd-validating-role-binding; do
   if ! oc get clusterrolebinding "${WANAKU_NAMESPACE}-${CRB}" > /dev/null 2>&1; then
     echo "FAIL: ClusterRoleBinding ${WANAKU_NAMESPACE}-${CRB} not found"
-    exit 1
+    return 1
   fi
   echo "PASS: ClusterRoleBinding ${WANAKU_NAMESPACE}-${CRB} exists"
 done
@@ -206,7 +210,7 @@ for RB in wanaku-operator-view wanaku-router-role-binding wanaku-service-catalog
     wanaku-semantic-router-role-binding wanaku-integration-role-binding; do
   if ! oc get rolebinding "${RB}" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1; then
     echo "FAIL: RoleBinding ${RB} not found"
-    exit 1
+    return 1
   fi
   echo "PASS: RoleBinding ${RB} exists"
 done
@@ -252,7 +256,8 @@ The operator Deployment uses the Quarkus health endpoints on port `8081` (`/q/he
 `/q/health/live`) as probes. The pod is Ready only when the readiness probe succeeds. The operator image does not need
 `curl` for this check.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 for PROBE in livenessProbe readinessProbe startupProbe; do
@@ -260,7 +265,7 @@ for PROBE in livenessProbe readinessProbe startupProbe; do
     -o jsonpath="{.spec.template.spec.containers[0].${PROBE}.httpGet.path}")
   case "${PROBE_PATH}" in
     /q/health/*) echo "PASS: ${PROBE} uses ${PROBE_PATH}" ;;
-    *) echo "FAIL: ${PROBE} path is '${PROBE_PATH}'"; exit 1 ;;
+    *) echo "FAIL: ${PROBE} path is '${PROBE_PATH}'"; return 1 ;;
   esac
 done
 

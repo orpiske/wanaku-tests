@@ -64,6 +64,12 @@ rules:
     resources: ["routes"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 
+  # The operator's role grants custom Route hosts; the test runner must hold
+  # these permissions before Helm can create that role.
+  - apiGroups: ["route.openshift.io"]
+    resources: ["routes/custom-host"]
+    verbs: ["create", "update"]
+
   # Ingresses
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses"]
@@ -72,6 +78,8 @@ rules:
   # Wanaku custom resources
   - apiGroups: ["wanaku.ai"]
     resources: ["wanakurouters", "wanakurouters/status", "wanakurouters/finalizers",
+                 "wanakuintegrations", "wanakuintegrations/status", "wanakuintegrations/finalizers",
+                 "wanakusemanticrouters", "wanakusemanticrouters/status", "wanakusemanticrouters/finalizers",
                  "wanakucapabilities", "wanakucapabilities/status", "wanakucapabilities/finalizers",
                  "wanakuservicecatalogs", "wanakuservicecatalogs/status", "wanakuservicecatalogs/finalizers",
                  "wanakucamelroutes", "wanakucamelroutes/status", "wanakucamelroutes/finalizers",

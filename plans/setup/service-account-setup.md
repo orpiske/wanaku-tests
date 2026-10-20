@@ -18,7 +18,7 @@ From the repository root:
 
 ```bash run
 # Create the service account and RBAC
-./tests/plans/setup/create-service-account.sh
+./plans/setup/create-service-account.sh
 
 # Save the token for CI or local use
 export OPENSHIFT_SA_TOKEN=$(oc create token wanaku-test-runner -n wanaku-test-infra --duration=8760h)
@@ -53,6 +53,13 @@ oc whoami
 | Read pod logs, exec into pods | Impersonate other users |
 | Manage ClusterRoles/Bindings (for Helm) | Access cluster infrastructure |
 
+The runner needs the permissions delegated by the operator chart, including `WanakuIntegration`,
+`WanakuSemanticRouter` and their status/finalizer subresources, and `create`/`update` on
+`routes/custom-host`. Otherwise Helm cannot create the operator's ClusterRoles. After updating this
+setup script, an administrator must rerun `./plans/setup/create-service-account.sh` to apply the updated
+role to an existing test service account. Existing tokens continue to use that role; do not run the
+bootstrap from the service-account test session.
+
 ## Token Management
 
 The `create-service-account.sh` script prints a token valid for 1 year. For CI systems, store it as a secret (e.g., GitHub Actions `OPENSHIFT_SA_TOKEN`). Reuse the same service-account namespace across runs unless you intentionally want to recreate the infrastructure.
@@ -77,8 +84,8 @@ oc create token wanaku-test-runner -n wanaku-test-infra --duration=8760h
 
 To remove the service account and all RBAC resources:
 
-```bash run
-./tests/plans/setup/teardown-service-account.sh
+```bash
+./plans/setup/teardown-service-account.sh
 ```
 
 **Expected result:**

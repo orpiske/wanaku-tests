@@ -48,13 +48,14 @@ echo "exit_code=$?"
 
 ### Step 3: Verify current context targets the correct namespace
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 CURRENT_NS=$(oc project -q)
 if [ "${CURRENT_NS}" != "${WANAKU_NAMESPACE}" ]; then
   echo "FAIL: current namespace is '${CURRENT_NS}', expected '${WANAKU_NAMESPACE}'"
-  exit 1
+  return 1
 fi
 echo "PASS: namespace is ${WANAKU_NAMESPACE}"
 ```

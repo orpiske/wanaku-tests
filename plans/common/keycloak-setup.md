@@ -6,17 +6,17 @@ Reusable steps for deploying and configuring Keycloak as the OIDC provider for W
 
 - Namespace created (see [namespace-setup.md](namespace-setup.md))
 - `WANAKU_NAMESPACE` environment variable set
-- `WANAKU_REPO_ROOT` environment variable set (path to the wanaku repository root)
+- `WANAKU_REPO_ROOT` points to the Wanaku Barn checkout containing `deploy/auth/wanaku-config.json`
 - `jq` available
 - `curl` available (only for Keycloak readiness polling — all Wanaku/Keycloak API calls use the CLI)
-- `wanaku` CLI available on `PATH`, **or** the project built with `mvn verify` (to use the jar directly)
+- `wanaku` and `wanaku-keycloak-admin` CLIs available, or their built JAR invocations configured
 
 ## Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `WANAKU_NAMESPACE` | Target namespace created for this run | `wanaku-test-<run-id>` |
-| `WANAKU_REPO_ROOT` | Path to the wanaku repository root | `.` |
+| `WANAKU_REPO_ROOT` | Path to the Wanaku Barn repository root | `.` |
 | `WANAKU_CLI` | Command to invoke the Wanaku CLI (see step 1) | `wanaku` |
 | `WANAKU_KEYCLOAK_ADMIN_CLI` | Command to invoke the Keycloak admin CLI, which provides the `realm`, `credentials` and `users` commands (see step 1) | `wanaku-keycloak-admin` |
 | `KEYCLOAK_ADMIN_USER` | Keycloak admin username | `admin` |
@@ -28,7 +28,7 @@ Reusable steps for deploying and configuring Keycloak as the OIDC provider for W
 
 ### Step 1: Set variables
 
-```bash
+```bash run
 export KEYCLOAK_ADMIN_USER="${KEYCLOAK_ADMIN_USER:-admin}"
 export KEYCLOAK_ADMIN_PASS="${KEYCLOAK_ADMIN_PASS:-admin}"
 export KEYCLOAK_IMAGE="${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.7}"
@@ -49,9 +49,13 @@ export WANAKU_KEYCLOAK_ADMIN_CLI="${WANAKU_KEYCLOAK_ADMIN_CLI:-wanaku-keycloak-a
 
 ### Step 2: Deploy Keycloak
 
-```bash
-DOMAIN=$(oc get ingresses.config.openshift.io cluster -o jsonpath='{.spec.domain}')
-KC_HOST="keycloak-${WANAKU_NAMESPACE}.${DOMAIN}"
+```bash run
+# Let OpenShift assign the hostname using only namespaced Route permissions.
+oc create route edge keycloak --service=keycloak --port=8080-tcp \
+  --insecure-policy=Redirect -n "${WANAKU_NAMESPACE}" --dry-run=client -o yaml \
+  | oc apply -n "${WANAKU_NAMESPACE}" -f - || return 1
+KC_HOST=$(oc get route keycloak -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}') || return 1
+[ -n "${KC_HOST}" ] || { echo "FAIL: OpenShift did not assign a Keycloak Route host"; return 1; }
 cat <<'KEYCLOAK_EOF' | sed "s|__KEYCLOAK_IMAGE__|${KEYCLOAK_IMAGE}|g; s|__ADMIN_USER__|${KEYCLOAK_ADMIN_USER}|g; s|__ADMIN_PASS__|${KEYCLOAK_ADMIN_PASS}|g; s|__KEYCLOAK_HOST__|${KC_HOST}|g" | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -124,25 +128,6 @@ spec:
     app: keycloak
   sessionAffinity: None
   type: ClusterIP
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: keycloak
-spec:
-  tls:
-    - {}
-  rules:
-    - host: __KEYCLOAK_HOST__
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: keycloak
-                port:
-                  number: 8080
 KEYCLOAK_EOF
 ```
 
@@ -152,9 +137,9 @@ KEYCLOAK_EOF
 
 ### Step 3: Wait for Keycloak to be ready
 
-```bash
+```bash run
 oc wait --for=condition=ready pod -l app=keycloak \
-  --timeout=300s \
+  --timeout=180s \
   -n "${WANAKU_NAMESPACE}"
 ```
 
@@ -166,8 +151,9 @@ oc wait --for=condition=ready pod -l app=keycloak \
 
 ### Step 4: Retrieve the Keycloak external host
 
-```bash
-export KEYCLOAK_HOST=$(oc get ingress keycloak -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.rules[0].host}')
+```bash run
+KEYCLOAK_HOST=$(oc get route keycloak -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}') || return 1
+export KEYCLOAK_HOST
 export KEYCLOAK_URL="https://${KEYCLOAK_HOST}"
 echo "Keycloak URL: ${KEYCLOAK_URL}"
 ```
@@ -180,35 +166,32 @@ echo "Keycloak URL: ${KEYCLOAK_URL}"
 
 **Verification:**
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
 if [ -z "${KEYCLOAK_HOST}" ]; then
-  echo "FAIL: could not retrieve Keycloak ingress host"
-  exit 1
+  echo "FAIL: could not retrieve Keycloak Route host"
+  return 1
 fi
 echo "PASS: Keycloak host is ${KEYCLOAK_HOST}"
 ```
 
 ### Step 5: Wait for Keycloak to respond
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
-MAX_RETRIES=30
-RETRY_INTERVAL=10
-for i in $(seq 1 ${MAX_RETRIES}); do
-  HTTP_CODE=$(curl -s -L -k -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/master" 2>/dev/null || echo "000")
-  if [ "${HTTP_CODE}" = "200" ]; then
-    echo "PASS: Keycloak is responding (attempt ${i})"
+```bash run
+KEYCLOAK_READY_DEADLINE=$(( $(date +%s) + 180 ))
+while [ "$(date +%s)" -lt "${KEYCLOAK_READY_DEADLINE}" ]; do
+  if curl --connect-timeout 2 --max-time 5 -f -s -L -k -o /dev/null "${KEYCLOAK_URL}/realms/master"; then
+    echo "PASS: Keycloak is responding"
     break
   fi
-  if [ "${i}" -eq "${MAX_RETRIES}" ]; then
-    echo "FAIL: Keycloak not responding after ${MAX_RETRIES} attempts"
-    exit 1
-  fi
-  echo "Waiting for Keycloak... (attempt ${i}, HTTP ${HTTP_CODE})"
-  sleep ${RETRY_INTERVAL}
+  [ $(( KEYCLOAK_READY_DEADLINE - $(date +%s) )) -gt 8 ] \
+    || { echo "FAIL: Keycloak not responding within 180 seconds"; return 1; }
+  sleep 3
 done
 ```
 
@@ -227,7 +210,7 @@ The Keycloak admin CLI (`wanaku-keycloak-admin`) imports a full realm configurat
 - The `mcp-client` client (public, for MCP clients)
 - All required roles, scopes, and service accounts
 
-```bash
+```bash run
 ${WANAKU_KEYCLOAK_ADMIN_CLI} realm create \
   --keycloak-url "${KEYCLOAK_URL}" \
   --admin-username "${KEYCLOAK_ADMIN_USER}" \
@@ -247,13 +230,14 @@ ${WANAKU_KEYCLOAK_ADMIN_CLI} realm create \
 
 **Verification:**
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash
-HTTP_CODE=$(curl -s -L -k -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/wanaku" 2>/dev/null || echo "000")
+HTTP_CODE=$(curl --connect-timeout 5 --max-time 15 -s -L -k -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/wanaku" 2>/dev/null || echo "000")
 if [ "${HTTP_CODE}" != "200" ]; then
   echo "FAIL: wanaku realm not accessible (HTTP ${HTTP_CODE})"
-  exit 1
+  return 1
 fi
 echo "PASS: wanaku realm is accessible"
 ```
@@ -264,9 +248,10 @@ The realm configuration sets the `wanaku-service` client secret via the Keycloak
 
 Retrieve the actual secret using the CLI:
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 CREDENTIALS_OUTPUT=$(${WANAKU_KEYCLOAK_ADMIN_CLI} credentials show \
   --keycloak-url "${KEYCLOAK_URL}" \
   --admin-username "${KEYCLOAK_ADMIN_USER}" \
@@ -282,7 +267,7 @@ export WANAKU_OIDC_SECRET="${CREDENTIALS_OUTPUT}"
 if [ -z "${WANAKU_OIDC_SECRET}" ] || [ "${WANAKU_OIDC_SECRET}" = "null" ]; then
   echo "FAIL: could not retrieve OIDC secret"
   echo "${CREDENTIALS_OUTPUT}"
-  exit 1
+  return 1
 fi
 echo "PASS: OIDC secret retrieved (length: ${#WANAKU_OIDC_SECRET})"
 ```
@@ -298,9 +283,10 @@ echo "PASS: OIDC secret retrieved (length: ${#WANAKU_OIDC_SECRET})"
 `wanaku auth login` uses the confidential `wanaku-mcp-router` client, because oauth2-proxy only accepts tokens carrying
 that client's audience. Export its secret so the CLI picks it up through `WANAKU_CLIENT_SECRET`:
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 export WANAKU_CLIENT_SECRET=$(${WANAKU_KEYCLOAK_ADMIN_CLI} credentials show \
   --keycloak-url "${KEYCLOAK_URL}" \
   --admin-username "${KEYCLOAK_ADMIN_USER}" \
@@ -312,7 +298,7 @@ export WANAKU_CLIENT_SECRET=$(${WANAKU_KEYCLOAK_ADMIN_CLI} credentials show \
 
 if [ -z "${WANAKU_CLIENT_SECRET}" ]; then
   echo "FAIL: could not retrieve the wanaku-mcp-router client secret"
-  exit 1
+  return 1
 fi
 echo "PASS: wanaku-mcp-router secret retrieved (length: ${#WANAKU_CLIENT_SECRET})"
 ```
@@ -339,9 +325,10 @@ the router then has the status `False`.
 `openssl rand -hex 16` writes 32 hexadecimal characters, which is a valid 32-byte cookie secret. The command uses
 `oc apply`, so you can run it again.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so variables and helper functions remain available.
+A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 export WANAKU_AUTH_SECRET_NAME="${WANAKU_AUTH_SECRET_NAME:-wanaku-oidc}"
 
 oc create secret generic "${WANAKU_AUTH_SECRET_NAME}" \
@@ -354,7 +341,7 @@ for KEY in client-secret cookie-secret; do
   VALUE=$(oc get secret "${WANAKU_AUTH_SECRET_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath="{.data.${KEY}}" 2>/dev/null)
   if [ -z "${VALUE}" ]; then
     echo "FAIL: Secret ${WANAKU_AUTH_SECRET_NAME} has no ${KEY} key"
-    exit 1
+    return 1
   fi
 done
 echo "PASS: Secret ${WANAKU_AUTH_SECRET_NAME} has the client-secret and cookie-secret keys"
@@ -362,7 +349,7 @@ echo "PASS: Secret ${WANAKU_AUTH_SECRET_NAME} has the client-secret and cookie-s
 
 Set the issuer URLs for the `WanakuRouter` resource:
 
-```bash
+```bash run
 export WANAKU_AUTH_ISSUER_URL="${KEYCLOAK_URL}/realms/wanaku"
 export WANAKU_AUTH_INTERNAL_ISSUER_URL="http://keycloak:8080/realms/wanaku"
 echo "PASS: issuerUrl=${WANAKU_AUTH_ISSUER_URL} internalIssuerUrl=${WANAKU_AUTH_INTERNAL_ISSUER_URL}"
@@ -380,7 +367,7 @@ echo "PASS: issuerUrl=${WANAKU_AUTH_ISSUER_URL} internalIssuerUrl=${WANAKU_AUTH_
 The realm import creates clients and roles but no regular users. Create a test user that
 subsequent steps use to call Wanaku Server through the oauth2-proxy.
 
-```bash
+```bash run
 export WANAKU_TEST_USER="${WANAKU_TEST_USER:-alice}"
 export WANAKU_TEST_PASS="${WANAKU_TEST_PASS:-secretpass}"
 export WANAKU_TEST_EMAIL="${WANAKU_TEST_EMAIL:-alice@example.com}"
@@ -392,7 +379,9 @@ ${WANAKU_KEYCLOAK_ADMIN_CLI} users add \
   --admin-password "${KEYCLOAK_ADMIN_PASS}" \
   --username "${WANAKU_TEST_USER}" \
   --password "${WANAKU_TEST_PASS}" \
-  --email "${WANAKU_TEST_EMAIL}"
+  --email "${WANAKU_TEST_EMAIL}" \
+  || { echo "FAIL: could not create test user"; return 1; }
+echo "PASS: test user '${WANAKU_TEST_USER}' created"
 ```
 
 **Expected result:**
@@ -401,41 +390,33 @@ ${WANAKU_KEYCLOAK_ADMIN_CLI} users add \
 - The output contains no line starting with `FAIL`.
 - The commands exit with code 0.
 
-**Verification:**
-
-Run this block as a separate `bash` script, not in the shared session.
-
-```bash
-if [ $? -ne 0 ]; then
-  echo "FAIL: could not create test user"
-  exit 1
-fi
-echo "PASS: test user '${WANAKU_TEST_USER}' created"
-```
-
 ### Step 10: Verify OIDC login
 
-The `wanaku auth login` command authenticates directly against Keycloak (`<auth-server>/realms/<realm>`, realm `wanaku`
-by default) using the `wanaku-mcp-router` client and the secret from `WANAKU_CLIENT_SECRET`. The router does not need
-to be deployed for the login itself. The oauth2-proxy in front of Wanaku Server accepts the resulting token. Wanaku
-Server itself does not validate tokens.
+This procedure runs before the router is created. Verify the test user's login directly against Keycloak
+using the `wanaku-mcp-router` client and its secret. Run the command below as written in the shared Bash session;
+listing users or checking admin credentials does not verify the test user's login.
 
-- To verify the token end to end against the router, follow [common/oidc-login-verification.md](oidc-login-verification.md) **after the router is created**.
-- To log in without a router:
+End-to-end token verification through the router is performed later by
+[oidc-login-verification.md](oidc-login-verification.md), after the router exists.
 
-  ```bash
-  echo "${WANAKU_TEST_PASS}" | ${WANAKU_CLI:-wanaku} auth login \
-    --auth-server "${KEYCLOAK_URL}" \
-    --insecure \
-    --realm wanaku \
-    --username "${WANAKU_TEST_USER}" \
-    --password \
-    --plain 2>&1
-  ```
+```bash run
+echo "${WANAKU_TEST_PASS}" | ${WANAKU_CLI:-wanaku} auth login \
+  --auth-server "${KEYCLOAK_URL}" \
+  --insecure \
+  --realm wanaku \
+  --client-secret "${WANAKU_CLIENT_SECRET}" \
+  --username "${WANAKU_TEST_USER}" \
+  --password \
+  --plain 2>&1 \
+  || { echo "FAIL: test user OIDC login failed"; return 1; }
+echo "PASS: test user OIDC login succeeded"
+```
 
 **Expected result:**
 
-- The login command exits with code 0 when the login-without-a-router alternative is used (inferred).
+- The output includes `PASS: test user OIDC login succeeded`.
+- The output contains no line starting with `FAIL:`.
+- The login command exits with code 0.
 
 ## Output Variables
 
@@ -455,7 +436,7 @@ After completing this procedure, the following variables are set and available f
 
 | Variable | Description |
 |----------|-------------|
-| `KEYCLOAK_HOST` | External hostname of Keycloak (from OpenShift Ingress) |
+| `KEYCLOAK_HOST` | External hostname of Keycloak (assigned by the OpenShift Route) |
 | `KEYCLOAK_URL` | Full URL (`https://<host>`) |
 | `WANAKU_OIDC_SECRET` | Client secret for the `wanaku-service` client |
 | `WANAKU_CLIENT_SECRET` | Client secret for the `wanaku-mcp-router` client, read by `wanaku auth login` |
