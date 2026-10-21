@@ -30,3 +30,21 @@
     reliably exposed to the parent prompt.
 - **Suggested fix:** retain procedure invocation/completion metadata and pass the associated evidence IDs and
   observations to the parent; explicitly distinguish completed `Follow` invocations from remaining actions.
+
+## 2. Shared-shell state disappears after a command timeout
+
+- **Status:** Reproduced in consecutive OpenShift operator-plan executions; source cause unconfirmed.
+- **Severity:** High; breaks dependent assertions and can compromise cleanup verification.
+- **Run:** `run-1e9a305275734b4bbf26f7fe98f80439`.
+- **Trigger:** Test 7.4's Barn readiness command (`ev-92`) times out after 122007 ms.
+  The underlying Barn readiness failure is recorded separately in `wanaku-bugs.md`.
+- **Observed:** Subsequent test 8.1 (`ev-94`) exits 1 with
+  `wait_for_deletion: command not found`. Read-only diagnostics also find the port-forward helpers,
+  `OP_CATALOG_NAME`, and `WANAKU_BARN_URL` missing. Environment-provided namespace configuration survives.
+  These helpers and variables were available in earlier successful steps of the same run.
+- **Expected:** Preserve the declared shared session across commands, or explicitly report that it was lost
+  and mark dependent tests blocked. Do not silently continue as though its prior state remains available.
+- **Separate runner error:** Assessment of test 7.4 also encounters a provider-response decoding error.
+  This does not invalidate the separately captured HTTP 503 health evidence, and is not proof that the
+  decoding error caused the shell-state loss.
+- **Disclosure:** Infrastructure identifiers and raw diagnostic output are omitted intentionally.
