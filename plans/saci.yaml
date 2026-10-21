@@ -22,6 +22,10 @@ llm:
   model: rits/zai-org/glm-5-3
   api_key: env:SACI_LLM_API_KEY
 
+judge:
+  api_key: env:SACI_TYPESAFE_API_KEY
+  threshold_percent: 90
+
 limits:
   run_timeout_secs: 1800
   step_timeout_secs: 300
