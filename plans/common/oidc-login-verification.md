@@ -31,10 +31,11 @@ client's audience, so the client secret must be available in `WANAKU_CLIENT_SECR
 Log in as the test user against Keycloak with the `wanaku-mcp-router` client.
 
 Note: `--password` is a boolean flag that prompts for input. Pipe the password via stdin.
+Use the same optional TLS flag for Keycloak login and the subsequent proxy requests.
 
 ```bash
 echo "${WANAKU_TEST_PASS}" | ${WANAKU_CLI:-wanaku} auth login \
-  --auth-server "${KEYCLOAK_URL}" \
+  --auth-server "${KEYCLOAK_URL}" ${WANAKU_CLI_TLS_OPTS} \
   --realm wanaku \
   --client-secret "${WANAKU_CLIENT_SECRET}" \
   --username "${WANAKU_TEST_USER}" \
@@ -69,7 +70,7 @@ if [ "${LOGIN_FAILED}" = "true" ]; then
   echo "WARN: wanaku-mcp-router secret may be stale — regenerating via CLI"
 
   ${WANAKU_KEYCLOAK_ADMIN_CLI:-wanaku-keycloak-admin} credentials regenerate \
-    --keycloak-url "${KEYCLOAK_URL}" \
+    --keycloak-url "${KEYCLOAK_URL}" ${WANAKU_CLI_TLS_OPTS} \
     --admin-username "${KEYCLOAK_ADMIN_USER}" \
     --admin-password "${KEYCLOAK_ADMIN_PASS}" \
     --client-id wanaku-mcp-router \
@@ -77,7 +78,7 @@ if [ "${LOGIN_FAILED}" = "true" ]; then
 
   # With --show-secret --plain only the secret is written to stdout
   export WANAKU_CLIENT_SECRET=$(${WANAKU_KEYCLOAK_ADMIN_CLI:-wanaku-keycloak-admin} credentials show \
-    --keycloak-url "${KEYCLOAK_URL}" \
+    --keycloak-url "${KEYCLOAK_URL}" ${WANAKU_CLI_TLS_OPTS} \
     --admin-username "${KEYCLOAK_ADMIN_USER}" \
     --admin-password "${KEYCLOAK_ADMIN_PASS}" \
     --client-id wanaku-mcp-router \
@@ -85,7 +86,7 @@ if [ "${LOGIN_FAILED}" = "true" ]; then
     --plain 2>/dev/null)
 
   echo "${WANAKU_TEST_PASS}" | ${WANAKU_CLI:-wanaku} auth login \
-    --auth-server "${KEYCLOAK_URL}" \
+    --auth-server "${KEYCLOAK_URL}" ${WANAKU_CLI_TLS_OPTS} \
     --realm wanaku \
     --client-secret "${WANAKU_CLIENT_SECRET}" \
     --username "${WANAKU_TEST_USER}" \

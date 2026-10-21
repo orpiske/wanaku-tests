@@ -12,7 +12,7 @@ Reusable steps for logging in to an OpenShift cluster using a service account to
 
 ### Step 1: Log in to OpenShift
 
-```bash
+```bash run
 oc login "${OPENSHIFT_API_URL}" --token="${OPENSHIFT_SA_TOKEN}" --insecure-skip-tls-verify=true
 ```
 
@@ -25,7 +25,7 @@ oc login "${OPENSHIFT_API_URL}" --token="${OPENSHIFT_SA_TOKEN}" --insecure-skip-
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 OC_USER=$(oc whoami 2>/dev/null)
 if [ -z "${OC_USER}" ]; then
   echo "FAIL: not logged in to ${OPENSHIFT_API_URL}"

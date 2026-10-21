@@ -13,7 +13,7 @@ Reusable helper that polls for Kubernetes resource deletion instead of using a f
 
 Define this function before use:
 
-```bash
+```bash run
 # POSIX sh has no "local": the variables use a WFD_ prefix to avoid collisions
 wait_for_deletion() {
   WFD_TYPE="$1"
@@ -42,7 +42,7 @@ wait_for_deletion() {
 
 ## Usage
 
-```bash
+```bash run
 wait_for_deletion deployment my-deployment "${WANAKU_NAMESPACE}" 60
 wait_for_deletion route my-route "${WANAKU_NAMESPACE}" 30
 ```

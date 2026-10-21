@@ -17,7 +17,7 @@ All steps are idempotent. You can run them again after a partial or failed clean
 Delete the `WanakuIntegration` and `WanakuSemanticRouter` resources first. Their runtimes remove their forwards from
 Wanaku Server when they stop, so the router must still be running.
 
-```bash
+```bash run
 oc delete wanakuintegration --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 echo "integrations-deleted=$?"
 # Expected: integrations-deleted=0
@@ -37,7 +37,7 @@ echo "semantic-routers-deleted=$?"
 The operator removes the deployed catalogs from Wanaku Barn before it releases each resource. Delete the catalogs
 before the router, so that Barn is still available.
 
-```bash
+```bash run
 oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=120s
 echo "service-catalogs-deleted=$?"
 # Expected: service-catalogs-deleted=0
@@ -57,7 +57,7 @@ done
 
 ### Step 3: Delete WanakuRouter resources
 
-```bash
+```bash run
 oc delete wanakurouter --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 echo "routers-deleted=$?"
 # Expected: routers-deleted=0
@@ -73,7 +73,7 @@ The managed Deployments, Services, ConfigMaps, Routes and PVCs have an owner ref
 Kubernetes garbage collection removes them. The operator labels its Deployments with
 `app.kubernetes.io/managed-by=wanaku-operator`.
 
-```bash
+```bash run
 oc wait --for=delete deployment -l app.kubernetes.io/managed-by=wanaku-operator \
   -n "${WANAKU_NAMESPACE}" --timeout=120s 2>/dev/null || true
 
@@ -99,7 +99,7 @@ oc get pvc -n "${WANAKU_NAMESPACE}" -o name 2>/dev/null | grep -v "keycloak-data
 
 Test plans label the ConfigMaps and Secrets that they create with `wanaku-test=true`.
 
-```bash
+```bash run
 oc delete configmap -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
 oc delete secret -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
 oc delete secret "${WANAKU_AUTH_SECRET_NAME:-wanaku-oidc}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true 2>/dev/null || true
@@ -112,7 +112,7 @@ echo "PASS: test ConfigMaps and Secrets cleaned up"
 
 ### Step 6: Delete Keycloak
 
-```bash
+```bash run
 oc delete deployment keycloak -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete service keycloak -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete route keycloak -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
@@ -129,7 +129,7 @@ echo "PASS: Keycloak resources deleted"
 Helm removes the namespace-prefixed ClusterRoles and ClusterRoleBindings of the release. Helm does not remove the
 CRDs.
 
-```bash
+```bash run
 helm uninstall wanaku-operator --namespace "${WANAKU_NAMESPACE}" 2>/dev/null || true
 echo "PASS: Helm release uninstalled"
 ```
@@ -140,7 +140,7 @@ echo "PASS: Helm release uninstalled"
 
 ### Step 8: Delete CRDs (optional, only if full cleanup is desired)
 
-```bash
+```bash run
 # WARNING: This removes CRDs cluster-wide. Only do this if no other namespace uses them.
 # Uncomment the following lines for a full cleanup:
 #
@@ -159,7 +159,7 @@ echo "SKIP: CRD deletion (uncomment to enable)"
 
 The test service account lives in `wanaku-test-infra`, not in `${WANAKU_NAMESPACE}`, so deleting the test namespace does not affect the shared test infrastructure. Only delete the namespace when it was created for this specific run. If you intentionally reuse a shared namespace, leave the deletion commented out and skip namespace cleanup for that shared environment.
 
-```bash
+```bash run
 # WARNING: This deletes everything in the namespace.
 # Uncomment the following line for a full cleanup:
 #
@@ -175,7 +175,7 @@ echo "SKIP: namespace deletion (uncomment to enable)"
 
 ### Step 10: Verify cleanup
 
-```bash
+```bash run
 echo "--- Remaining resources in ${WANAKU_NAMESPACE} ---"
 oc get all -n "${WANAKU_NAMESPACE}" 2>/dev/null || echo "(namespace may have been deleted)"
 echo "--- Remaining Wanaku custom resources ---"

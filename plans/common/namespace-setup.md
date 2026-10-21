@@ -15,7 +15,7 @@ Use this shared setup from each OpenShift plan instead of re-defining the namesp
 
 ### Step 1: Export the namespace variable
 
-```bash
+```bash run
 export WANAKU_TEST_RUN_ID="${WANAKU_TEST_RUN_ID:-$(date +%Y%m%d-%H%M%S)-$$}"
 export WANAKU_NAMESPACE_PREFIX="${WANAKU_NAMESPACE_PREFIX:-wanaku-test}"
 export WANAKU_NAMESPACE="${WANAKU_NAMESPACE:-${WANAKU_NAMESPACE_PREFIX}-${WANAKU_TEST_RUN_ID}}"
@@ -29,7 +29,7 @@ This keeps each test run isolated by default while still allowing callers to ove
 
 ### Step 2: Create the namespace (project)
 
-```bash
+```bash run
 oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/dev/null \
   || oc project "${WANAKU_NAMESPACE}"
 ```
@@ -40,7 +40,7 @@ oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/de
 
 **Verification:**
 
-```bash
+```bash run
 [ "$(oc project -q)" = "${WANAKU_NAMESPACE}" ]
 echo "exit_code=$?"
 # Expected: exit_code=0
@@ -51,7 +51,7 @@ echo "exit_code=$?"
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 CURRENT_NS=$(oc project -q)
 if [ "${CURRENT_NS}" != "${WANAKU_NAMESPACE}" ]; then
   echo "FAIL: current namespace is '${CURRENT_NS}', expected '${WANAKU_NAMESPACE}'"
@@ -68,7 +68,7 @@ echo "PASS: namespace is ${WANAKU_NAMESPACE}"
 
 ### Step 4: Verify the user has sufficient permissions
 
-```bash
+```bash run
 oc auth can-i create deployments -n "${WANAKU_NAMESPACE}" | grep -q "yes"
 echo "can-create-deployments=$?"
 
@@ -101,7 +101,7 @@ echo "can-create-secrets=$?"
 
 ## Output Variables
 
-| Variable | Description |
-|----------|-------------|
-| `WANAKU_NAMESPACE` | The namespace (OpenShift project) for this run. The current `oc` context targets it. |
-| `WANAKU_TEST_RUN_ID` | The unique suffix of this run |
+| Variable             | Description                                                                          |
+|----------------------|--------------------------------------------------------------------------------------|
+| `WANAKU_NAMESPACE`   | The namespace (OpenShift project) for this run. The current `oc` context targets it. |
+| `WANAKU_TEST_RUN_ID` | The unique suffix of this run                                                        |
