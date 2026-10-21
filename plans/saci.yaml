@@ -27,7 +27,7 @@ judge:
   threshold_percent: 90
 
 limits:
-  run_timeout_secs: 1800
+  run_timeout_secs: 7200
   step_timeout_secs: 300
 
 environments:
