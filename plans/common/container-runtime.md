@@ -26,7 +26,7 @@ If `CONTAINER_RUNTIME` is already set (e.g., by the caller), skip auto-detection
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 if [ -n "${CONTAINER_RUNTIME}" ]; then
   if command -v "${CONTAINER_RUNTIME}" > /dev/null 2>&1; then
     echo "PASS: ${CONTAINER_RUNTIME} (pre-set) found at $(command -v ${CONTAINER_RUNTIME})"
@@ -61,7 +61,7 @@ export CONTAINER_RUNTIME
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 ${CONTAINER_RUNTIME} info > /dev/null 2>&1
 if [ $? -eq 0 ]; then
   echo "PASS: ${CONTAINER_RUNTIME} is functional"
@@ -138,7 +138,7 @@ Follow [common/container-runtime.md](common/container-runtime.md). After complet
 
 Then use `${CONTAINER_RUNTIME}` in place of hardcoded `docker` or `podman` commands:
 
-```bash
+```bash run
 ${CONTAINER_RUNTIME} run -d --name my-service -p 8080:8080 my-image:latest
 # ...
 ${CONTAINER_RUNTIME} stop my-service && ${CONTAINER_RUNTIME} rm my-service
@@ -146,7 +146,7 @@ ${CONTAINER_RUNTIME} stop my-service && ${CONTAINER_RUNTIME} rm my-service
 
 Or use the helper functions:
 
-```bash
+```bash run
 start_container_if_absent my-service -p 8080:8080 my-image:latest
 # ...
 stop_container my-service

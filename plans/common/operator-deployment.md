@@ -11,18 +11,18 @@ Reusable steps for installing the Wanaku operator on OpenShift using Helm.
 
 ## Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `WANAKU_NAMESPACE` | Target namespace created for this run | `wanaku-test-<run-id>` |
-| `WANAKU_REPO_ROOT` | Path to the wanaku-barn repository root (it contains the operator chart) | `/path/to/wanaku-barn` |
-| `WANAKU_OPERATOR_IMAGE` | Operator container image | `quay.io/wanaku/wanaku-operator:latest` |
-| `WANAKU_OPERATOR_PULL_POLICY` | Image pull policy of the operator | `Always` |
+| Variable                      | Description                                                              | Example                                 |
+|-------------------------------|--------------------------------------------------------------------------|-----------------------------------------|
+| `WANAKU_NAMESPACE`            | Target namespace created for this run                                    | `wanaku-test-<run-id>`                  |
+| `WANAKU_REPO_ROOT`            | Path to the wanaku-barn repository root (it contains the operator chart) | `/path/to/wanaku-barn`                  |
+| `WANAKU_OPERATOR_IMAGE`       | Operator container image                                                 | `quay.io/wanaku/wanaku-operator:latest` |
+| `WANAKU_OPERATOR_PULL_POLICY` | Image pull policy of the operator                                        | `Always`                                |
 
 ## Phase 1: Operator Deployment via Helm
 
 ### Step 1: Set the repository root
 
-```bash
+```bash run
 # Set this to the root of the wanaku-barn git checkout
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
 export WANAKU_OPERATOR_IMAGE="${WANAKU_OPERATOR_IMAGE:-quay.io/wanaku/wanaku-operator:latest}"
@@ -38,7 +38,7 @@ export WANAKU_OPERATOR_PULL_POLICY="${WANAKU_OPERATOR_PULL_POLICY:-Always}"
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 CHART_DIR="${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator"
 if [ ! -f "${CHART_DIR}/Chart.yaml" ]; then
   echo "FAIL: Helm chart not found at ${CHART_DIR}"
@@ -58,7 +58,7 @@ echo "PASS: Helm chart found"
 The chart installs the four CRDs from its `crds/` directory. By default, every controller watches only the release
 namespace (`JOSDK_WATCH_CURRENT`).
 
-```bash
+```bash run
 helm install wanaku-operator \
   "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator" \
   --namespace "${WANAKU_NAMESPACE}" \
@@ -75,7 +75,7 @@ helm install wanaku-operator \
 
 **Verification:**
 
-```bash
+```bash run
 helm status wanaku-operator --namespace "${WANAKU_NAMESPACE}" -o json | jq -r '.info.status' | grep -q "deployed"
 echo "helm-status=$?"
 # Expected: helm-status=0
@@ -83,7 +83,7 @@ echo "helm-status=$?"
 
 ### Step 4: Wait for the operator deployment to become available
 
-```bash
+```bash run
 oc wait deployment/wanaku-operator \
   --for=condition=Available \
   --timeout=180s \
@@ -101,7 +101,7 @@ oc wait deployment/wanaku-operator \
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 OPERATOR_POD_STATUS=$(oc get pods -l app.kubernetes.io/name=wanaku-operator \
   -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].status.phase}')
 if [ "${OPERATOR_POD_STATUS}" != "Running" ]; then
@@ -152,7 +152,7 @@ the operator causes an empty `status` on the custom resources.
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 for CRD in wanakurouters.wanaku.ai wanakuservicecatalogs.wanaku.ai wanakusemanticrouters.wanaku.ai wanakuintegrations.wanaku.ai; do
   if ! oc get crd "${CRD}" > /dev/null 2>&1; then
     echo "FAIL: CRD ${CRD} not found"
@@ -183,7 +183,7 @@ done
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 # Check ClusterRoles
 for ROLE_SUFFIX in wanaku-router-cluster-role wanaku-service-catalog-cluster-role wanaku-semantic-router-cluster-role wanaku-integration-cluster-role josdk-crd-validating-cluster-role; do
   ROLE_NAME="${WANAKU_NAMESPACE}-${ROLE_SUFFIX}"
@@ -259,7 +259,7 @@ The operator Deployment uses the Quarkus health endpoints on port `8081` (`/q/he
 Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
-```bash
+```bash run
 for PROBE in livenessProbe readinessProbe startupProbe; do
   PROBE_PATH=$(oc get deployment wanaku-operator -n "${WANAKU_NAMESPACE}" \
     -o jsonpath="{.spec.template.spec.containers[0].${PROBE}.httpGet.path}")

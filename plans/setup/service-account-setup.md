@@ -84,7 +84,7 @@ oc create token wanaku-test-runner -n wanaku-test-infra --duration=8760h
 
 To remove the service account and all RBAC resources:
 
-```bash
+```bash run
 ./plans/setup/teardown-service-account.sh
 ```
 

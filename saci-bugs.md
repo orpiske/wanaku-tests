@@ -2,6 +2,12 @@
 
 ## 1. Parent units re-present completed procedure invocations without their evidence
 
+- **Status:** Fixed in current Saci source by `58745b891fa40ccb9d1e5c4fd8f13f061cd30063`
+  ("Give invoking units their procedure results and evidence (#78)", October 21, 2026).
+  Verified against local revision `c76967b72707da177926411269b4320a4adb0aa4`: procedure summaries now
+  include assessment evidence IDs, and the parent prompt explicitly identifies completed procedures and
+  prohibits searching for or rerunning their documents. Do not file this historical finding as a new open bug.
+  This source verification does not establish the revision embedded in an arbitrary worker image.
 - **Severity:** Medium; adds redundant work and consumes the run deadline.
 - **Run:** `run-a0835c6acc6b4db38018813c6e3fcae1`, parent `S.3` and child
   `S.3>common/wait-for-deletion.md#0`.
@@ -13,7 +19,7 @@
   passed; this is not a claim that every procedure executes twice.
 - **Expected:** the parent receives an explicit completed-invocation context and the child evidence needed to
   assess its own criteria, without treating the original `Follow` as a fresh instruction to find or rerun the file.
-- **Source verification** (local Midnight Saci checkout):
+- **Historical source verification** (Midnight Saci revision `efad342`):
   - `crates/saci-core/src/bundle.rs:229`: procedure units are expanded before the parent, which keeps the authored action.
   - `crates/saci-worker/src/sequence.rs:190`: earlier results retain key/title/outcome/explanation, not child command
     evidence, evidence IDs or an explicit completed-procedure marker.

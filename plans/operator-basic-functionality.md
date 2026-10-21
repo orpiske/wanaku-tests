@@ -60,11 +60,11 @@ one-time administrative prerequisites; do not run the bootstrap script as part o
 
 Provide these inputs to the test environment before Step 0.1:
 
-| Variable | Required | Purpose |
-|----------|----------|---------|
-| `OPENSHIFT_API_URL` | Yes | Target OpenShift API URL. |
-| `OPENSHIFT_SA_TOKEN` | Yes | Secret token for the provisioned `wanaku-test-runner` service account. Do not print it. |
-| `WANAKU_SA_NAMESPACE` | No | Namespace containing that service account; defaults to `wanaku-test-infra`. |
+| Variable              | Required | Purpose                                                                                 |
+|-----------------------|----------|-----------------------------------------------------------------------------------------|
+| `OPENSHIFT_API_URL`   | Yes      | Target OpenShift API URL.                                                               |
+| `OPENSHIFT_SA_TOKEN`  | Yes      | Secret token for the provisioned `wanaku-test-runner` service account. Do not print it. |
+| `WANAKU_SA_NAMESPACE` | No       | Namespace containing that service account; defaults to `wanaku-test-infra`.             |
 
 `WANAKU_SA_NAMESPACE` identifies the persistent service-account infrastructure. It is separate from
 `WANAKU_NAMESPACE`, the unique per-run test namespace created in Step 1.1.
@@ -1429,10 +1429,16 @@ without a token fails.
 
 ### Test 6.8: Verify the token through the MCP proxy
 
+The MCP CLI commands require an explicit token. Read the token saved by the preceding login without printing it.
+
 Run this block in the shared Bash session.
 
 ```bash run
-OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --plain 2>&1)
+MCP_PROXY_TOKEN=$(${WANAKU_CLI} auth token --get --unmask --plain 2>/dev/null) \
+  || { echo "FAIL: could not read the saved login token"; return 1; }
+[ -n "${MCP_PROXY_TOKEN}" ] || { echo "FAIL: saved login token is empty"; return 1; }
+OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" \
+  --token "${MCP_PROXY_TOKEN}" ${WANAKU_CLI_TLS_OPTS} --plain 2>&1)
 [ $? -eq 0 ] && echo "PASS: MCP proxy accepts the token" || { echo "FAIL: MCP proxy rejected the token: ${OUTPUT}"; return 1; }
 
 # Negative test: no token
@@ -1758,7 +1764,7 @@ echo "PASS: downloaded source assets removed or no download was owned"
 
 | Phase | Test ID | Test Name                                                              | Priority |
 |-------|---------|------------------------------------------------------------------------|----------|
-| S     | S.0     | Prepare the operator Helm chart and realm configuration                 | Critical |
+| S     | S.0     | Prepare the operator Helm chart and realm configuration                | Critical |
 | S     | S.1     | Prerequisite check script                                              | Critical |
 | S     | S.2     | Environment variables                                                  | Critical |
 | S     | S.3-S.5 | Deletion, condition and Barn port-forward helpers                      | Critical |
