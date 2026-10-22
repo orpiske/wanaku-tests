@@ -50,7 +50,30 @@ environments:
     parameters:
       OPENSHIFT_SA_TOKEN: env:OPENSHIFT_SA_TOKEN
       OPENSHIFT_API_URL: env:OPENSHIFT_API_URL
+
+# NOTE: this requires the saci script runner with the MCP scripts for tools.
+# Comment this block if you don't have it.
+actions:
+  servers:
+    mailer:
+      url: http://127.0.0.1:58081/saci-ns/mcp
+  definitions:
+    email-report:
+      server: mailer
+      tool: send-email
+      on: [passed, failed, blocked, inconclusive, error, cancelled]
+      arguments:
+        run_id: "{{run.id}}"
+        title: "{{plan.title}}"
+        outcome: "{{run.outcome}}"
+        reason: "{{run.reason}}"
+        finished_at: "{{run.finished_at}}"
+        counts: "{{run.counts}}"
+        summary: "Units:\n{{summary}}"
+        x-request-id: "{{run.id}}"
+
+
 policies:
   # Keep going after a failed test, so one failure does not hide the rest.
   default:
-    on_failure: continue
+    actions: [email-report]
