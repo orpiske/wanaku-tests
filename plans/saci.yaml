@@ -16,6 +16,7 @@ worker:
   runtime: auto            # podman if found in PATH, otherwise docker
   image: quay.io/wanaku/wanaku-saci-worker:latest
   network: host
+  image_pull_policy: Always
 
 llm:
   base_url: env:SACI_LLM_BASE_URL
