@@ -57,54 +57,147 @@ Every step is fully automatable.
 
 ### Required tools
 
-| Tool | Minimum version | Verify command |
-|------|-----------------|----------------|
-| `oc` | 4.12+ | `oc version --client` |
-| `helm` | 3.x | `helm version --short` |
-| `curl` | any (HTTP-level checks only) | `curl --version` |
-| `jq` | 1.6+ | `jq --version` |
-| `wanaku` CLI | build from source | `${WANAKU_CLI} --version` |
-
-### Prerequisite check script
-
-
+| Tool            | Minimum version              | Verify command            |
+|-----------------|------------------------------|---------------------------|
+| `oc`            | 4.12+                        | `oc version --client`     |
+| `helm`          | 3.x                          | `helm version --short`    |
+| `curl`          | any (HTTP-level checks only) | `curl --version`          |
+| `jq`            | 1.6+                         | `jq --version`            |
+| `tar`           | any (source archive)         | `tar --version`           |
+| `wanaku` CLI    | build from source            | `${WANAKU_CLI} --version` |
 
 ### Environment variables
 
-Step 1 of [common/namespace-setup.md](common/namespace-setup.md) derives a unique `WANAKU_NAMESPACE`
-for this run. The setup phase sets these variables. All image tags default to `latest` and can be overridden.
+Before running this plan, an administrator must provision the `wanaku-test-runner` service account and its RBAC
+using [the service account setup guide](setup/service-account-setup.md). The local bootstrap script is
+`setup/create-service-account.sh`, relative to this plan directory. Provisioning and token generation are
+one-time administrative prerequisites; do not run the bootstrap script as part of this test plan.
 
+Provide these inputs to the test environment before Step 0.1:
 
+| Variable              | Required | Purpose                                                                                 |
+|-----------------------|----------|-----------------------------------------------------------------------------------------|
+| `OPENSHIFT_API_URL`   | Yes      | Target OpenShift API URL.                                                               |
+| `OPENSHIFT_SA_TOKEN`  | Yes      | Secret token for the provisioned `wanaku-test-runner` service account. Do not print it. |
+| `WANAKU_SA_NAMESPACE` | No       | Namespace containing that service account; defaults to `wanaku-test-infra`.             |
+
+`WANAKU_SA_NAMESPACE` identifies the persistent service-account infrastructure. It is separate from
+`WANAKU_NAMESPACE`, the unique per-run test namespace created in Step 1.1.
+
+Step S.0 reuses the current directory when it contains the Wanaku Barn operator chart; otherwise it downloads those
+assets from `wanaku-ai/wanaku-barn`. Set `WANAKU_BARN_REF` to a branch, tag or commit (default: `main`) to select
+the source version. To use an existing checkout instead, explicitly set `WANAKU_REPO_ROOT` to its root; an invalid
+explicit path fails rather than triggering a download. Downloaded sources are isolated in a temporary directory and
+removed after Helm teardown in the cleanup phase.
 
 `WANAKU_CLI_TLS_OPTS` and `CURL_TLS_OPTS` are not quoted in the commands below on purpose: each holds zero or one
 option.
 
-### Helper: wait for resource deletion
+---
 
-The setup phase defines `wait_for_deletion` using [common/wait-for-deletion.md](common/wait-for-deletion.md).
+## Phase 0: OpenShift Login
 
-### Helper: wait for a condition of a custom resource
+### Step 0.1: Log in to OpenShift
+
+Log in to the target OpenShift cluster using the token for the provisioned `wanaku-test-runner` service account.
+
+Follow [common/openshift-login.md](common/openshift-login.md).
+
+After the login procedure, verify the exact identity before creating the test namespace. Reject personal accounts
+and other service accounts. Run this block in the shared Bash session.
+
+```bash run
+EXPECTED_IDENTITY="system:serviceaccount:${WANAKU_SA_NAMESPACE:-wanaku-test-infra}:wanaku-test-runner"
+if ! ACTUAL_IDENTITY=$(oc whoami 2>/dev/null); then
+  echo "FAIL: cannot verify the logged-in service account"
+  return 1
+fi
+if [ "${ACTUAL_IDENTITY}" != "${EXPECTED_IDENTITY}" ]; then
+  echo "FAIL: logged-in identity is not the configured wanaku-test-runner service account"
+  return 1
+fi
+echo "PASS: logged in as the configured wanaku-test-runner service account"
+```
+
+**Expected result:**
+
+- The procedure logs in to the target OpenShift cluster using a service account token.
+- The output includes `PASS: logged in as the configured wanaku-test-runner service account`.
+- The output contains no line starting with `FAIL:`.
+- The identity verification script exits with code 0.
 
 
+---
 
-### Helper: wait for a tool in Wanaku Server
+## Phase 1: Environment Setup
 
-Wanaku Server discovers the tools when the forward is registered. The function polls the tool list of the management
-API.
+### Step 1.1: Create namespace
 
+Create and verify the namespace.
 
+Follow [common/namespace-setup.md](common/namespace-setup.md).
+
+**Expected result:**
+
+- The namespace is created and verified.
 
 ---
 
 ## Phase S: Setup
 
-### Step S.1: Verify prerequisites
+### Step S.0: Prepare the operator Helm chart
 
-Run this block as a separate `bash` script, not in the shared session.
+Reuse a supplied Wanaku Barn checkout, or download its source archive from the official repository. Keep the
+chart available through Helm teardown. Run this block in the shared Bash session.
 
-```bash
+```bash run
+WANAKU_DOWNLOADED_SOURCE_DIR=""
+export WANAKU_BARN_REF="${WANAKU_BARN_REF:-main}"
+if [ -n "${WANAKU_REPO_ROOT+x}" ]; then
+  if [ ! -r "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ]; then
+    echo "FAIL: supplied WANAKU_REPO_ROOT lacks the operator chart"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT
+  echo "PASS: existing Wanaku Barn source assets reused"
+elif [ -r "./apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ]; then
+  export WANAKU_REPO_ROOT="${PWD}"
+  echo "PASS: existing Wanaku Barn source assets reused"
+else
+  for CMD in curl tar; do
+    command -v "${CMD}" > /dev/null 2>&1 || { echo "FAIL: ${CMD} is required to download source assets"; return 1; }
+  done
+  WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
+  mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
+  curl --fail --location --connect-timeout 10 --max-time 120 \
+    "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
+    --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    || { echo "FAIL: Wanaku Barn source archive download failed"; return 1; }
+  tar -xzf "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    --strip-components=1 -C "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" \
+    || { echo "FAIL: Wanaku Barn source archive extraction failed"; return 1; }
+  if [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ]; then
+    echo "FAIL: downloaded source lacks the operator chart"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT="${WANAKU_DOWNLOADED_SOURCE_DIR}/repo"
+  echo "PASS: Wanaku Barn source assets downloaded"
+fi
+```
+
+**Expected result:**
+
+- The output includes `PASS: existing Wanaku Barn source assets reused` or `PASS: Wanaku Barn source assets downloaded`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
+
+### Test S.1: Prerequisite check script
+
+Run this block in the shared Bash session.
+
+```bash run
 FAIL=0
-for CMD in oc helm curl jq; do
+for CMD in oc helm curl jq tar; do
   if ! command -v "${CMD}" > /dev/null 2>&1; then
     echo "FAIL: ${CMD} is not installed"
     FAIL=1
@@ -112,8 +205,24 @@ for CMD in oc helm curl jq; do
     echo "PASS: ${CMD} found at $(command -v "${CMD}")"
   fi
 done
-${WANAKU_CLI:-wanaku} --help > /dev/null 2>&1 && echo "PASS: the Wanaku CLI runs" || { echo "FAIL: the Wanaku CLI does not run"; FAIL=1; }
-[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: one or more prerequisites missing"; exit 1; }
+
+if ! ${WANAKU_CLI:-wanaku} --help > /dev/null 2>&1; then
+  echo "FAIL: the Wanaku CLI (${WANAKU_CLI:-wanaku}) does not run"
+  FAIL=1
+else
+  echo "PASS: the Wanaku CLI runs"
+fi
+
+for ASSET in "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml"; do
+  if [ -r "${ASSET}" ]; then
+    echo "PASS: required deployment asset is readable: ${ASSET}"
+  else
+    echo "FAIL: required deployment asset is missing or unreadable: ${ASSET}"
+    FAIL=1
+  fi
+done
+
+[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: one or more prerequisites missing"; return 1; }
 ```
 
 **Expected result:**
@@ -122,15 +231,18 @@ ${WANAKU_CLI:-wanaku} --help > /dev/null 2>&1 && echo "PASS: the Wanaku CLI runs
 - The output includes `PASS: helm found at`.
 - The output includes `PASS: curl found at`.
 - The output includes `PASS: jq found at`.
+- The output includes `PASS: tar found at`.
 - The output includes `PASS: the Wanaku CLI runs`.
+- The output includes `PASS: required deployment asset is readable:` for the operator chart.
 - The output includes `PASS: all prerequisites met`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
 ### Step S.2: Set environment variables
 
+All image tags default to `latest` and can be overridden.
+
 ```bash run
-export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
 export WANAKU_SERVER_IMAGE="${WANAKU_SERVER_IMAGE:-quay.io/wanaku/wanaku-server:latest}"
 export WANAKU_BARN_IMAGE="${WANAKU_BARN_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 export CIC_IMAGE="${CIC_IMAGE:-quay.io/wanaku/camel-integration-capability:latest}"
@@ -144,13 +256,28 @@ export WANAKU_CLI="${WANAKU_CLI:-wanaku}"
 # The operator creates edge-terminated Routes. Set these to empty values when the ingress certificate is trusted.
 export WANAKU_CLI_TLS_OPTS="${WANAKU_CLI_TLS_OPTS---insecure}"
 export CURL_TLS_OPTS="${CURL_TLS_OPTS--k}"
+# Isolate credentials per test run to avoid contention
+export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-${WANAKU_NAMESPACE}}"
 ```
 
 **Expected result:**
 
 - The commands exit with code 0 (inferred).
 
-### Step S.3: Define condition and assertion helpers
+### Step S.3: Define the wait_for_deletion helper
+
+Define the `wait_for_deletion` function.
+
+Follow [common/wait-for-deletion.md](common/wait-for-deletion.md).
+
+**Expected result:**
+
+- The block defines the `wait_for_deletion` function without errors (inferred).
+
+### Step S.4: Define the custom resource condition helpers
+
+The function polls a condition until it has the expected status and, optionally, the expected reason. It fails after
+180 seconds.
 
 ```bash run
 wait_cr_condition() {
@@ -180,9 +307,9 @@ check() { # $1 = description, $2 = actual, $3 = expected
 
 **Expected result:**
 
-- The block defines the functions without errors (inferred).
+- The block defines the `wait_cr_condition` and `check` functions without errors (inferred).
 
-### Step S.4: Define tool discovery helper
+### Step S.5: Define tool discovery helper
 
 ```bash run
 wait_for_tool() {
@@ -204,57 +331,19 @@ wait_for_tool() {
 
 - The block defines the function without errors (inferred).
 
-### Step S.5: Define deletion helper
-
-Follow [common/wait-for-deletion.md](common/wait-for-deletion.md).
-
-**Expected result:**
-
-- The block defines the function without errors (inferred).
-
-## Phase 0: OpenShift Login
-
-### Step 0.0: Log in to OpenShift
-
-Follow [common/openshift-login.md](common/openshift-login.md).
-
-to log in to the target OpenShift cluster using a service account token.
-
-
-**Expected result:**
-
-- All invoked procedure steps pass (inferred).
-
----
-
-## Phase 1: Environment Setup
-
-### Step 1.0: Prepare the namespace
-
-Follow [common/namespace-setup.md](common/namespace-setup.md).
-
-to create and verify the namespace. This plan does not
-need Keycloak.
-
-
-**Expected result:**
-
-- All invoked procedure steps pass (inferred).
-
 ---
 
 ## Phase 2: Operator Installation
 
-### Step 2.0: Install the operator
+### Step 2.1: Install the operator
+
+Install the operator via Helm and verify CRDs, RBAC, and health endpoints.
 
 Follow [common/operator-deployment.md](common/operator-deployment.md).
 
-to install the operator via Helm and verify CRDs, RBAC, and health endpoints.
-
-
 **Expected result:**
 
-- All invoked procedure steps pass (inferred).
+- The operator is installed via Helm, and the procedure verifies CRDs, RBAC, and health endpoints.
 
 ---
 
@@ -264,7 +353,7 @@ to install the operator via Helm and verify CRDs, RBAC, and health endpoints.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
 kind: WanakuRouter
@@ -294,7 +383,7 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Availa
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 export WANAKU_ROUTER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
 export WANAKU_ROUTER_MCP_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
 echo "management: ${WANAKU_ROUTER_URL}"
@@ -409,7 +498,7 @@ Server has an available forward named `cic-echo` with the `cic.instance` label o
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 FAIL=0
 wait_cr_condition wanakuintegration cic-echo Reconciled True ReconcileSucceeded || FAIL=1
 wait_cr_condition wanakuintegration cic-echo Available True Available || FAIL=1
@@ -429,7 +518,7 @@ registration settings to the runtime as environment variables.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 FAIL=0
 cic_jsonpath() { oc get deployment cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
 cic_env() { cic_jsonpath "{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
@@ -478,7 +567,7 @@ discovers the tools while the runtime registers, before the pod is ready.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 FAIL=0
 check "Service port" "$(oc get service cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].port}')" "9090"
 check "Service port name" "$(oc get service cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].name}')" "mcp"
@@ -513,7 +602,7 @@ echo "status.wanakuEndpoint=$(int_jsonpath '{.status.wanakuEndpoint}')"
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 OUTPUT=$(${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "^cic-echo[[:space:]]*http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp" \
@@ -548,7 +637,7 @@ export CIC_ECHO_INSTANCE=$(echo "${FORWARD}" | jq -r '.data.labels["cic.instance
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 wait_for_tool cic-echo || exit 1
 
 OUTPUT=$(${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -587,7 +676,7 @@ exits with a non-zero code.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-echo --param message=hello 2>&1)
 EXIT_CODE=$?
@@ -615,7 +704,7 @@ restart.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 CM="${WANAKU_ROUTER_NAME}-server-config"
 GOV_FILE=$(mktemp)
 oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' > "${GOV_FILE}"
@@ -665,7 +754,7 @@ wait_for_tool cic-echo || exit 1
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-echo --param message=hello 2>&1)
 EXIT_CODE=$?
@@ -688,7 +777,7 @@ fi
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name non-existent-tool-99999 --param key=value 2>&1)
 EXIT_CODE=$?
@@ -715,7 +804,7 @@ fi
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 # The list endpoint filters by target; one page holds up to 100 events by default
 EVENTS=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/audit/events?target=cic-echo")
 echo "${EVENTS}" | jq -e '.data.events' > /dev/null 2>&1 && echo "PASS: audit events endpoint returns events" \
@@ -747,7 +836,7 @@ the forward at shutdown, because the label no longer matches its own identifier.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 OLD_POD=$(oc get pods -l app=cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
 oc rollout restart deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}"
 oc rollout status deployment/cic-echo-cic --timeout=180s -n "${WANAKU_NAMESPACE}"
@@ -784,7 +873,7 @@ echo "${OUTPUT}" | grep -q "again-again" && echo "PASS: the tool works after the
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 export CIC_CATALOG="${CIC_CATALOG:-cic-hello-catalog}"
 export CIC_CATALOG_SYSTEM="${CIC_CATALOG_SYSTEM:-cic-hello}"
 TEMP_DIR=$(mktemp -d)
@@ -850,7 +939,7 @@ oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" -
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
 kind: WanakuIntegration
@@ -883,7 +972,7 @@ wait_cr_condition wanakuintegration cic-catalog Ready True || FAIL=1
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 FAIL=0
 cic_env() { oc get deployment cic-catalog-cic -n "${WANAKU_NAMESPACE}" \
   -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$1\")].value}"; }
@@ -915,7 +1004,7 @@ check "status.wanakuEndpoint" "${ENDPOINT}" "${WANAKU_ROUTER_MCP_URL}/${CIC_CATA
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 wait_for_tool cic-catalog-greet || exit 1
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
@@ -1064,7 +1153,7 @@ success. Wanaku Server discovers the tools while it creates the forward.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 ${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-manual --service "http://cic-manual.${WANAKU_NAMESPACE}.svc:9090/mcp" --namespace "${CIC_CATALOG_NAMESPACE}"
 [ $? -eq 0 ] && echo "PASS: forward cic-manual added" || { echo "FAIL: forwards add failed"; exit 1; }
@@ -1095,7 +1184,7 @@ message. It discovers no tools for it.
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 ${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-unreachable --service "http://cic-does-not-exist.${WANAKU_NAMESPACE}.svc:9090/mcp" --namespace "${CIC_CATALOG_NAMESPACE}"
 
@@ -1120,7 +1209,7 @@ ${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPT
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 ${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --name cic-manual
 [ $? -eq 0 ] && echo "PASS: forward cic-manual removed" || { echo "FAIL: forwards remove failed"; exit 1; }
 
@@ -1223,7 +1312,7 @@ removes its own forward at shutdown, so Wanaku Server no longer serves the tools
 
 Run this block as a separate `bash` script, not in the shared session.
 
-```bash
+```bash run
 oc delete wanakuintegration cic-echo cic-catalog -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 
 FAIL=0
