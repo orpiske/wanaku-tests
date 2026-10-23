@@ -51,6 +51,10 @@ environments:
     parameters:
       OPENSHIFT_SA_TOKEN: env:OPENSHIFT_SA_TOKEN
       OPENSHIFT_API_URL: env:OPENSHIFT_API_URL
+  investigator:
+    secrets:
+      GIT_TOKEN:
+        env: GH_TOKEN      # read code and create issues only
 
 # NOTE: this requires the saci script runner with the MCP scripts for tools.
 # Comment this block if you don't have it.
@@ -73,8 +77,30 @@ actions:
         summary: "Units:\n{{summary}}"
         x-request-id: "{{run.id}}"
 
+investigations:
+  environment: investigator
+  image: quay.io/wanaku/wanaku-saci-worker:latest
+  repositories:
+    - name: wanaku
+      url: https://github.com/wanaku-ai/wanaku.git
+      ref: main
+      description: The Wanaku Governed Action Proxy repository
+    - name: wanaku-barn
+      url: https://github.com/wanaku-ai/wanaku-barn.git
+      ref: main
+      description: A collection of utilities for the Wanaku Governed Action Proxy
+    - name: camel-integration-capability
+      url: https://github.com/wanaku-ai/camel-integration-capability.git
+      ref: main
+      description: A capability service for the Wanaku Governed Action Proxy that enables AI agents to interact with backend systems through dynamically executed Apache Camel routes.
+  prepare:
+    - 'ripwire . --for="{{failure.title}}: {{failure.reason}}" --token-budget=4000'
+  instructions: |
+    File bugs in wanaku-ai/wanaku. Search for an open issue first.
+  limits:
+    run_timeout_secs: 1800
+    output_limit_bytes: 8192
 
 policies:
-  # Keep going after a failed test, so one failure does not hide the rest.
   default:
     actions: [email-report]
