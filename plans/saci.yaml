@@ -37,7 +37,7 @@ environments:
     description: Tests a Wanaku instance running on the host
     parameters:
       WANAKU_SERVER_MODE: builtin
-  wanaku-local-dev2:
+  wanaku-local-existing:
     description: Tests a Wanaku instance running on the host
     parameters:
       # Run it like this: podman run -p 28180:8080 -p 28181:8081 quay.io/wanaku/wanaku-server:latest
