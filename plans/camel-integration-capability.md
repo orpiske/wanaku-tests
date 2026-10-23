@@ -277,7 +277,7 @@ Follow [common/wait-for-deletion.md](common/wait-for-deletion.md).
 ### Step S.4: Define the custom resource condition helpers
 
 The function polls a condition until it has the expected status and, optionally, the expected reason. It fails after
-180 seconds.
+180 seconds. The functions are exported so that blocks running in a child `bash` process can use them.
 
 ```bash run
 wait_cr_condition() {
@@ -303,11 +303,13 @@ wait_cr_condition() {
 check() { # $1 = description, $2 = actual, $3 = expected
   if [ "$2" = "$3" ]; then echo "PASS: $1 = $2"; else echo "FAIL: $1 = '$2', expected '$3'"; FAIL=1; fi
 }
+
+export -f wait_cr_condition check
 ```
 
 **Expected result:**
 
-- The block defines the `wait_cr_condition` and `check` functions without errors (inferred).
+- The block defines and exports the `wait_cr_condition` and `check` functions without errors (inferred).
 
 ### Step S.5: Define tool discovery helper
 
@@ -325,11 +327,13 @@ wait_for_tool() {
   echo "FAIL: tool $1 not registered in Wanaku Server"
   return 1
 }
+
+export -f wait_for_tool
 ```
 
 **Expected result:**
 
-- The block defines the function without errors (inferred).
+- The block defines and exports the function without errors (inferred).
 
 ---
 
@@ -351,7 +355,7 @@ Follow [common/operator-deployment.md](common/operator-deployment.md).
 
 ### Test 3.1: Create a WanakuRouter with Wanaku Barn
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so that `wait_cr_condition` is available.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -372,7 +376,7 @@ EOF
 
 oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
 # Expected output: wanakurouter.wanaku.ai/wanaku-test-router condition met
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || exit 1
+wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || return 1
 ```
 
 **Expected result:**
@@ -381,7 +385,8 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Availa
 
 ### Test 3.2: Read the Route URLs and verify the Server is reachable
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session so that the exported `WANAKU_ROUTER_URL` and `WANAKU_ROUTER_MCP_URL`
+variables are available to all later steps.
 
 ```bash run
 export WANAKU_ROUTER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
@@ -391,10 +396,10 @@ echo "mcp:        ${WANAKU_ROUTER_MCP_URL}"
 
 # curl: HTTP-level reachability check before the CLI connects
 CODE=$(curl -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/health")
-[ "${CODE}" = "200" ] && echo "PASS: Wanaku Server /health returns 200" || { echo "FAIL: /health returned HTTP ${CODE}"; exit 1; }
+[ "${CODE}" = "200" ] && echo "PASS: Wanaku Server /health returns 200" || { echo "FAIL: /health returned HTTP ${CODE}"; return 1; }
 
 ${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain
-[ $? -eq 0 ] && echo "PASS: the CLI reaches the management API" || { echo "FAIL: forwards list failed"; exit 1; }
+[ $? -eq 0 ] && echo "PASS: the CLI reaches the management API" || { echo "FAIL: forwards list failed"; return 1; }
 ```
 
 **Expected result:**
