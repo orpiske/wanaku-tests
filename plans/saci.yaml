@@ -24,8 +24,9 @@ llm:
   api_key: env:SACI_LLM_API_KEY
 
 judge:
-  api_key: env:SACI_TYPESAFE_API_KEY
-  threshold_percent: 90
+  provider: julia-1
+  endpoint: http://host.containers.internal:8095/v1/evaluate
+  api_key: env:SACI_BACKEND_TOKEN
 
 limits:
   run_timeout_secs: 7200
