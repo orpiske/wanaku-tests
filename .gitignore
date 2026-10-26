@@ -50,6 +50,7 @@ artifacts/*
 # Logs
 logs/
 *.log
+bugs
 
 # Temporary files
 *.tmp
