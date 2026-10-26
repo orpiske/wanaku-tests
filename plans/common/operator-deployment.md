@@ -86,7 +86,7 @@ echo "helm-status=$?"
 ```bash run
 oc wait deployment/wanaku-operator \
   --for=condition=Available \
-  --timeout=180s \
+  --timeout=100s \
   --namespace "${WANAKU_NAMESPACE}"
 ```
 
@@ -270,7 +270,7 @@ for PROBE in livenessProbe readinessProbe startupProbe; do
 done
 
 oc wait pod -l app.kubernetes.io/name=wanaku-operator \
-  --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+  --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 echo "operator-ready=$?"
 # Expected: operator-ready=0
 ```

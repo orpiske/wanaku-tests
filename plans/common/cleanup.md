@@ -38,7 +38,7 @@ The operator removes the deployed catalogs from Wanaku Barn before it releases e
 before the router, so that Barn is still available.
 
 ```bash run
-oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=120s
+oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=90s
 echo "service-catalogs-deleted=$?"
 # Expected: service-catalogs-deleted=0
 ```
@@ -75,7 +75,7 @@ Kubernetes garbage collection removes them. The operator labels its Deployments 
 
 ```bash run
 oc wait --for=delete deployment -l app.kubernetes.io/managed-by=wanaku-operator \
-  -n "${WANAKU_NAMESPACE}" --timeout=120s 2>/dev/null || true
+  -n "${WANAKU_NAMESPACE}" --timeout=90s 2>/dev/null || true
 
 REMAINING=$(oc get deployments -l app.kubernetes.io/managed-by=wanaku-operator \
   -n "${WANAKU_NAMESPACE}" -o name 2>/dev/null | wc -l | tr -d ' ')
