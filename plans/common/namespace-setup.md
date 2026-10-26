@@ -34,17 +34,17 @@ oc new-project "${WANAKU_NAMESPACE}" --display-name="Wanaku Operator Test" 2>/de
   || oc project "${WANAKU_NAMESPACE}"
 ```
 
-**Expected result:**
-
-- The output includes `exit_code=0`.
-
-**Verification:**
+Verify that the current project is the new namespace:
 
 ```bash run
 [ "$(oc project -q)" = "${WANAKU_NAMESPACE}" ]
 echo "exit_code=$?"
 # Expected: exit_code=0
 ```
+
+**Expected result:**
+
+- The output includes `exit_code=0`.
 
 ### Step 3: Verify current context targets the correct namespace
 

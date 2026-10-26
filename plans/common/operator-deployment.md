@@ -68,18 +68,18 @@ helm install wanaku-operator \
 
 **Expected output:** Helm prints a success message containing `STATUS: deployed`.
 
-**Expected result:**
-
-- The output includes `helm-status=0`.
-- Helm prints a success message containing `STATUS: deployed`.
-
-**Verification:**
+Verify the release status:
 
 ```bash run
 helm status wanaku-operator --namespace "${WANAKU_NAMESPACE}" -o json | jq -r '.info.status' | grep -q "deployed"
 echo "helm-status=$?"
 # Expected: helm-status=0
 ```
+
+**Expected result:**
+
+- The output includes `helm-status=0`.
+- Helm prints a success message containing `STATUS: deployed`.
 
 ### Step 4: Wait for the operator deployment to become available
 

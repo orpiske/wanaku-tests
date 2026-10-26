@@ -165,15 +165,7 @@ export KEYCLOAK_URL="https://${KEYCLOAK_HOST}"
 echo "Keycloak URL: ${KEYCLOAK_URL}"
 ```
 
-**Expected result:**
-
-- The output includes `PASS: Keycloak host is <KEYCLOAK_HOST>`.
-- The output contains no line starting with `FAIL`.
-- The commands exit with code 0.
-
-**Verification:**
-
-Run this block in the shared Bash session so variables and helper functions remain available.
+Verify the host. Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash run
@@ -183,6 +175,12 @@ if [ -z "${KEYCLOAK_HOST}" ]; then
 fi
 echo "PASS: Keycloak host is ${KEYCLOAK_HOST}"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: Keycloak host is <KEYCLOAK_HOST>`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ### Step 5: Wait for Keycloak to respond
 
@@ -234,16 +232,7 @@ ${WANAKU_KEYCLOAK_ADMIN_CLI} realm create \
 
 **Expected output:** `Realm imported successfully from <path>/deploy/auth/wanaku-config.json`
 
-**Expected result:**
-
-- The output includes `PASS: wanaku realm is accessible`.
-- `Realm imported successfully from <path>/deploy/auth/wanaku-config.json`
-- The output contains no line starting with `FAIL`.
-- The commands exit with code 0.
-
-**Verification:**
-
-Run this block in the shared Bash session so variables and helper functions remain available.
+Verify the realm. Run this block in the shared Bash session so variables and helper functions remain available.
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash run
@@ -254,6 +243,13 @@ if [ "${HTTP_CODE}" != "200" ]; then
 fi
 echo "PASS: wanaku realm is accessible"
 ```
+
+**Expected result:**
+
+- The output includes `PASS: wanaku realm is accessible`.
+- `Realm imported successfully from <path>/deploy/auth/wanaku-config.json`
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ### Step 7: Retrieve the OIDC client secret for wanaku-service
 
