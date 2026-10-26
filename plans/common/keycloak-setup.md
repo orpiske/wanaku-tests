@@ -146,7 +146,7 @@ KEYCLOAK_EOF
 
 ```bash run
 oc wait --for=condition=ready pod -l app=keycloak \
-  --timeout=180s \
+  --timeout=100s \
   -n "${WANAKU_NAMESPACE}"
 ```
 
@@ -190,14 +190,14 @@ Run this block in the shared Bash session so variables and helper functions rema
 A failing block uses `return 1` to preserve the session for diagnostics and cleanup.
 
 ```bash run
-KEYCLOAK_READY_DEADLINE=$(( $(date +%s) + 180 ))
+KEYCLOAK_READY_DEADLINE=$(( $(date +%s) + 100 ))
 while [ "$(date +%s)" -lt "${KEYCLOAK_READY_DEADLINE}" ]; do
   if curl --connect-timeout 2 --max-time 5 -f -s -L -k -o /dev/null "${KEYCLOAK_URL}/realms/master"; then
     echo "PASS: Keycloak is responding"
     break
   fi
   [ $(( KEYCLOAK_READY_DEADLINE - $(date +%s) )) -gt 8 ] \
-    || { echo "FAIL: Keycloak not responding within 180 seconds"; return 1; }
+    || { echo "FAIL: Keycloak not responding within 100 seconds"; return 1; }
   sleep 3
 done
 ```

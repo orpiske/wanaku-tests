@@ -30,7 +30,11 @@ Run command blocks in Saci's shared Bash session, including procedure blocks, so
 variables remain available to later tests. Source each block in that session; a top-level `return 1` fails the
 block without terminating the session. Do not execute blocks as separate scripts or enable `set -e` globally.
 
-**Hard timeout rule:** Any single operation (oc wait, polling loop, port-forward setup, etc.) that takes longer than **3 minutes** MUST be considered broken. Mark the test as FAIL immediately and abort — do not wait longer. All `--timeout` values in this plan MUST NOT exceed `180s`.
+**Hard timeout rule:** Saci stops a command block that runs longer than 120 seconds (`limits.operation_timeout_secs`),
+and a stopped block can lose the shared Bash session. Any single operation (oc wait, polling loop, port-forward setup,
+etc.) that takes longer than **100 seconds** MUST be considered broken. Mark the test as FAIL immediately and abort —
+do not wait longer. All `--timeout` values and polling deadlines in this plan MUST NOT exceed `100s`. A test that waits
+for several slow operations splits them into separate blocks, so that each block finishes within the Saci limit.
 
 > [!NOTE]
 > `docs/operator.md` recommends a wait of 300 seconds for `Ready`, because the Server startup probe allows 150
@@ -163,7 +167,7 @@ else
   done
   WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
   mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
-  curl --fail --location --connect-timeout 10 --max-time 120 \
+  curl --fail --location --connect-timeout 10 --max-time 90 \
     "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
     --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
     || { echo "FAIL: Wanaku Barn source archive download failed"; return 1; }
@@ -280,12 +284,12 @@ Follow [common/wait-for-deletion.md](common/wait-for-deletion.md).
 ### Step S.4: Define the custom resource condition helpers
 
 The function polls a condition until it has the expected status and, optionally, the expected reason. It fails after
-180 seconds.
+100 seconds.
 
 ```bash run
 wait_cr_condition() {
   # $1 = kind, $2 = name, $3 = condition type, $4 = expected status, $5 = expected reason (optional)
-  WCC_END=$(( $(date +%s) + 180 ))
+  WCC_END=$(( $(date +%s) + 100 ))
   while [ "$(date +%s)" -lt "${WCC_END}" ]; do
     WCC_STATUS=$(oc get "$1" "$2" -n "${WANAKU_NAMESPACE}" \
       -o jsonpath="{.status.conditions[?(@.type==\"$3\")].status}" 2>/dev/null)
@@ -437,7 +441,7 @@ oc get wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o name
 echo "router-cr-exists=$?"
 # Expected: router-cr-exists=0
 
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 # Expected output: wanakurouter.wanaku.ai/wanaku-test-router condition met
 ```
 
@@ -505,7 +509,7 @@ Run this block in the shared Bash session.
 
 ```bash run
 DEPLOYMENT="${WANAKU_ROUTER_NAME}-server"
-oc wait "deployment/${DEPLOYMENT}" --for=condition=Available --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "deployment/${DEPLOYMENT}" --for=condition=Available --timeout=100s -n "${WANAKU_NAMESPACE}"
 
 dep_jsonpath() { oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
 FAIL=0
@@ -588,7 +592,7 @@ Run this block in the shared Bash session.
 
 ```bash run
 DEPLOYMENT="${WANAKU_ROUTER_NAME}-barn"
-oc wait "deployment/${DEPLOYMENT}" --for=condition=Available --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "deployment/${DEPLOYMENT}" --for=condition=Available --timeout=100s -n "${WANAKU_NAMESPACE}"
 
 dep_jsonpath() { oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
 FAIL=0
@@ -988,14 +992,18 @@ stop_barn_port_forward
 **Description:** The Server writes `registry.json` to `/data/registry` on the `server-volume-claim` PVC. A namespace
 created in Test 4.3 must still exist after the pod is replaced.
 
-Run this block in the shared Bash session.
+Run these blocks in the shared Bash session. The first block deletes the pod. The second waits for the replacement
+pod and checks the namespace.
 
 ```bash run
 OLD_POD=$(oc get pods -l "app=${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
-oc delete pod "${OLD_POD}" -n "${WANAKU_NAMESPACE}" --wait=true --timeout=120s
+oc delete pod "${OLD_POD}" -n "${WANAKU_NAMESPACE}" --wait=true --timeout=100s
+```
 
-oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "${WANAKU_NAMESPACE}"
-oc wait pod -l "app=${WANAKU_ROUTER_NAME}-server" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+```bash run
+oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  || { echo "FAIL: deployment/${WANAKU_ROUTER_NAME}-server did not roll out"; return 1; }
+oc wait pod -l "app=${WANAKU_ROUTER_NAME}-server" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 
 OUTPUT=$(${WANAKU_CLI} namespaces list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "^${OP_TEST_NAMESPACE}" \
@@ -1305,7 +1313,7 @@ oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=me
 
 wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthConfigured True Configured || return 1
 wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" AuthProxyAvailable True Available || return 1
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 ```
 
 **Verification - oauth2-proxy resources:**
@@ -1480,7 +1488,7 @@ for i in $(seq 1 30); do
 done
 [ "${NEW_VERSION}" != "${OLD_VERSION}" ] && echo "PASS: auth-secret-version changed (${OLD_VERSION} -> ${NEW_VERSION})" \
   || { echo "FAIL: auth-secret-version did not change"; return 1; }
-oc rollout status "deployment/${PROXY}" --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc rollout status "deployment/${PROXY}" --timeout=100s -n "${WANAKU_NAMESPACE}"
 ```
 
 **Expected result:**
@@ -1509,7 +1517,7 @@ for i in $(seq 1 30); do
   sleep 3
 done
 [ "${VALUE}" = "info" ] && echo "PASS: RUST_LOG added to the Server Deployment" || { echo "FAIL: RUST_LOG='${VALUE}'"; return 1; }
-oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=100s -n "${WANAKU_NAMESPACE}"
 ```
 
 **Expected result:**
@@ -1554,23 +1562,28 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || return 1
 **Description:** With `spec.barn.enabled: false`, the operator deletes the Barn Deployment, the Barn Service and the
 Server configuration ConfigMap. It keeps the Barn PVC. A `WanakuServiceCatalog` for this router then fails validation.
 
-Run this block in the shared Bash session.
+Run these blocks in the shared Bash session. The first block disables Barn and waits for the deletions. The second
+waits for the router. The third runs the negative catalog test.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":false}}}'
 
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 120 || return 1
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 100 || return 1
 wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || return 1
 wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || return 1
 
 oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 \
   && echo "PASS: Barn PVC kept" || { echo "FAIL: Barn PVC was deleted"; return 1; }
+```
 
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+```bash run
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 [ -z "$(router_jsonpath '{.status.conditions[?(@.type=="BarnAvailable")].status}')" ] \
   && echo "PASS: no BarnAvailable condition" || echo "FAIL: BarnAvailable condition still present"
 [ -z "$(router_jsonpath '{.status.barnUrl}')" ] && echo "PASS: status.barnUrl removed" || echo "FAIL: status.barnUrl still set"
+```
 
+```bash run
 # Negative test: a catalog needs Barn
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
 apiVersion: "wanaku.ai/v1alpha1"
@@ -1605,13 +1618,16 @@ oc delete wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" --ignore-
 
 ### Test 7.4: Enable Wanaku Barn again and verify the data is kept
 
-Run this block in the shared Bash session.
+Run these blocks in the shared Bash session. The first block enables Barn and waits for the router. The second checks
+the Barn data.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":true}}}'
 wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || return 1
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
+```
 
+```bash run
 start_barn_port_forward || return 1
 OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 stop_barn_port_forward
@@ -1662,8 +1678,8 @@ removed catalog in its removed list, so it can be restored.
 Run this block in the shared Bash session.
 
 ```bash run
-oc delete wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=120s
-wait_for_deletion wanakuservicecatalog op-test-service-catalogs "${WANAKU_NAMESPACE}" 60 || return 1
+oc delete wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=60s
+wait_for_deletion wanakuservicecatalog op-test-service-catalogs "${WANAKU_NAMESPACE}" 30 || return 1
 
 start_barn_port_forward || return 1
 ACTIVE=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
@@ -1694,23 +1710,29 @@ echo "${REMOVED}" | grep -q "^${OP_CATALOG_NAME}" \
 
 ### Test 9.1: Delete the router and verify the managed resources are removed
 
-Run this block in the shared Bash session.
+Run these blocks in the shared Bash session. The first block deletes the router and waits for the workloads, Services,
+Routes and ConfigMap. The second waits for the PVCs, which Kubernetes removes after their pods have stopped.
 
 ```bash run
 oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}"
 
 FAIL=0
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 120 || FAIL=1
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 120 || FAIL=1
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 120 || FAIL=1
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 90 || FAIL=1
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 90 || FAIL=1
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 90 || FAIL=1
 wait_for_deletion service "server-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion service "oauth2-proxy-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion route "${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion route "${WANAKU_ROUTER_NAME}-mcp" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || FAIL=1
-wait_for_deletion pvc server-volume-claim "${WANAKU_NAMESPACE}" 120 || FAIL=1
-wait_for_deletion pvc "${WANAKU_ROUTER_NAME}-barn-data" "${WANAKU_NAMESPACE}" 120 || FAIL=1
+[ "${FAIL}" -eq 0 ] || return 1
+```
+
+```bash run
+FAIL=0
+wait_for_deletion pvc server-volume-claim "${WANAKU_NAMESPACE}" 50 || FAIL=1
+wait_for_deletion pvc "${WANAKU_ROUTER_NAME}-barn-data" "${WANAKU_NAMESPACE}" 50 || FAIL=1
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
