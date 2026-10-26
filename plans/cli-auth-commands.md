@@ -65,11 +65,31 @@ Phase 1 sets these variables:
 
 ### CLI invocation
 
-Use the jars from a local build (`mvn -DskipTests package`, see [common/start-barn.md](common/start-barn.md) step 1),
-or installed binaries. Define shell functions. Do not put the full command in one variable, because zsh does not split
-it into words.
+Step S.2 prefers the installed `wanaku` and `wanaku-keycloak-admin` executables, for example the launchers of the Saci
+test image. Set `CLI_JAR` or `KEYCLOAK_ADMIN_JAR` to use the jars from a local build instead
+(`mvn -DskipTests package`, see [common/start-barn.md](common/start-barn.md) step 1). Without an installed executable,
+the step falls back to the jar of a local build. Define shell functions. Do not put the full command in one variable,
+because zsh does not split it into words.
 
 The executable block is in Step S.2 below.
+
+### Shared session and timeouts
+
+Run command blocks in Saci's shared Bash session, including procedure blocks, so the CLI functions, helper functions
+and exported variables remain available to later tests. Source each block in that session; a top-level `return 1`
+fails the block without terminating the session. Do not execute blocks as separate scripts or enable `set -e`
+globally.
+
+**Hard timeout rule:** Saci stops a command block that runs longer than 120 seconds (`limits.operation_timeout_secs`),
+and a stopped block can lose the shared Bash session. Any single operation (oc wait, polling loop, etc.) that takes
+longer than **100 seconds** MUST be considered broken. Mark the test as FAIL and do not wait longer. All `--timeout`
+values in this plan MUST NOT exceed `100s`.
+
+### Environments
+
+Phase 1 prepares the OpenShift environment (option B): the operator, Keycloak and a `WanakuRouter` with
+authentication. To test a local Docker Compose deployment (option A) instead, see
+[Option A: Local Docker Compose](#option-a-local-docker-compose-not-automated) at the end of this plan.
 
 The `users`, `credentials` and `realm` commands are in the standalone `wanaku-keycloak-admin` binary. The `auth`
 commands are in the `wanaku` CLI. The Keycloak realm defaults to `wanaku` for both CLIs.
@@ -77,6 +97,58 @@ commands are in the `wanaku` CLI. The Keycloak realm defaults to `wanaku` for bo
 ---
 
 ## Phase S: Setup
+
+### Step S.0: Prepare the operator Helm chart and realm configuration
+
+Reuse a supplied Wanaku Barn checkout, or download its source archive from the official repository. Set
+`WANAKU_BARN_REF` to a branch, tag or commit (default: `main`) to select the source version. To use an existing
+checkout instead, explicitly set `WANAKU_REPO_ROOT` to its root; an invalid explicit path fails rather than
+triggering a download. Downloaded sources are isolated in a temporary directory and removed in Step 13.4. Run this
+block in the shared Bash session.
+
+```bash run
+WANAKU_DOWNLOADED_SOURCE_DIR=""
+export WANAKU_BARN_REF="${WANAKU_BARN_REF:-main}"
+if [ -n "${WANAKU_REPO_ROOT+x}" ]; then
+  if [ ! -r "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_REPO_ROOT}/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL: supplied WANAKU_REPO_ROOT lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT
+  echo "PASS: existing Wanaku Barn source assets reused"
+elif [ -r "./apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+    && [ -r "./deploy/auth/wanaku-config.json" ]; then
+  export WANAKU_REPO_ROOT="${PWD}"
+  echo "PASS: existing Wanaku Barn source assets reused"
+else
+  for CMD in curl tar; do
+    command -v "${CMD}" > /dev/null 2>&1 || { echo "FAIL: ${CMD} is required to download source assets"; return 1; }
+  done
+  WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
+  mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
+  curl --fail --location --connect-timeout 10 --max-time 90 \
+    "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
+    --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    || { echo "FAIL: Wanaku Barn source archive download failed"; return 1; }
+  tar -xzf "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    --strip-components=1 -C "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" \
+    || { echo "FAIL: Wanaku Barn source archive extraction failed"; return 1; }
+  if [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL: downloaded source lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT="${WANAKU_DOWNLOADED_SOURCE_DIR}/repo"
+  echo "PASS: Wanaku Barn source assets downloaded"
+fi
+```
+
+**Expected result:**
+
+- The output includes `PASS: existing Wanaku Barn source assets reused` or `PASS: Wanaku Barn source assets downloaded`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
 ### Step S.1: Check prerequisites
 
@@ -110,10 +182,21 @@ export CREDENTIALS_FILE="${WANAKU_CREDENTIALS}"
 ### Step S.2: Check prerequisites
 
 ```bash run
-CLI_JAR="${CLI_JAR:-${WANAKU_REPO_ROOT}/apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
-KEYCLOAK_ADMIN_JAR="${KEYCLOAK_ADMIN_JAR:-${WANAKU_REPO_ROOT}/apps/wanaku-keycloak-admin/target/quarkus-app/quarkus-run.jar}"
-wanaku() { java -jar "${CLI_JAR}" "$@"; }
-wanaku-keycloak-admin() { java -jar "${KEYCLOAK_ADMIN_JAR}" "$@"; }
+# An explicit CLI_JAR or KEYCLOAK_ADMIN_JAR selects a jar. Otherwise prefer the installed executable.
+WANAKU_EXEC="$(unset -f wanaku 2>/dev/null; command -v wanaku 2>/dev/null || true)"
+KEYCLOAK_ADMIN_EXEC="$(unset -f wanaku-keycloak-admin 2>/dev/null; command -v wanaku-keycloak-admin 2>/dev/null || true)"
+if [ -z "${CLI_JAR:-}" ] && [ -n "${WANAKU_EXEC}" ]; then
+  wanaku() { "${WANAKU_EXEC}" "$@"; }
+else
+  CLI_JAR="${CLI_JAR:-${WANAKU_REPO_ROOT}/apps/wanaku-cli/target/quarkus-app/quarkus-run.jar}"
+  wanaku() { java -jar "${CLI_JAR}" "$@"; }
+fi
+if [ -z "${KEYCLOAK_ADMIN_JAR:-}" ] && [ -n "${KEYCLOAK_ADMIN_EXEC}" ]; then
+  wanaku-keycloak-admin() { "${KEYCLOAK_ADMIN_EXEC}" "$@"; }
+else
+  KEYCLOAK_ADMIN_JAR="${KEYCLOAK_ADMIN_JAR:-${WANAKU_REPO_ROOT}/apps/wanaku-keycloak-admin/target/quarkus-app/quarkus-run.jar}"
+  wanaku-keycloak-admin() { java -jar "${KEYCLOAK_ADMIN_JAR}" "$@"; }
+fi
 
 # Admin command with the Keycloak connection options: kc <group> <command> [options]
 kc() {
@@ -131,11 +214,11 @@ kc() {
 
 ## Phase 0: Prerequisites
 
-### Test 0.1: Verify tools and jars
+### Test 0.1: Verify tools and CLIs
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session, so the CLI functions from Step S.2 are available.
 
-```bash
+```bash run
 FAIL=0
 for CMD in java jq curl openssl; do
   if command -v "${CMD}" > /dev/null 2>&1; then
@@ -145,15 +228,19 @@ for CMD in java jq curl openssl; do
     FAIL=1
   fi
 done
-for FILE in "${CLI_JAR}" "${KEYCLOAK_ADMIN_JAR}"; do
-  if [ -f "${FILE}" ]; then
-    echo "PASS: ${FILE} exists"
-  else
-    echo "FAIL: ${FILE} not found"
-    FAIL=1
-  fi
-done
-[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: prerequisites not met"; exit 1; }
+if wanaku --help > /dev/null 2>&1; then
+  echo "PASS: the Wanaku CLI runs"
+else
+  echo "FAIL: the Wanaku CLI does not run"
+  FAIL=1
+fi
+if wanaku-keycloak-admin --help > /dev/null 2>&1; then
+  echo "PASS: the Keycloak admin CLI runs"
+else
+  echo "FAIL: the Keycloak admin CLI does not run"
+  FAIL=1
+fi
+[ "${FAIL}" -eq 0 ] && echo "PASS: all prerequisites met" || { echo "FAIL: prerequisites not met"; return 1; }
 ```
 
 **Expected result:**
@@ -162,58 +249,68 @@ done
 - The output includes `PASS: jq found`.
 - The output includes `PASS: curl found`.
 - The output includes `PASS: openssl found`.
-- The output includes `PASS: <CLI_JAR> exists`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
-- The output includes `PASS: <KEYCLOAK_ADMIN_JAR> exists`. Replace each `<VARIABLE>` placeholder with that variable’s run-time value.
+- The output includes `PASS: the Wanaku CLI runs`.
+- The output includes `PASS: the Keycloak admin CLI runs`.
 - The output includes `PASS: all prerequisites met`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
 ## Phase 1: Environment Setup
 
-Select one option. Both options give a Keycloak realm `wanaku` and a Wanaku Server that only the two oauth2-proxy
-instances expose.
+Phase 1 prepares option B: Wanaku Server deployed by the operator on OpenShift, with a Keycloak realm `wanaku` and the
+two oauth2-proxy instances in front of it.
 
-### Step 1.0: Select and prepare one environment
+### Step 1.0: Log in to OpenShift and create the namespace
 
-#### Option A: Local Docker Compose (no cluster)
+Follow [common/openshift-login.md](common/openshift-login.md).
 
-Use steps 1 to 4 of the
-[authenticated local deployment guide](https://github.com/wanaku-ai/wanaku/blob/main/deploy/auth/README.md)
-(`deploy/auth/README.md` in the `wanaku-ai/wanaku` repository). Do not do its step 3 (create a user). Step 1.3 of this
-plan creates the test user.
+Follow [common/namespace-setup.md](common/namespace-setup.md).
 
-Export the Keycloak admin credentials and the `wanaku-mcp-router` client secret of your Compose deployment before
-you run the plan. The plan does not contain default values for them. Use the values that the Compose project uses
-(`KC_BOOTSTRAP_ADMIN_USERNAME`, `KC_BOOTSTRAP_ADMIN_PASSWORD` and `WANAKU_MCPROUTER_SECRET`). Do not commit them.
-Then set the variables:
+**Expected result:**
 
-```bash
-for VAR_NAME in KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASS WANAKU_MCPROUTER_SECRET; do
+- The procedures log in with the service account token and create the namespace `WANAKU_NAMESPACE`.
+
+### Step 1.0a: Install the operator
+
+Follow [common/operator-deployment.md](common/operator-deployment.md).
+
+**Expected result:**
+
+- The operator is installed with Helm and the procedure checks pass.
+
+### Step 1.0b: Deploy Keycloak
+
+Follow [common/keycloak-setup.md](common/keycloak-setup.md).
+
+The procedure also creates `WANAKU_TEST_USER` with `WANAKU_TEST_PASS` (its step 9) and verifies its login (step 10).
+The password of that user is therefore known, so Test 1.3 can continue when the user exists. Then verify the output
+variables of the procedure. Run this block in the shared Bash session.
+
+```bash run
+# common/keycloak-setup.md created WANAKU_TEST_USER with WANAKU_TEST_PASS
+export WANAKU_TEST_PASS_GENERATED=false
+for VAR_NAME in KEYCLOAK_URL WANAKU_CLIENT_SECRET WANAKU_AUTH_SECRET_NAME WANAKU_AUTH_ISSUER_URL WANAKU_AUTH_INTERNAL_ISSUER_URL; do
   eval "VAL=\${${VAR_NAME}}"
-  [ -n "${VAL}" ] && echo "PASS: ${VAR_NAME} is set" || { echo "FAIL: ${VAR_NAME} is not set"; exit 1; }
+  [ -n "${VAL}" ] && echo "PASS: ${VAR_NAME} is set" || { echo "FAIL: ${VAR_NAME} is not set"; return 1; }
 done
-export KEYCLOAK_URL="http://localhost:8543"
-export WANAKU_CLIENT_SECRET="${WANAKU_MCPROUTER_SECRET}"
-export WANAKU_SERVER_URL="http://localhost:4180"   # management proxy
-export WANAKU_MCP_BASE_URL="http://localhost:4181" # MCP proxy
-# The bundled wanaku-realm.json enables direct access grants for mcp-client
-export EXPECT_PUBLIC_CLIENT_LOGIN="pass"
 ```
 
-The Compose project sets `WANAKU_AUTH_ISSUER=http://localhost:8543/realms/wanaku` on the server.
+**Expected result:**
 
-#### Option B: OpenShift with the operator
+- The output includes `PASS: KEYCLOAK_URL is set`.
+- The output includes `PASS: WANAKU_CLIENT_SECRET is set`.
+- The output includes `PASS: WANAKU_AUTH_SECRET_NAME is set`.
+- The output includes `PASS: WANAKU_AUTH_ISSUER_URL is set`.
+- The output includes `PASS: WANAKU_AUTH_INTERNAL_ISSUER_URL is set`.
+- The output contains no line starting with `FAIL:`.
+- The commands exit with code 0.
 
-1. Follow [common/openshift-login.md](common/openshift-login.md) and [common/namespace-setup.md](common/namespace-setup.md).
-2. Follow [common/operator-deployment.md](common/operator-deployment.md).
-3. Follow [common/keycloak-setup.md](common/keycloak-setup.md) steps 1 to 9. After completion, `KEYCLOAK_URL`,
-   `WANAKU_CLIENT_SECRET`, `WANAKU_AUTH_SECRET_NAME`, `WANAKU_AUTH_ISSUER_URL` and `WANAKU_AUTH_INTERNAL_ISSUER_URL`
-   must be set. Do not do step 10 (create a user). Step 1.3 of this plan creates the test user.
-4. Create a `WanakuRouter` with `spec.auth.enabled: true`:
+### Step 1.0c: Create a WanakuRouter with authentication
 
-Run this block as a separate `bash` script, not in the shared session.
+Create a `WanakuRouter` with `spec.auth.enabled: true`. Run this block in the shared Bash session, so the exported URLs
+are available to the later tests.
 
-```bash
+```bash run
 export WANAKU_ROUTER_NAME="${WANAKU_ROUTER_NAME:-wanaku-auth}"
 
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -229,17 +326,18 @@ spec:
     secretName: "${WANAKU_AUTH_SECRET_NAME}"
 EOF
 
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=300s -n "${WANAKU_NAMESPACE}" \
-  && echo "PASS: WanakuRouter is Ready" || { echo "FAIL: WanakuRouter is not Ready"; exit 1; }
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  && echo "PASS: WanakuRouter is Ready" || { echo "FAIL: WanakuRouter is not Ready"; return 1; }
 
 AUTH_COND=$(oc get "wanakurouter/${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" \
   -o jsonpath='{.status.conditions[?(@.type=="AuthConfigured")].reason}')
 [ "${AUTH_COND}" = "Configured" ] && echo "PASS: AuthConfigured reason is Configured" \
   || echo "FAIL: AuthConfigured reason is '${AUTH_COND}'"
 
-# The operator creates the Route <router> for the management API and <router>-mcp for MCP
-export WANAKU_SERVER_URL="http://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
-export WANAKU_MCP_BASE_URL="http://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+# The operator creates the Route <router> for the management API and <router>-mcp for MCP. Both are
+# edge-terminated and redirect HTTP to HTTPS.
+export WANAKU_SERVER_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
+export WANAKU_MCP_BASE_URL="https://$(oc get route "${WANAKU_ROUTER_NAME}-mcp" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.host}')"
 # deploy/auth/wanaku-config.json of this repository disables direct access grants for mcp-client
 export EXPECT_PUBLIC_CLIENT_LOGIN="fail"
 ```
@@ -249,24 +347,24 @@ Compose setup uses the opposite assignment. The plan uses only the URLs, so this
 
 **Expected result:**
 
-- For Option B (OpenShift), the output includes `PASS: WanakuRouter is Ready`; Option A uses the local Compose deployment instead.
-- For Option B (OpenShift), the output includes `PASS: AuthConfigured reason is Configured`; Option A uses the local Compose deployment instead.
+- The output includes `PASS: WanakuRouter is Ready`.
+- The output includes `PASS: AuthConfigured reason is Configured`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
 ### Test 1.1: Verify that the variables are set and Keycloak responds
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 for VAR_NAME in KEYCLOAK_URL KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASS WANAKU_CLIENT_SECRET WANAKU_SERVER_URL WANAKU_MCP_BASE_URL EXPECT_PUBLIC_CLIENT_LOGIN; do
   eval "VAL=\${${VAR_NAME}}"
-  [ -n "${VAL}" ] && echo "PASS: ${VAR_NAME} is set" || { echo "FAIL: ${VAR_NAME} is not set"; exit 1; }
+  [ -n "${VAL}" ] && echo "PASS: ${VAR_NAME} is set" || { echo "FAIL: ${VAR_NAME} is not set"; return 1; }
 done
 
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/${WANAKU_REALM}" 2>/dev/null || echo "000")
 [ "${HTTP_CODE}" = "200" ] && echo "PASS: realm ${WANAKU_REALM} is accessible" \
-  || { echo "FAIL: realm ${WANAKU_REALM} not accessible (HTTP ${HTTP_CODE})"; exit 1; }
+  || { echo "FAIL: realm ${WANAKU_REALM} not accessible (HTTP ${HTTP_CODE})"; return 1; }
 ```
 
 **Expected result:**
@@ -308,19 +406,19 @@ CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${WANAKU_MCP_BASE_URL}/${
 
 ### Test 1.3: Create the auth login test user
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 if ! OUTPUT=$(kc users add --username "${WANAKU_TEST_USER}" --password "${WANAKU_TEST_PASS}" --email "${WANAKU_TEST_EMAIL}" 2>&1); then
   echo "${OUTPUT}"
   if [ "${WANAKU_TEST_PASS_GENERATED}" = "true" ]; then
     echo "FAIL: could not create user '${WANAKU_TEST_USER}' with the generated password. If the user exists, export WANAKU_TEST_PASS with its password, or remove the user."
-    exit 1
+    return 1
   fi
 fi
 kc users list --plain 2>&1 | grep -q "^${WANAKU_TEST_USER}[[:space:]]" \
   && echo "PASS: user '${WANAKU_TEST_USER}' exists" \
-  || { echo "FAIL: user '${WANAKU_TEST_USER}' not found"; exit 1; }
+  || { echo "FAIL: user '${WANAKU_TEST_USER}' not found"; return 1; }
 ```
 
 If the user exists from an earlier run, the `add` command fails with `User exists with same email`. The plan does not
@@ -340,20 +438,20 @@ smoke test against a real Keycloak.
 
 ### Test 2.1: Add a user and find it in the list
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 OUTPUT=$(kc users add --username "${TEST_USERNAME}" --password "${TEST_PASSWORD}" --email "${TEST_EMAIL}" 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "User '${TEST_USERNAME}' created successfully"; then
   echo "PASS: user '${TEST_USERNAME}' created"
 else
-  echo "FAIL: users add failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: users add failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 
 kc users list --plain 2>&1 | grep -q "^${TEST_USERNAME}[[:space:]]${TEST_EMAIL}" \
   && echo "PASS: user '${TEST_USERNAME}' found with its email" \
-  || { echo "FAIL: user '${TEST_USERNAME}' not found after creation"; exit 1; }
+  || { echo "FAIL: user '${TEST_USERNAME}' not found after creation"; return 1; }
 ```
 
 **Expected output (plain list):** a tab-separated table with the header `username	email	enabled`.
@@ -367,15 +465,15 @@ kc users list --plain 2>&1 | grep -q "^${TEST_USERNAME}[[:space:]]${TEST_EMAIL}"
 
 ### Test 2.2: Set the password of the user
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 OUTPUT=$(kc users set-password --username "${TEST_USERNAME}" --password "${TEST_NEW_PASSWORD}" 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "Password updated for user '${TEST_USERNAME}'"; then
   echo "PASS: password updated"
 else
-  echo "FAIL: set-password failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: set-password failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 ```
 
@@ -387,19 +485,19 @@ fi
 
 ### Test 2.3: Remove the user and check that it is not in the list
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 OUTPUT=$(kc users remove --username "${TEST_USERNAME}" 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "deleted successfully"; then
   echo "PASS: user '${TEST_USERNAME}' removed"
 else
-  echo "FAIL: users remove failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: users remove failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 
 kc users list --plain 2>&1 | grep -q "^${TEST_USERNAME}[[:space:]]" \
-  && { echo "FAIL: removed user still present"; exit 1; } \
+  && { echo "FAIL: removed user still present"; return 1; } \
   || echo "PASS: removed user no longer in list"
 ```
 
@@ -417,15 +515,15 @@ clients. This phase is a smoke test against a real Keycloak.
 
 ### Test 3.1: Add a service client
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 OUTPUT=$(kc credentials add --client-id "${TEST_CLIENT_ID}" --description "Test service client for issue 811" 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "Client '${TEST_CLIENT_ID}' created successfully"; then
   echo "PASS: service client '${TEST_CLIENT_ID}' created"
 else
-  echo "FAIL: credentials add failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: credentials add failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 ```
 
@@ -453,25 +551,25 @@ fi
 
 ### Test 3.3: Regenerate gives a different secret
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 ORIGINAL_SECRET=$(kc credentials show --client-id "${TEST_CLIENT_ID}" --show-secret --plain 2>/dev/null)
 OUTPUT=$(kc credentials regenerate --client-id "${TEST_CLIENT_ID}" --show-secret 2>&1)
 EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "^New Secret: ."; then
   echo "PASS: secret regenerated"
 else
-  echo "FAIL: credentials regenerate failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: credentials regenerate failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 
 NEW_SECRET=$(kc credentials show --client-id "${TEST_CLIENT_ID}" --show-secret --plain 2>/dev/null)
 if [ -z "${ORIGINAL_SECRET}" ] || [ -z "${NEW_SECRET}" ]; then
-  echo "FAIL: could not compare secrets"; exit 1
+  echo "FAIL: could not compare secrets"; return 1
 elif [ "${ORIGINAL_SECRET}" != "${NEW_SECRET}" ]; then
   echo "PASS: regenerated secret differs from original"
 else
-  echo "FAIL: regenerated secret is the same as the original"; exit 1
+  echo "FAIL: regenerated secret is the same as the original"; return 1
 fi
 ```
 
@@ -545,9 +643,9 @@ echo "PASS: credentials file cleared"
 
 ### Test 5.2: Login with --realm succeeds
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 OUTPUT=$(echo "${WANAKU_TEST_PASS}" | wanaku auth login \
   --auth-server "${KEYCLOAK_URL}" \
   --realm "${WANAKU_REALM}" \
@@ -558,7 +656,7 @@ EXIT_CODE=$?
 if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "Successfully authenticated and stored credentials"; then
   echo "PASS: auth login with --realm '${WANAKU_REALM}' succeeded"
 else
-  echo "FAIL: auth login with --realm failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: auth login with --realm failed (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 ```
 
@@ -613,15 +711,15 @@ fi
 
 ### Test 5.5: auth token --get --unmask --plain writes only the token
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 TOKEN=$(wanaku auth token --get --unmask --plain 2>/dev/null)
 if [ -n "${TOKEN}" ] && ! echo "${TOKEN}" | grep -q "[[:space:]]" && [ "$(echo "${TOKEN}" | tr -cd '.' | wc -c)" -eq 2 ]; then
   echo "PASS: stdout contains one JWT (length: ${#TOKEN})"
 else
   echo "FAIL: captured token is empty or contains more than the token: '${TOKEN}'"
-  exit 1
+  return 1
 fi
 ```
 
@@ -639,15 +737,17 @@ from Phase 5 is accepted.
 
 ### Test 6.1: The stored token works with the management API
 
-Run this block as a separate `bash` script, not in the shared session.
+A new registry has no tools, so the command prints an empty list. The CLI exits with a non-zero code and prints
+`Authentication rejected by the server (status: 401` when the proxy rejects the token. Run this block in the shared
+Bash session.
 
-```bash
+```bash run
 OUTPUT=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --plain 2>&1)
 EXIT_CODE=$?
-if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | head -1 | grep -q "^name"; then
+if [ "${EXIT_CODE}" -eq 0 ] && ! echo "${OUTPUT}" | grep -q "status: 401"; then
   echo "PASS: stored token accepted by the management proxy"
 else
-  echo "FAIL: management proxy rejected the stored token (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; exit 1
+  echo "FAIL: management proxy rejected the stored token (exit code ${EXIT_CODE})"; echo "${OUTPUT}"; return 1
 fi
 ```
 
@@ -757,8 +857,8 @@ export WANAKU_CREDENTIALS="${ORIGINAL_CREDENTIALS}"
 
 **Expected result:**
 
-- The output includes `PASS: mcp-client login succeeded and its token is accepted`.
-- The output includes `PASS: mcp-client login rejected by the realm (expected for this realm)`.
+- The output includes `PASS: mcp-client login succeeded and its token is accepted` when `EXPECT_PUBLIC_CLIENT_LOGIN`
+  is `pass`, or `PASS: mcp-client login rejected by the realm (expected for this realm)` when it is `fail`.
 - The output contains no line starting with `FAIL:`.
 
 ## Phase 7: Auth Login — Full Issuer URL and Realm Persistence
@@ -823,14 +923,16 @@ check the HTTP metadata documents.
 ### Test 8.1: Protected-resource metadata (RFC 9728)
 
 ```bash run
+# The documents use http:// and the Host header of the request (see the note below)
+MCP_DOCUMENT_ORIGIN="http://${WANAKU_MCP_BASE_URL#*://}"
 META=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/oauth-protected-resource/${WANAKU_MCP_NAMESPACE}/mcp")
-echo "${META}" | jq -e --arg origin "${WANAKU_MCP_BASE_URL}" \
+echo "${META}" | jq -e --arg origin "${MCP_DOCUMENT_ORIGIN}" \
   '(.authorization_servers | length) == 1 and .authorization_servers[0] == $origin and .bearer_methods_supported == ["header"]' \
   > /dev/null && echo "PASS: metadata names the MCP origin as authorization server" \
   || echo "FAIL: unexpected metadata: ${META}"
 
 META=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/oauth-protected-resource/auth-test-ns/mcp")
-echo "${META}" | jq -e --arg r "${WANAKU_MCP_BASE_URL}/auth-test-ns/mcp" '.resource == $r' > /dev/null \
+echo "${META}" | jq -e --arg r "${MCP_DOCUMENT_ORIGIN}/auth-test-ns/mcp" '.resource == $r' > /dev/null \
   && echo "PASS: resource is the namespace endpoint" || echo "FAIL: unexpected resource: ${META}"
 ```
 
@@ -850,8 +952,10 @@ document can differ from the public scheme.
 ### Test 8.2: OpenID configuration points to the Keycloak issuer
 
 ```bash run
+# The document uses http:// and the Host header of the request, as in Test 8.1
+MCP_DOCUMENT_ORIGIN="http://${WANAKU_MCP_BASE_URL#*://}"
 DISCOVERY=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/openid-configuration")
-echo "${DISCOVERY}" | jq -e --arg iss "${KEYCLOAK_URL}/realms/${WANAKU_REALM}" --arg origin "${WANAKU_MCP_BASE_URL}" \
+echo "${DISCOVERY}" | jq -e --arg iss "${KEYCLOAK_URL}/realms/${WANAKU_REALM}" --arg origin "${MCP_DOCUMENT_ORIGIN}" \
   '.issuer == $iss and .token_endpoint == ($origin + "/token") and .code_challenge_methods_supported == ["S256"]' \
   > /dev/null && echo "PASS: discovery document names the Keycloak issuer" \
   || echo "FAIL: unexpected discovery document: ${DISCOVERY}"
@@ -936,12 +1040,12 @@ The server returns HTTP `200` with an empty `authorization_servers` list. It doe
 
 ### Test 9.1: An expired token is refreshed automatically
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
-```bash
+```bash run
 rm -f "${CREDENTIALS_FILE}"
 echo "${WANAKU_TEST_PASS}" | wanaku auth login --auth-server "${KEYCLOAK_URL}" --realm "${WANAKU_REALM}" \
-  --username "${WANAKU_TEST_USER}" --password --plain > /dev/null 2>&1 || { echo "FAIL: login failed"; exit 1; }
+  --username "${WANAKU_TEST_USER}" --password --plain > /dev/null 2>&1 || { echo "FAIL: login failed"; return 1; }
 
 # Force token expiry
 sed "s/^token.expiry=.*/token.expiry=1000000000/" "${CREDENTIALS_FILE}" > "${CREDENTIALS_FILE}.tmp" \
@@ -1185,25 +1289,76 @@ fi
 
 **Expected result:**
 
-- The output includes `PASS: original credentials restored`.
-- The output includes `PASS: no backup to restore`.
+- The output includes `PASS: original credentials restored` or `PASS: no backup to restore`.
 
-### Step 13.3: Remove the environment
+### Step 13.3: Delete the WanakuRouter
 
-- Option A: `docker compose -p wanaku-auth -f deploy/auth/docker-compose-auth.yml down -v` from the
-  `wanaku-ai/wanaku` checkout. The `-v` option also removes the Keycloak and registry volumes.
-- Option B: `oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true`, then
-  follow [common/cleanup.md](common/cleanup.md).
+```bash run
+oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
+echo "router-deleted=$?"
+```
 
 **Expected result:**
 
-- The stated setup or shutdown instructions complete successfully (inferred).
+- The output includes `router-deleted=0`.
+
+### Step 13.4: Remove the environment
+
+Follow [common/cleanup.md](common/cleanup.md).
+
+Then remove the source assets that Step S.0 downloaded. Run this block in the shared Bash session.
+
+```bash run
+if [ -n "${WANAKU_DOWNLOADED_SOURCE_DIR}" ]; then
+  rm -rf "${WANAKU_DOWNLOADED_SOURCE_DIR}" || return 1
+  unset WANAKU_DOWNLOADED_SOURCE_DIR
+fi
+echo "PASS: downloaded source assets removed or no download was owned"
+```
+
+**Expected result:**
+
+- The cleanup procedure steps satisfy their expected results.
+- The output includes `PASS: downloaded source assets removed or no download was owned`.
+
+## Option A: Local Docker Compose (not automated)
+
+Phase 1 automates option B. To run the tests from Test 1.1 onwards against a local Docker Compose deployment instead,
+prepare it manually:
+
+Use steps 1 to 4 of the
+[authenticated local deployment guide](https://github.com/wanaku-ai/wanaku/blob/main/deploy/auth/README.md)
+(`deploy/auth/README.md` in the `wanaku-ai/wanaku` repository). Do not do its step 3 (create a user). Step 1.3 of this
+plan creates the test user.
+
+Export the Keycloak admin credentials and the `wanaku-mcp-router` client secret of your Compose deployment before
+you run the plan. The plan does not contain default values for them. Use the values that the Compose project uses
+(`KC_BOOTSTRAP_ADMIN_USERNAME`, `KC_BOOTSTRAP_ADMIN_PASSWORD` and `WANAKU_MCPROUTER_SECRET`). Do not commit them.
+Then set the variables:
+
+```bash
+for VAR_NAME in KEYCLOAK_ADMIN_USER KEYCLOAK_ADMIN_PASS WANAKU_MCPROUTER_SECRET; do
+  eval "VAL=\${${VAR_NAME}}"
+  [ -n "${VAL}" ] && echo "PASS: ${VAR_NAME} is set" || { echo "FAIL: ${VAR_NAME} is not set"; exit 1; }
+done
+export KEYCLOAK_URL="http://localhost:8543"
+export WANAKU_CLIENT_SECRET="${WANAKU_MCPROUTER_SECRET}"
+export WANAKU_SERVER_URL="http://localhost:4180"   # management proxy
+export WANAKU_MCP_BASE_URL="http://localhost:4181" # MCP proxy
+# The bundled wanaku-realm.json enables direct access grants for mcp-client
+export EXPECT_PUBLIC_CLIENT_LOGIN="pass"
+```
+
+The Compose project sets `WANAKU_AUTH_ISSUER=http://localhost:8543/realms/wanaku` on the server.
+
+To remove it, run `docker compose -p wanaku-auth -f deploy/auth/docker-compose-auth.yml down -v` from the
+`wanaku-ai/wanaku` checkout. The `-v` option also removes the Keycloak and registry volumes.
 
 ## Summary Matrix
 
 | Phase | Test ID | Test Name | Priority |
 |-------|---------|-----------|----------|
-| 0 | 0.1 | Tools and jars | High |
+| 0 | 0.1 | Tools and CLIs | High |
 | 1 | 1.1–1.3 | Environment variables, proxies return 401 without token, auth test user | Critical |
 | 2 | 2.1–2.3 | Users round trip (add and list, set-password, remove and list) | Critical |
 | 3 | 3.1–3.4 | Service client round trip (add, plain secret, regenerate, remove) | Critical |
@@ -1216,7 +1371,8 @@ fi
 | 10 | 10.1–10.3 | Auth login negative tests (wrong password, unreachable auth server), --api-token | High |
 | 11 | 11.1–11.4 | --token on management commands, --no-auth rejected, unreachable host | Critical |
 | 12 | 12.1–12.2 | Admin UI sign-in page and PKCE redirect | High |
-| 13 | 13.1–13.3 | Cleanup | Critical |
+| 13 | 13.1–13.4 | Cleanup | Critical |
+| S | S.0 | Operator chart and realm configuration | Setup |
 | S | S.1 | Check prerequisites | Setup |
 | S | S.2 | Check prerequisites | Setup |
-| 1 | 1.0 | Select and prepare one environment | Setup |
+| 1 | 1.0–1.0c | OpenShift login, namespace, operator, Keycloak and authenticated WanakuRouter | Setup |
