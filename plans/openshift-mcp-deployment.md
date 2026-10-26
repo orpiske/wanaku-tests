@@ -62,18 +62,34 @@ Do not put a full command in a variable (for example `WANAKU_CLI="java -jar ..."
 
 - Set `OPENSHIFT_API_URL` and `OPENSHIFT_SA_TOKEN` before Step 10.1. The login procedure uses the cluster API URL
   and a service account token; the account needs permission to create the namespace and install the operator.
-- Set `WANAKU_REPO_ROOT` to the `wanaku-barn` checkout containing `deploy/auth/wanaku-config.json` and
-  `apps/wanaku-operator/deploy/helm/wanaku-operator` before Step S.3. The Keycloak procedure imports the realm
-  file; the operator procedure installs the Helm chart. The default `.` only works from that checkout.
+- The Keycloak procedure imports `deploy/auth/wanaku-config.json` and the operator procedure installs the Helm chart
+  `apps/wanaku-operator/deploy/helm/wanaku-operator`, both from Wanaku Barn. Step S.2 reuses the current directory
+  when it contains them; otherwise it downloads them from `wanaku-ai/wanaku-barn`. Set `WANAKU_BARN_REF` to a branch,
+  tag or commit (default: `main`) to select the source version. To use an existing checkout instead, explicitly set
+  `WANAKU_REPO_ROOT` to its root; an invalid explicit path fails rather than triggering a download. Downloaded
+  sources are isolated in a temporary directory and removed in Step 15.1.
 - Make `wanaku-keycloak-admin` available on `PATH`, or configure `WANAKU_KEYCLOAK_ADMIN_CLI` as described in
   [common/keycloak-setup.md](common/keycloak-setup.md). Jar invocations require built artifacts and Java 21+.
   Step S.1 selects the main CLI independently, using `CLI_JAR` when set.
 - Step 11.1 creates a unique `WANAKU_NAMESPACE`. Step S.3 then sets the deployment environment and an isolated
   `WANAKU_CREDENTIALS` directory. Keep the selected CLI function, credentials and exported procedure outputs in
-  the shared shell for subsequent steps. Follow separate-script instructions only where no shared outputs are needed.
+  the shared shell for subsequent steps.
 - The cluster must be able to pull `WANAKU_SERVER_IMAGE`, the operator images, Keycloak, oauth2-proxy and
   `TEST_MCP_IMAGE` (the infra-remediation fixture). Step S.3 supplies the deployment image defaults.
 - Step S.4 defines `wait_for_deletion` from [common/wait-for-deletion.md](common/wait-for-deletion.md).
+
+### Shared session and timeouts
+
+Run command blocks in Saci's shared Bash session, including procedure blocks, so the `wanaku` function, helper
+functions and exported variables remain available to later steps. Source each block in that session; a top-level
+`return 1` fails the block without terminating the session. Do not execute blocks as separate scripts or enable
+`set -e` globally.
+
+**Hard timeout rule:** Saci stops a command block that runs longer than 120 seconds (`limits.operation_timeout_secs`),
+and a stopped block can lose the shared Bash session. Any single operation (oc wait, polling loop, rollout status,
+etc.) that takes longer than **100 seconds** MUST be considered broken. Mark the test as FAIL and do not wait longer.
+All `--timeout` values and polling deadlines in this plan MUST NOT exceed `100s`, and each block finishes within the
+Saci limit.
 
 ### Known limitations
 
@@ -100,16 +116,16 @@ else
 fi
 if [ "${WANAKU_CLI_MODE}" = jar ]; then
   [ -r "${CLI_JAR}" ] \
-    || { echo "FAIL [S.1]: selected jar missing or unreadable: ${CLI_JAR}. Install wanaku or set CLI_JAR to a built jar."; exit 1; }
+    || { echo "FAIL [S.1]: selected jar missing or unreadable: ${CLI_JAR}. Install wanaku or set CLI_JAR to a built jar."; return 1; }
   command -v java > /dev/null 2>&1 \
-    || { echo "FAIL [S.1]: jar invocation requires Java 21+ on PATH"; exit 1; }
+    || { echo "FAIL [S.1]: jar invocation requires Java 21+ on PATH"; return 1; }
   wanaku() { java -jar "${CLI_JAR}" "$@"; }
 else
   wanaku() { "${WANAKU_CLI_EXEC}" "$@"; }
 fi
 wanaku --version \
   && echo "PASS [S.1]: selected ${WANAKU_CLI_MODE} CLI runs" \
-  || { echo "FAIL [S.1]: selected ${WANAKU_CLI_MODE} CLI failed --version; inspect the error above (launcher, permissions or Java compatibility)."; exit 1; }
+  || { echo "FAIL [S.1]: selected ${WANAKU_CLI_MODE} CLI failed --version; inspect the error above (launcher, permissions or Java compatibility)."; return 1; }
 ```
 
 **Expected result:** The selected CLI prints its version and `PASS [S.1]`; setup stops with a useful diagnostic
@@ -138,6 +154,55 @@ Follow [common/namespace-setup.md](common/namespace-setup.md).
 - The current namespace is the value of `WANAKU_NAMESPACE`.
 
 ## Phase T: Setup for OpenShift
+
+### Step S.2: Prepare the operator Helm chart and realm configuration
+
+Reuse a supplied Wanaku Barn checkout, or download its source archive from the official repository. Keep the
+chart available through the cleanup. Run this block in the shared Bash session.
+
+```bash run
+WANAKU_DOWNLOADED_SOURCE_DIR=""
+export WANAKU_BARN_REF="${WANAKU_BARN_REF:-main}"
+if [ -n "${WANAKU_REPO_ROOT+x}" ]; then
+  if [ ! -r "${WANAKU_REPO_ROOT}/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_REPO_ROOT}/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL [S.2]: supplied WANAKU_REPO_ROOT lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT
+  echo "PASS [S.2]: existing Wanaku Barn source assets reused"
+elif [ -r "./apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+    && [ -r "./deploy/auth/wanaku-config.json" ]; then
+  export WANAKU_REPO_ROOT="${PWD}"
+  echo "PASS [S.2]: existing Wanaku Barn source assets reused"
+else
+  for CMD in curl tar; do
+    command -v "${CMD}" > /dev/null 2>&1 || { echo "FAIL [S.2]: ${CMD} is required to download source assets"; return 1; }
+  done
+  WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
+  mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
+  curl --fail --location --connect-timeout 10 --max-time 90 \
+    "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
+    --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    || { echo "FAIL [S.2]: Wanaku Barn source archive download failed"; return 1; }
+  tar -xzf "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
+    --strip-components=1 -C "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" \
+    || { echo "FAIL [S.2]: Wanaku Barn source archive extraction failed"; return 1; }
+  if [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/apps/wanaku-operator/deploy/helm/wanaku-operator/Chart.yaml" ] \
+      || [ ! -r "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo/deploy/auth/wanaku-config.json" ]; then
+    echo "FAIL [S.2]: downloaded source lacks the operator chart or realm configuration"
+    return 1
+  fi
+  export WANAKU_REPO_ROOT="${WANAKU_DOWNLOADED_SOURCE_DIR}/repo"
+  echo "PASS [S.2]: Wanaku Barn source assets downloaded"
+fi
+```
+
+**Expected result:**
+
+- The output includes `PASS [S.2]: existing Wanaku Barn source assets reused` or `PASS [S.2]: Wanaku Barn source assets downloaded`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ### Step S.3: Set OpenShift environment variables
 
@@ -178,12 +243,12 @@ remain available for the checks below and for the oauth2-proxy Secret.
 
 After completion, verify the variables:
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 for VAR_NAME in KEYCLOAK_URL WANAKU_CLIENT_SECRET WANAKU_TEST_USER WANAKU_TEST_PASS; do
   eval "VAL=\${${VAR_NAME}}"
-  [ -n "${VAL}" ] && echo "PASS [11.2]: ${VAR_NAME} is set" || { echo "FAIL [11.2]: ${VAR_NAME} is not set"; exit 1; }
+  [ -n "${VAL}" ] && echo "PASS [11.2]: ${VAR_NAME} is set" || { echo "FAIL [11.2]: ${VAR_NAME} is not set"; return 1; }
 done
 ```
 
@@ -208,14 +273,14 @@ Follow [common/operator-deployment.md](common/operator-deployment.md).
 
 The proxies use the `wanaku-mcp-router` client. The Secret needs the keys `client-secret` and `cookie-secret`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 oc create secret generic "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" \
   --from-literal=client-secret="${WANAKU_CLIENT_SECRET}" \
   --from-literal=cookie-secret="$(openssl rand -hex 16)" 2>/dev/null \
   || oc get secret "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" > /dev/null
-[ $? -eq 0 ] && echo "PASS [11.4]: oauth2-proxy Secret exists" || { echo "FAIL [11.4]: Secret not created"; exit 1; }
+[ $? -eq 0 ] && echo "PASS [11.4]: oauth2-proxy Secret exists" || { echo "FAIL [11.4]: Secret not created"; return 1; }
 ```
 
 **Expected result:**
@@ -226,7 +291,7 @@ oc create secret generic "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" \
 
 ### Step 11.5: Create the WanakuRouter
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 {
@@ -249,8 +314,8 @@ EOF
 [ -n "${WANAKU_OAUTH2_PROXY_IMAGE}" ] && echo "    image: ${WANAKU_OAUTH2_PROXY_IMAGE}"
 } | oc apply -n "${WANAKU_NAMESPACE}" -f -
 
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=300s -n "${WANAKU_NAMESPACE}" \
-  && echo "PASS [11.5]: WanakuRouter is Ready" || { echo "FAIL [11.5]: WanakuRouter not Ready"; exit 1; }
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  && echo "PASS [11.5]: WanakuRouter is Ready" || { echo "FAIL [11.5]: WanakuRouter not Ready"; return 1; }
 ```
 
 **Expected result:**
@@ -264,7 +329,7 @@ oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=300
 ```bash run
 R="${WANAKU_ROUTER_NAME}"
 for DEP in "${R}-server" "${R}-oauth2-proxy"; do
-  oc rollout status "deployment/${DEP}" --timeout=180s -n "${WANAKU_NAMESPACE}" > /dev/null \
+  oc rollout status "deployment/${DEP}" --timeout=50s -n "${WANAKU_NAMESPACE}" > /dev/null \
     && echo "PASS [11.6]: deployment ${DEP} available" || echo "FAIL [11.6]: deployment ${DEP} not available"
 done
 
@@ -310,8 +375,8 @@ export WANAKU_ROUTER_URL="${WANAKU_SERVER_URL}"
 export MCP_URI="${WANAKU_MCP_BASE_URL}/default/mcp"
 
 STATUS_MCP=$(oc get wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.endpoints.mcp}')
-[ "${STATUS_MCP}" = "${WANAKU_MCP_BASE_URL}/mcp" ] && echo "PASS [11.7]: status.endpoints.mcp is ${STATUS_MCP}" \
-  || echo "FAIL [11.7]: status.endpoints.mcp is '${STATUS_MCP}', expected ${WANAKU_MCP_BASE_URL}/mcp"
+[ "${STATUS_MCP}" = "${WANAKU_MCP_BASE_URL}/default/mcp" ] && echo "PASS [11.7]: status.endpoints.mcp is ${STATUS_MCP}" \
+  || echo "FAIL [11.7]: status.endpoints.mcp is '${STATUS_MCP}', expected ${WANAKU_MCP_BASE_URL}/default/mcp"
 ```
 
 **Expected result:**
@@ -324,13 +389,13 @@ STATUS_MCP=$(oc get wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}
 `/health` does not require a token. `curl` is used to test HTTP-level readiness. Add `-k` to the `curl` commands of
 this plan when `WANAKU_TLS_FLAG` is `--insecure`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-for i in $(seq 1 30); do
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health" 2>/dev/null || echo "000")
+for i in $(seq 1 10); do
+  HTTP_CODE=$(curl -s --connect-timeout 3 --max-time 5 -o /dev/null -w "%{http_code}" "${WANAKU_SERVER_URL}/health" 2>/dev/null || echo "000")
   [ "${HTTP_CODE}" = "200" ] && { echo "PASS [11.8]: Wanaku Server healthy (attempt ${i})"; break; }
-  [ "${i}" -eq 30 ] && { echo "FAIL [11.8]: health returned HTTP ${HTTP_CODE}"; exit 1; }
+  [ "${i}" -eq 10 ] && { echo "FAIL [11.8]: health returned HTTP ${HTTP_CODE}"; return 1; }
   sleep 5
 done
 ```
@@ -354,16 +419,21 @@ HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "${MCP_URI}" \
 [ "${HTTP_CODE}" = "401" ] && echo "PASS [11.9]: MCP endpoint returns 401 without a token" \
   || echo "FAIL [11.9]: MCP endpoint returned HTTP ${HTTP_CODE}"
 
-# The OAuth protected-resource metadata is public. The operator sets WANAKU_AUTH_ISSUER.
+# The OAuth protected-resource metadata is public. The operator sets WANAKU_AUTH_ISSUER. Wanaku Server names its own
+# MCP host as the authorization server and serves the issuer in its /.well-known/oauth-authorization-server document.
 META=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/oauth-protected-resource/default/mcp")
-echo "${META}" | grep -q "${KEYCLOAK_URL}/realms/wanaku" \
-  && echo "PASS [11.9]: protected-resource metadata names the issuer" || echo "FAIL [11.9]: metadata: ${META}"
+echo "${META}" | jq -e '.authorization_servers | length > 0' > /dev/null 2>&1 \
+  && echo "PASS [11.9]: protected-resource metadata lists an authorization server" || echo "FAIL [11.9]: metadata: ${META}"
+DISCOVERY=$(curl -s "${WANAKU_MCP_BASE_URL}/.well-known/oauth-authorization-server")
+[ "$(echo "${DISCOVERY}" | jq -r '.issuer' 2>/dev/null)" = "${KEYCLOAK_URL}/realms/wanaku" ] \
+  && echo "PASS [11.9]: protected-resource metadata names the issuer" || echo "FAIL [11.9]: discovery: ${DISCOVERY}"
 ```
 
 **Expected result:**
 
 - The output includes `PASS [11.9]: management API returns 401 without a token`.
 - The output includes `PASS [11.9]: MCP endpoint returns 401 without a token`.
+- The output includes `PASS [11.9]: protected-resource metadata lists an authorization server`.
 - The output includes `PASS [11.9]: protected-resource metadata names the issuer`.
 - The output contains no line starting with `FAIL`.
 
@@ -382,7 +452,7 @@ for the later MCP commands. Do not print the token.
 
 ```bash run
 MCP_TOKEN=$(wanaku auth token --get --unmask 2>/dev/null)
-[ -n "${MCP_TOKEN}" ] && echo "PASS [11.10]: access token available" || { echo "FAIL [11.10]: no access token"; exit 1; }
+[ -n "${MCP_TOKEN}" ] && echo "PASS [11.10]: access token available" || { echo "FAIL [11.10]: no access token"; return 1; }
 ```
 
 **Expected result:**
@@ -397,7 +467,7 @@ MCP_TOKEN=$(wanaku auth token --get --unmask 2>/dev/null)
 
 ### Step 12.1: Deploy the infra-remediation MCP fixture
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -442,8 +512,8 @@ spec:
     - port: 8181
       targetPort: 8181
 EOF
-oc rollout status deployment/test-mcp --timeout=300s -n "${WANAKU_NAMESPACE}" \
-  && echo "PASS [12.1]: infra-remediation MCP fixture running" || { echo "FAIL [12.1]: infra-remediation MCP fixture not ready"; exit 1; }
+oc rollout status deployment/test-mcp --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  && echo "PASS [12.1]: infra-remediation MCP fixture running" || { echo "FAIL [12.1]: infra-remediation MCP fixture not ready"; return 1; }
 ```
 
 **Expected result:**
@@ -626,11 +696,15 @@ wanaku namespaces delete "${MCP_E2E_NAMESPACE}" --host "${WANAKU_SERVER_URL}" ${
 oc delete deployment test-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete service test-mcp -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 120 || true
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 120 || true
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 45 || true
+wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 45 || true
 oc delete secret "${WANAKU_ROUTER_NAME}-oidc" -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 wanaku auth logout > /dev/null 2>&1 || true
 rm -rf "${WANAKU_CREDENTIALS}" 2>/dev/null || true
+if [ -n "${WANAKU_DOWNLOADED_SOURCE_DIR}" ]; then
+  rm -rf "${WANAKU_DOWNLOADED_SOURCE_DIR}"
+  unset WANAKU_DOWNLOADED_SOURCE_DIR
+fi
 ```
 
 **Expected result:**
