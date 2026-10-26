@@ -323,7 +323,9 @@ start_barn_port_forward() {
     -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 &
   BARN_PF_PID=$!
   for i in $(seq 1 30); do
-    if curl --connect-timeout 1 --max-time 2 -s -o /dev/null -f "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; then
+    # A port-forward that exited (for example, because the port is in use) must not count as ready
+    if kill -0 "${BARN_PF_PID}" 2>/dev/null \
+      && curl --connect-timeout 1 --max-time 2 -s -o /dev/null -f "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; then
       echo "PASS: Barn reachable at http://localhost:${BARN_LOCAL_PORT} (attempt ${i})"
       export WANAKU_BARN_URL="http://localhost:${BARN_LOCAL_PORT}"
       return 0
@@ -331,6 +333,13 @@ start_barn_port_forward() {
     sleep 1
   done
   echo "FAIL: port-forward to barn-${WANAKU_ROUTER_NAME} did not become ready"
+  if kill -0 "${BARN_PF_PID}" 2>/dev/null; then
+    # Shows which health check is down when Barn answers but is not ready
+    curl --connect-timeout 1 --max-time 2 -s "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; echo
+  else
+    echo "The port-forward process exited. Check that port ${BARN_LOCAL_PORT} is free."
+  fi
+  stop_barn_port_forward
   return 1
 }
 
@@ -1517,7 +1526,8 @@ oc delete wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" --ignore-
 ### Test 9.2: Enable Wanaku Barn again and verify the data is kept
 
 Run these blocks in the shared Bash session. The first block enables Barn and waits for the router. The second checks
-the Barn data.
+the Barn data. If Barn is not reachable, it prints the Barn readiness response, the Barn pods, their recent events, and
+the errors and warnings in the Barn log.
 
 ```bash run
 oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":true}}}'
@@ -1526,13 +1536,26 @@ oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100
 ```
 
 ```bash run
-start_barn_port_forward || return 1
+start_barn_port_forward || {
+  oc get pods -n "${WANAKU_NAMESPACE}" -o wide --request-timeout=5s | grep -E "^NAME|^${WANAKU_ROUTER_NAME}-barn-"
+  oc get events -n "${WANAKU_NAMESPACE}" --sort-by=.metadata.creationTimestamp --request-timeout=5s \
+    | grep -- "${WANAKU_ROUTER_NAME}-barn" | tail -n 10
+  oc logs "deployment/${WANAKU_ROUTER_NAME}-barn" -n "${WANAKU_NAMESPACE}" --tail=300 \
+    --request-timeout=5s --pod-running-timeout=5s | grep -E 'ERROR|WARN|Caused by' | tail -n 15
+  return 1
+}
 OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
 stop_barn_port_forward
 echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
   && echo "PASS: ${OP_CATALOG_NAME} is still in Barn after Barn was enabled again" \
   || { echo "FAIL: Barn data was lost"; echo "${OUTPUT}"; return 1; }
 ```
+
+> [!WARNING]
+> **Known issue:** wanaku-ai/wanaku-barn#287. Barn does not become ready after a restart on an existing store. When the
+> Barn readiness response lists the Infinispan caches `catalog-version` and `catalog-version-counter` as failed, this
+> test fails because of that issue: the `BarnAvailable` wait times out and the data check does not run. Any other
+> cause is a new failure. Under the default policy, the run stops here, so Tests 10.1, 11.1 and 12.1 do not run.
 
 **Expected result:**
 
