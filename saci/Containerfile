@@ -43,7 +43,7 @@ RUN printf '#!/bin/sh\nexec java -jar /opt/test-mcp-server/quarkus-run.jar "$@"\
 # path, so the commands in /usr/local/bin are wrappers, not links.
 RUN --mount=type=bind,from=busybox,source=/bin/busybox,target=/tmp/busybox \
     set -eu; \
-    programs_to_install="nodejs npm java-headless openssl"; \
+    programs_to_install="nodejs npm java-headless openssl unzip"; \
     dnf install --assumeyes --setopt=install_weak_deps=False $programs_to_install; \
     dnf clean all; \
     node --version; \
