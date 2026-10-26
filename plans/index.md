@@ -13,7 +13,7 @@ cover the behavior of single features.
 | Keycloak Admin CLI and auth | [cli-auth-commands.md](cli-auth-commands.md) | `wanaku-keycloak-admin` round trips and `wanaku auth` login through oauth2-proxy. |
 | OpenShift | [operator-basic-functionality.md](operator-basic-functionality.md) | Operator installation, `WanakuRouter` lifecycle, authentication and deletion. |
 | OpenShift | [openshift-mcp-deployment.md](openshift-mcp-deployment.md) | Authenticated MCP operations through the Routes. |
-| Barn | [cli-service-catalog-lifecycle.md](cli-service-catalog-lifecycle.md) | Service catalog from `init` to a tool call through a CIC, and one service template end to end. |
+| Barn on OpenShift | [operator-service-catalog.md](operator-service-catalog.md) | Barn deployed by the operator, `WanakuServiceCatalog`, and the CLI service catalog lifecycle from `init` to deploy, remove and restore, templates and negative tests. |
 | CIC on OpenShift | [camel-integration-capability.md](camel-integration-capability.md) | `WanakuIntegration`, self-registration, catalog source and plain Deployment. |
 | Semantic Router on OpenShift | [semantic-router-openshift.md](semantic-router-openshift.md) | `WanakuSemanticRouter` deployment, routing, audit and deletion. |
 
@@ -35,7 +35,6 @@ The plans do not contain passwords, tokens or client secrets. They get each cred
 | `KEYCLOAK_ADMIN_PASS` | Plans that use Keycloak | Generated on OpenShift. Environment for the local Compose option of [cli-auth-commands.md](cli-auth-commands.md). |
 | `WANAKU_MCPROUTER_SECRET` | [cli-auth-commands.md](cli-auth-commands.md), local Compose option | Environment. Use the value of the Compose deployment. |
 | `TYPESAFE_API_KEY` | [semantic-router-openshift.md](semantic-router-openshift.md) | Environment (optional). |
-| `QDRANT_API_KEY` | [cli-service-catalog-lifecycle.md](cli-service-catalog-lifecycle.md) | Environment (optional). |
 
 To set the values, export them in the shell that runs Saci, or pass them as `env:` parameters of an environment in
 [saci.yaml](saci.yaml), as the `openshift` environment does for `OPENSHIFT_SA_TOKEN`. To keep them in a file, put

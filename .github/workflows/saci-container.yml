@@ -54,6 +54,7 @@ jobs:
             helm version --short
             openssl version
             jq --version
+            unzip -v
             wanaku-server >wanaku-server.log 2>&1 &
             for _ in $(seq 1 50); do
               curl -fsS -o /dev/null http://127.0.0.1:8080/healthz && break

@@ -19,6 +19,7 @@ The image is `quay.io/orpiske/saci-worker` with these additions:
 | `oc`, `kubectl` | `/usr/local/bin/oc`, `/usr/local/bin/kubectl` | The OpenShift client archive for `OC_VERSION` from [mirror.openshift.com](https://mirror.openshift.com/pub/openshift-v4/clients/ocp/) |
 | `helm` | `/usr/local/bin/helm` | The Helm `HELM_VERSION` archive from [get.helm.sh](https://get.helm.sh) |
 | `openssl` | `/usr/bin/openssl` | The Fedora `openssl` package |
+| `unzip` | `/usr/bin/unzip` | The Fedora `unzip` package |
 
 On Linux x86_64, the image contains the native builds of `wanaku` and
 `wanaku-keycloak-admin`. On other architectures, the image contains their JVM

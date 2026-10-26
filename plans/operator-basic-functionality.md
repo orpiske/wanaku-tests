@@ -4,16 +4,15 @@
 
 This test plan verifies the basic functionality of the Wanaku Kubernetes operator on OpenShift. It covers operator
 installation, the `WanakuRouter` lifecycle, the resources that the operator creates, Wanaku Server behavior through
-the generated Routes, the optional Wanaku Barn deployment, `WanakuServiceCatalog` management, authentication through
-oauth2-proxy, update reconciliation, and the deletion cascade.
+the generated Routes, authentication through oauth2-proxy, update reconciliation, and the deletion cascade. Wanaku Barn
+and `WanakuServiceCatalog` are covered by [operator-service-catalog.md](operator-service-catalog.md).
 
 **Components under test:**
 
 | Component       | How the plan uses it                                                                                                                                                                                 |
 |-----------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Wanaku operator | Installed with Helm. Reconciles `WanakuRouter` and `WanakuServiceCatalog`.                                                                                                                           |
+| Wanaku operator | Installed with Helm. Reconciles `WanakuRouter`.                                                                                                                                                      |
 | Wanaku Server   | Deployed by the operator (`spec.server`). Deployment `<router>-server`, Service `server-<router>` (ports 8080 management, 8081 MCP, 8083 inference, 8084 A2A), Routes `<router>` and `<router>-mcp`. |
-| Wanaku Barn     | Deployed by the operator because `spec.barn.enabled` is `true`. Deployment `<router>-barn`, Service `barn-<router>` (port 8080 to container port 8180). Barn is not exposed outside the cluster.     |
 | oauth2-proxy    | Deployed by the operator in Phase 6 (`spec.auth.enabled: true`). Deployment `<router>-oauth2-proxy`, Service `oauth2-proxy-<router>` (ports 4180 MCP, 4181 management).                              |
 | Keycloak        | OIDC provider for Phase 6 (see [common/keycloak-setup.md](common/keycloak-setup.md)).                                                                                                                |
 
@@ -254,15 +253,12 @@ All image tags default to `latest` and can be overridden.
 ```bash run
 export WANAKU_REPO_ROOT="${WANAKU_REPO_ROOT:-.}"
 export WANAKU_SERVER_IMAGE="${WANAKU_SERVER_IMAGE:-quay.io/wanaku/wanaku-server:latest}"
-export WANAKU_BARN_IMAGE="${WANAKU_BARN_IMAGE:-quay.io/wanaku/wanaku-barn-backend:latest}"
 export WANAKU_ROUTER_NAME="${WANAKU_ROUTER_NAME:-wanaku-test-router}"
 # Wanaku CLI: an installed binary, or "java -jar ${WANAKU_REPO_ROOT}/apps/wanaku-cli/target/quarkus-app/quarkus-run.jar"
 export WANAKU_CLI="${WANAKU_CLI:-wanaku}"
 # The operator creates edge-terminated Routes. Set these to empty values when the ingress certificate is trusted.
 export WANAKU_CLI_TLS_OPTS="${WANAKU_CLI_TLS_OPTS---insecure}"
 export CURL_TLS_OPTS="${CURL_TLS_OPTS--k}"
-# Local port for "oc port-forward" to the Barn Service
-export BARN_LOCAL_PORT="${BARN_LOCAL_PORT:-18180}"
 # Isolate credentials per test run to avoid contention (see #1697)
 export WANAKU_CREDENTIALS="${WANAKU_CREDENTIALS:-/tmp/wanaku-creds-${WANAKU_NAMESPACE}}"
 ```
@@ -320,42 +316,6 @@ check() { # $1 = description, $2 = actual, $3 = expected
 
 - The block defines the `wait_cr_condition`, `router_jsonpath` and `check` functions without errors (inferred).
 
-### Step S.5: Define the Wanaku Barn port-forward helpers
-
-Barn has no Route. The CLI reaches it through `oc port-forward`. The function polls the Barn readiness endpoint
-instead of a fixed sleep.
-
-```bash run
-start_barn_port_forward() {
-  oc port-forward "service/barn-${WANAKU_ROUTER_NAME}" "${BARN_LOCAL_PORT}:8080" \
-    -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 &
-  BARN_PF_PID=$!
-  for i in $(seq 1 30); do
-    if curl --connect-timeout 1 --max-time 2 -s -o /dev/null -f "http://localhost:${BARN_LOCAL_PORT}/q/health/ready" 2>/dev/null; then
-      echo "PASS: Barn reachable at http://localhost:${BARN_LOCAL_PORT} (attempt ${i})"
-      export WANAKU_BARN_URL="http://localhost:${BARN_LOCAL_PORT}"
-      return 0
-    fi
-    sleep 1
-  done
-  echo "FAIL: port-forward to barn-${WANAKU_ROUTER_NAME} did not become ready"
-  return 1
-}
-
-stop_barn_port_forward() {
-  if [ -n "${BARN_PF_PID}" ]; then
-    kill "${BARN_PF_PID}" 2>/dev/null
-    wait "${BARN_PF_PID}" 2>/dev/null
-    unset BARN_PF_PID
-  fi
-}
-```
-
-**Expected result:**
-
-- The block defines the `start_barn_port_forward` and `stop_barn_port_forward` functions without errors (inferred).
-
-
 ---
 
 ## Phase 1: Environment Setup (continued)
@@ -412,9 +372,9 @@ Follow [common/operator-deployment.md](common/operator-deployment.md).
 
 ## Phase 3: WanakuRouter Lifecycle
 
-### Test 3.1: Create a WanakuRouter with Wanaku Barn and without authentication
+### Test 3.1: Create a WanakuRouter without authentication
 
-**Description:** Create a `WanakuRouter` with `spec.barn.enabled: true`. Authentication stays disabled until Phase 6.
+**Description:** Create a `WanakuRouter`. Authentication stays disabled until Phase 6.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -426,11 +386,6 @@ spec:
   imagePullPolicy: Always
   server:
     image: ${WANAKU_SERVER_IMAGE}
-  barn:
-    enabled: true
-    image: ${WANAKU_BARN_IMAGE}
-    storage:
-      size: 1Gi
 EOF
 ```
 
@@ -460,8 +415,7 @@ Run this block in the shared Bash session.
 ```bash run
 FAIL=0
 for EXPECTED in "Reconciled:True:ReconcileSucceeded" "ServerAvailable:True:Available" \
-    "BarnAvailable:True:Available" "AuthConfigured:True:AuthDisabled" "ExposureReady:True:Exposed" \
-    "Ready:True:"; do
+    "AuthConfigured:True:AuthDisabled" "ExposureReady:True:Exposed" "Ready:True:"; do
   TYPE=$(echo "${EXPECTED}" | cut -d: -f1)
   STATUS=$(echo "${EXPECTED}" | cut -d: -f2)
   REASON=$(echo "${EXPECTED}" | cut -d: -f3)
@@ -490,7 +444,6 @@ oc get events -n "${WANAKU_NAMESPACE}" --field-selector "involvedObject.name=${W
 
 - The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition Reconciled=True (reason ReconcileSucceeded)`.
 - The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition ServerAvailable=True (reason Available)`.
-- The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition BarnAvailable=True (reason Available)`.
 - The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition AuthConfigured=True (reason AuthDisabled)`.
 - The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition ExposureReady=True (reason Exposed)`.
 - The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition Ready=True`.
@@ -525,11 +478,6 @@ for PROBE in livenessProbe readinessProbe startupProbe; do
   check "${PROBE} port" "$(dep_jsonpath "{.spec.template.spec.containers[0].${PROBE}.httpGet.port}")" "management"
 done
 check "registry volume claim" "$(dep_jsonpath '{.spec.template.spec.volumes[?(@.name=="server-volume")].persistentVolumeClaim.claimName}')" "server-volume-claim"
-# Barn is enabled, so the Server reads the operator-generated wanaku.yaml
-check "wanaku.yaml mount" "$(dep_jsonpath '{.spec.template.spec.containers[0].volumeMounts[?(@.name=="server-config")].mountPath}')" "/etc/wanaku/wanaku.yaml"
-[ -n "$(dep_jsonpath '{.spec.template.metadata.annotations.wanaku\.ai/server-config-hash}')" ] \
-  && echo "PASS: pod template has the wanaku.ai/server-config-hash annotation" \
-  || { echo "FAIL: wanaku.ai/server-config-hash annotation missing"; FAIL=1; }
 
 [ "${FAIL}" -eq 0 ] || return 1
 ```
@@ -549,8 +497,6 @@ check "wanaku.yaml mount" "$(dep_jsonpath '{.spec.template.spec.containers[0].vo
 - The output includes `PASS: startupProbe path =`.
 - The output includes `PASS: startupProbe port =`.
 - The output includes `PASS: registry volume claim =`.
-- The output includes `PASS: wanaku.yaml mount =`.
-- The output includes `PASS: pod template has the wanaku.ai/server-config-hash annotation`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -583,100 +529,24 @@ done
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
-### Test 3.5: Verify the Wanaku Barn Deployment and Service
-
-**Description:** With `spec.barn.enabled: true`, the operator creates the `<router>-barn` Deployment and the
-`barn-<router>` Service. Barn listens on 8180. The Service exposes 8080. The probes use the Quarkus health endpoints.
-
-Run this block in the shared Bash session.
-
-```bash run
-DEPLOYMENT="${WANAKU_ROUTER_NAME}-barn"
-oc wait "deployment/${DEPLOYMENT}" --for=condition=Available --timeout=100s -n "${WANAKU_NAMESPACE}"
-
-dep_jsonpath() { oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" -o jsonpath="$1"; }
-FAIL=0
-check "Barn image" "$(dep_jsonpath '{.spec.template.spec.containers[0].image}')" "${WANAKU_BARN_IMAGE}"
-check "Barn imagePullPolicy" "$(dep_jsonpath '{.spec.template.spec.containers[0].imagePullPolicy}')" "Always"
-check "Barn liveness" "$(dep_jsonpath '{.spec.template.spec.containers[0].livenessProbe.httpGet.path}')" "/q/health/live"
-check "Barn readiness" "$(dep_jsonpath '{.spec.template.spec.containers[0].readinessProbe.httpGet.path}')" "/q/health/ready"
-check "Barn startup" "$(dep_jsonpath '{.spec.template.spec.containers[0].startupProbe.httpGet.path}')" "/q/health/started"
-check "Barn data claim" "$(dep_jsonpath '{.spec.template.spec.volumes[?(@.name=="barn-volume")].persistentVolumeClaim.claimName}')" "${WANAKU_ROUTER_NAME}-barn-data"
-check "Barn persistence folder" "$(dep_jsonpath '{.spec.template.spec.containers[0].env[?(@.name=="WANAKU_PERSISTENCE_INFINISPAN_BASE_FOLDER")].value}')" "/home/default/.wanaku/barn/"
-
-SVC="barn-${WANAKU_ROUTER_NAME}"
-check "Barn Service type" "$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.type}')" "ClusterIP"
-check "Barn Service port" "$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].port}')" "8080"
-check "Barn Service targetPort" "$(oc get service "${SVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.ports[0].targetPort}')" "8180"
-check "status.barnUrl" "$(router_jsonpath '{.status.barnUrl}')" "http://barn-${WANAKU_ROUTER_NAME}:8080"
-
-[ "${FAIL}" -eq 0 ] || return 1
-```
-
-**Expected result:**
-
-- The output includes `PASS: Barn image =`.
-- The output includes `PASS: Barn imagePullPolicy =`.
-- The output includes `PASS: Barn liveness =`.
-- The output includes `PASS: Barn readiness =`.
-- The output includes `PASS: Barn startup =`.
-- The output includes `PASS: Barn data claim =`.
-- The output includes `PASS: Barn persistence folder =`.
-- The output includes `PASS: Barn Service type =`.
-- The output includes `PASS: Barn Service port =`.
-- The output includes `PASS: Barn Service targetPort =`.
-- The output includes `PASS: status.barnUrl =`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
 ### Test 3.6: Verify the PVCs
 
-**Description:** The Server stores `registry.json` on the `server-volume-claim` PVC. Barn stores its data on the
-`<router>-barn-data` PVC, with the size from `spec.barn.storage.size`.
+**Description:** The Server stores `registry.json` on the `server-volume-claim` PVC.
 
 Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
-for PVC in server-volume-claim "${WANAKU_ROUTER_NAME}-barn-data"; do
+for PVC in server-volume-claim; do
   PHASE=$(oc get pvc "${PVC}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.phase}' 2>/dev/null)
   check "PVC ${PVC} phase" "${PHASE}" "Bound"
 done
-check "Barn PVC size" "$(oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.spec.resources.requests.storage}')" "1Gi"
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
 
 - The output includes `PASS: PVC server-volume-claim phase =`.
-- The output includes `PASS: PVC <WANAKU_ROUTER_NAME>-barn-data phase =`.
-- The output includes `PASS: Barn PVC size =`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 3.7: Verify the Server configuration ConfigMap
-
-**Description:** The operator writes `<router>-server-config`. Its `wanaku.yaml` points the `wanaku-barn` plugin
-service `wanaku-barn-api` at the Barn Service.
-
-Run this block in the shared Bash session.
-
-```bash run
-CONFIG=$(oc get configmap "${WANAKU_ROUTER_NAME}-server-config" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}')
-echo "${CONFIG}"
-FAIL=0
-for TEXT in "id: wanaku-barn" "wanaku-barn-api:" "target: http://barn-${WANAKU_ROUTER_NAME}:8080"; do
-  echo "${CONFIG}" | grep -q "${TEXT}" && echo "PASS: wanaku.yaml contains '${TEXT}'" \
-    || { echo "FAIL: wanaku.yaml does not contain '${TEXT}'"; FAIL=1; }
-done
-[ "${FAIL}" -eq 0 ] || return 1
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanaku.yaml contains 'id: wanaku-barn'`.
-- The output includes `PASS: wanaku.yaml contains 'wanaku-barn-api:'`.
-- The output includes `PASS: wanaku.yaml contains 'target: http://barn-<WANAKU_ROUTER_NAME>:8080'`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -739,7 +609,7 @@ FAIL=0
 MCP_HOST=$(echo "${WANAKU_ROUTER_MCP_URL}" | sed 's|^https://||')
 check "status.host" "$(router_jsonpath '{.status.host}')" "${WANAKU_ROUTER_URL}"
 check "status.endpoints.management" "$(router_jsonpath '{.status.endpoints.management}')" "${WANAKU_ROUTER_URL}/"
-check "status.endpoints.mcp" "$(router_jsonpath '{.status.endpoints.mcp}')" "${WANAKU_ROUTER_MCP_URL}/mcp"
+check "status.endpoints.mcp" "$(router_jsonpath '{.status.endpoints.mcp}')" "${WANAKU_ROUTER_MCP_URL}/default/mcp"
 check "status.endpoints.adminUi" "$(router_jsonpath '{.status.endpoints.adminUi}')" "${WANAKU_ROUTER_URL}/admin/"
 
 STREAMABLE=$(router_jsonpath '{.status.streamableEndpoint}')
@@ -750,11 +620,10 @@ esac
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
-> [!WARNING]
-> **Known issue:** `status.streamableEndpoint` (`https://<mcp-host>/mcp/`), `status.endpoints.mcp`
-> (`https://<mcp-host>/mcp`) and the obsolete `status.sseEndpoint` do not contain a namespace. Wanaku Server rejects
-> the bare `/mcp` path (Test 4.4). MCP clients must use `${WANAKU_ROUTER_MCP_URL}/<namespace>/mcp`. Record the values
-> above as PASS, and report the issue if it is still open.
+> [!NOTE]
+> Since wanaku-ai/wanaku-barn#282, `status.endpoints.mcp` and `status.streamableEndpoint` name the endpoint of the
+> `default` namespace (`https://<mcp-host>/default/mcp`), and `status.sseEndpoint` is empty. Wanaku Server rejects the
+> bare `/mcp` path (Test 4.4).
 
 **Expected result:**
 
@@ -777,15 +646,14 @@ Run this block in the shared Bash session.
 ROUTER_UID=$(router_jsonpath '{.metadata.uid}')
 FAIL=0
 for RESOURCE in "deployment/${WANAKU_ROUTER_NAME}-server" "service/server-${WANAKU_ROUTER_NAME}" \
-    "deployment/${WANAKU_ROUTER_NAME}-barn" "service/barn-${WANAKU_ROUTER_NAME}" \
-    "configmap/${WANAKU_ROUTER_NAME}-server-config" "pvc/server-volume-claim" "pvc/${WANAKU_ROUTER_NAME}-barn-data" \
+    "pvc/server-volume-claim" \
     "route.route.openshift.io/${WANAKU_ROUTER_NAME}" "route.route.openshift.io/${WANAKU_ROUTER_NAME}-mcp"; do
   OWNER_UID=$(oc get "${RESOURCE}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.metadata.ownerReferences[0].uid}' 2>/dev/null)
   check "${RESOURCE} owner" "${OWNER_UID}" "${ROUTER_UID}"
 done
 
 # The operator labels the Deployments that it manages
-for DEPLOYMENT in "${WANAKU_ROUTER_NAME}-server" "${WANAKU_ROUTER_NAME}-barn"; do
+for DEPLOYMENT in "${WANAKU_ROUTER_NAME}-server"; do
   check "${DEPLOYMENT} managed-by label" \
     "$(oc get deployment "${DEPLOYMENT}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.metadata.labels.app\.kubernetes\.io/managed-by}')" \
     "wanaku-operator"
@@ -797,15 +665,10 @@ done
 
 - The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-server owner =`.
 - The output includes `PASS: service/server-<WANAKU_ROUTER_NAME> owner =`.
-- The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-barn owner =`.
-- The output includes `PASS: service/barn-<WANAKU_ROUTER_NAME> owner =`.
-- The output includes `PASS: configmap/<WANAKU_ROUTER_NAME>-server-config owner =`.
 - The output includes `PASS: pvc/server-volume-claim owner =`.
-- The output includes `PASS: pvc/<WANAKU_ROUTER_NAME>-barn-data owner =`.
 - The output includes `PASS: route.route.openshift.io/<WANAKU_ROUTER_NAME> owner =`.
 - The output includes `PASS: route.route.openshift.io/<WANAKU_ROUTER_NAME>-mcp owner =`.
 - The output includes `PASS: <WANAKU_ROUTER_NAME>-server managed-by label = wanaku-operator`.
-- The output includes `PASS: <WANAKU_ROUTER_NAME>-barn managed-by label = wanaku-operator`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -939,51 +802,21 @@ fi
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
-### Test 4.5: Verify the admin UI and the Barn plugin proxy
+### Test 4.5: Verify the admin UI
 
-**Description:** The standard Server variant serves the admin UI at `/admin/`. Because Barn is enabled, the Server
-proxies `/api/plugins/wanaku-barn/wanaku-barn-api/...` to `http://barn-<router>:8080`. `curl` is used because this
-test checks HTTP-level routing.
+**Description:** The standard Server variant serves the admin UI at `/admin/`. `curl` is used because this test checks
+HTTP-level routing.
 
 Run this block in the shared Bash session.
 
 ```bash run
 CODE=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' "${WANAKU_ROUTER_URL}/admin/")
 [ "${CODE}" = "200" ] && echo "PASS: admin UI returns 200" || { echo "FAIL: admin UI returned HTTP ${CODE}"; return 1; }
-
-CODE=$(curl --connect-timeout 5 --max-time 15 -s ${CURL_TLS_OPTS} -o /dev/null -w '%{http_code}' \
-  "${WANAKU_ROUTER_URL}/api/plugins/wanaku-barn/wanaku-barn-api/api/v1/service-catalog")
-[ "${CODE}" = "200" ] && echo "PASS: the Server proxies the Barn service catalog API" \
-  || { echo "FAIL: Barn plugin proxy returned HTTP ${CODE} (404 'service wanaku-barn-api not found' means the wanaku.yaml is not loaded)"; return 1; }
 ```
 
 **Expected result:**
 
 - The output includes `PASS: admin UI returns 200`.
-- The output includes `PASS: the Server proxies the Barn service catalog API`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 4.6: Verify Barn with the CLI
-
-Run this block in the shared Bash session.
-
-```bash run
-start_barn_port_forward || return 1
-
-OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
-EXIT_CODE=$?
-echo "${OUTPUT}"
-[ "${EXIT_CODE}" -eq 0 ] && echo "PASS: the CLI can list the Barn service catalogs" \
-  || { echo "FAIL: service catalog list failed (exit code ${EXIT_CODE})"; stop_barn_port_forward; return 1; }
-
-stop_barn_port_forward
-```
-
-**Expected result:**
-
-- The output includes `PASS: Barn reachable at`.
-- The output includes `PASS: the CLI can list the Barn service catalogs`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -1014,208 +847,6 @@ echo "${OUTPUT}" | grep -q "^${OP_TEST_NAMESPACE}" \
 **Expected result:**
 
 - The output includes `PASS: namespace <OP_TEST_NAMESPACE> persisted across the pod restart`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-
----
-
-## Phase 5: WanakuServiceCatalog Lifecycle
-
-### Test 5.1: Package a catalog and create the ConfigMap
-
-**Description:** `wanaku service package` writes the Base64-encoded ZIP that the operator expects under the
-`catalog.zip` key.
-
-Run this block in the shared Bash session.
-
-```bash run
-export OP_CATALOG_NAME="${OP_CATALOG_NAME:-op-test-catalog}"
-TEMP_DIR=$(mktemp -d)
-mkdir -p "${TEMP_DIR}/catalog/${OP_CATALOG_NAME}"
-cat > "${TEMP_DIR}/catalog/index.properties" <<PROPS
-catalog.name=${OP_CATALOG_NAME}
-catalog.description=Minimal catalog for operator verification
-catalog.services=${OP_CATALOG_NAME}
-catalog.routes.${OP_CATALOG_NAME}=${OP_CATALOG_NAME}/${OP_CATALOG_NAME}.camel.yaml
-PROPS
-cat > "${TEMP_DIR}/catalog/${OP_CATALOG_NAME}/${OP_CATALOG_NAME}.camel.yaml" <<'ROUTES'
-- route:
-    id: op-echo
-    from:
-      uri: ai-tool:op-echo
-      parameters:
-        description: "Echo back the input message"
-        parameter.message: string
-        parameter.message.description: "The message to echo back"
-      steps:
-        - setBody:
-            simple: "${header.message}-${header.message}"
-ROUTES
-
-${WANAKU_CLI} service package --path="${TEMP_DIR}/catalog" -o "${TEMP_DIR}/catalog.b64"
-[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; return 1; }
-
-oc create configmap op-test-catalog-data --from-file=catalog.zip="${TEMP_DIR}/catalog.b64" \
-  --dry-run=client -o yaml | oc apply -n "${WANAKU_NAMESPACE}" -f -
-oc label configmap op-test-catalog-data wanaku-test=true --overwrite -n "${WANAKU_NAMESPACE}"
-# A ConfigMap without the catalog.zip key, for Test 5.5
-oc create configmap op-test-catalog-nokey --from-literal=other.txt=x \
-  --dry-run=client -o yaml | oc apply -n "${WANAKU_NAMESPACE}" -f -
-oc label configmap op-test-catalog-nokey wanaku-test=true --overwrite -n "${WANAKU_NAMESPACE}"
-rm -rf "${TEMP_DIR}"
-
-oc get configmap op-test-catalog-data -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data}' | jq -r 'keys[]' | grep -q "^catalog.zip$"
-echo "configmap-has-catalog-zip=$?"
-# Expected: configmap-has-catalog-zip=0
-```
-
-**Expected result:**
-
-- The output includes `PASS: catalog packaged`.
-- The output includes `configmap-has-catalog-zip=0`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 5.2: Create a WanakuServiceCatalog
-
-Run this block in the shared Bash session.
-
-```bash run
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
-metadata:
-  name: op-test-service-catalogs
-spec:
-  routerRef: ${WANAKU_ROUTER_NAME}
-  catalogs:
-    - name: ${OP_CATALOG_NAME}
-      configMapRef: op-test-catalog-data
-EOF
-
-wait_cr_condition wanakuservicecatalog op-test-service-catalogs Ready True ReconciliationSucceeded || return 1
-
-DEPLOYED=$(oc get wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.deployedCatalogs[*]}')
-echo " ${DEPLOYED} " | grep -q " ${OP_CATALOG_NAME} " \
-  && echo "PASS: ${OP_CATALOG_NAME} listed in status.deployedCatalogs" \
-  || { echo "FAIL: status.deployedCatalogs is '${DEPLOYED}'"; return 1; }
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanakuservicecatalog/op-test-service-catalogs condition Ready=True (reason ReconciliationSucceeded)`.
-- The output includes `PASS: <OP_CATALOG_NAME> listed in status.deployedCatalogs`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 5.3: Verify the catalog is stored in Barn
-
-Run this block in the shared Bash session.
-
-```bash run
-start_barn_port_forward || return 1
-OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
-stop_barn_port_forward
-echo "${OUTPUT}"
-echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
-  && echo "PASS: ${OP_CATALOG_NAME} is stored in Barn" \
-  || { echo "FAIL: ${OP_CATALOG_NAME} not found in Barn"; return 1; }
-```
-
-**Expected result:**
-
-- The output includes `PASS: Barn reachable at`.
-- The output includes `PASS: <OP_CATALOG_NAME> is stored in Barn`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 5.4: Negative test - missing ConfigMap
-
-Run this block in the shared Bash session.
-
-```bash run
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
-metadata:
-  name: op-bad-missing-configmap
-spec:
-  routerRef: ${WANAKU_ROUTER_NAME}
-  catalogs:
-    - name: missing-catalog
-      configMapRef: this-configmap-does-not-exist
-EOF
-
-wait_cr_condition wanakuservicecatalog op-bad-missing-configmap Ready False DeploymentError || return 1
-oc get wanakuservicecatalog op-bad-missing-configmap -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "this-configmap-does-not-exist" \
-  && echo "PASS: the message names the missing ConfigMap" || echo "FAIL: the message does not name the ConfigMap"
-oc delete wanakuservicecatalog op-bad-missing-configmap -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanakuservicecatalog/op-bad-missing-configmap condition Ready=False (reason DeploymentError)`.
-- The output includes `PASS: the message names the missing ConfigMap`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 5.5: Negative test - ConfigMap without the catalog.zip key
-
-Run this block in the shared Bash session.
-
-```bash run
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
-metadata:
-  name: op-bad-no-key
-spec:
-  routerRef: ${WANAKU_ROUTER_NAME}
-  catalogs:
-    - name: no-key-catalog
-      configMapRef: op-test-catalog-nokey
-EOF
-
-wait_cr_condition wanakuservicecatalog op-bad-no-key Ready False DeploymentError || return 1
-oc get wanakuservicecatalog op-bad-no-key -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "catalog.zip" \
-  && echo "PASS: the message names the missing catalog.zip key" || echo "FAIL: the message does not name catalog.zip"
-oc delete wanakuservicecatalog op-bad-no-key -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanakuservicecatalog/op-bad-no-key condition Ready=False (reason DeploymentError)`.
-- The output includes `PASS: the message names the missing catalog.zip key`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 5.6: Negative test - non-existent routerRef
-
-Run this block in the shared Bash session.
-
-```bash run
-cat <<'EOF' | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
-metadata:
-  name: op-bad-router-ref
-spec:
-  routerRef: non-existent-router
-  catalogs:
-    - name: orphan-catalog
-      configMapRef: op-test-catalog-data
-EOF
-
-wait_cr_condition wanakuservicecatalog op-bad-router-ref Ready False ValidationError || return 1
-oc delete wanakuservicecatalog op-bad-router-ref -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanakuservicecatalog/op-bad-router-ref condition Ready=False (reason ValidationError)`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -1557,93 +1188,6 @@ wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" Ready True || return 1
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
-### Test 7.3: Disable Wanaku Barn
-
-**Description:** With `spec.barn.enabled: false`, the operator deletes the Barn Deployment, the Barn Service and the
-Server configuration ConfigMap. It keeps the Barn PVC. A `WanakuServiceCatalog` for this router then fails validation.
-
-Run these blocks in the shared Bash session. The first block disables Barn and waits for the deletions. The second
-waits for the router. The third runs the negative catalog test.
-
-```bash run
-oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":false}}}'
-
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 100 || return 1
-wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || return 1
-wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || return 1
-
-oc get pvc "${WANAKU_ROUTER_NAME}-barn-data" -n "${WANAKU_NAMESPACE}" > /dev/null 2>&1 \
-  && echo "PASS: Barn PVC kept" || { echo "FAIL: Barn PVC was deleted"; return 1; }
-```
-
-```bash run
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
-[ -z "$(router_jsonpath '{.status.conditions[?(@.type=="BarnAvailable")].status}')" ] \
-  && echo "PASS: no BarnAvailable condition" || echo "FAIL: BarnAvailable condition still present"
-[ -z "$(router_jsonpath '{.status.barnUrl}')" ] && echo "PASS: status.barnUrl removed" || echo "FAIL: status.barnUrl still set"
-```
-
-```bash run
-# Negative test: a catalog needs Barn
-cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
-apiVersion: "wanaku.ai/v1alpha1"
-kind: WanakuServiceCatalog
-metadata:
-  name: op-bad-no-barn
-spec:
-  routerRef: ${WANAKU_ROUTER_NAME}
-  catalogs:
-    - name: no-barn-catalog
-      configMapRef: op-test-catalog-data
-EOF
-wait_cr_condition wanakuservicecatalog op-bad-no-barn Ready False ValidationError || return 1
-oc get wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" \
-  -o jsonpath='{.status.conditions[?(@.type=="Ready")].message}' | grep -q "spec.barn.enabled must be true" \
-  && echo "PASS: the message names spec.barn.enabled" || echo "FAIL: unexpected message"
-oc delete wanakuservicecatalog op-bad-no-barn -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-```
-
-**Expected result:**
-
-- The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-barn deleted`.
-- The output includes `PASS: service/barn-<WANAKU_ROUTER_NAME> deleted`.
-- The output includes `PASS: configmap/<WANAKU_ROUTER_NAME>-server-config deleted`.
-- The output includes `PASS: Barn PVC kept`.
-- The output includes `PASS: no BarnAvailable condition`.
-- The output includes `PASS: status.barnUrl removed`.
-- The output includes `PASS: wanakuservicecatalog/op-bad-no-barn condition Ready=False (reason ValidationError)`.
-- The output includes `PASS: the message names spec.barn.enabled`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
-### Test 7.4: Enable Wanaku Barn again and verify the data is kept
-
-Run these blocks in the shared Bash session. The first block enables Barn and waits for the router. The second checks
-the Barn data.
-
-```bash run
-oc patch wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}" --type=merge -p '{"spec":{"barn":{"enabled":true}}}'
-wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || return 1
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
-```
-
-```bash run
-start_barn_port_forward || return 1
-OUTPUT=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
-stop_barn_port_forward
-echo "${OUTPUT}" | grep -q "^${OP_CATALOG_NAME}" \
-  && echo "PASS: ${OP_CATALOG_NAME} is still in Barn after Barn was enabled again" \
-  || { echo "FAIL: Barn data was lost"; echo "${OUTPUT}"; return 1; }
-```
-
-**Expected result:**
-
-- The output includes `PASS: wanakurouter/<WANAKU_ROUTER_NAME> condition BarnAvailable=True (reason Available)`.
-- The output includes `PASS: Barn reachable at`.
-- The output includes `PASS: <OP_CATALOG_NAME> is still in Barn after Barn was enabled again`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
-
 ### Test 7.5: Verify the operator logs and restarts
 
 ```bash run
@@ -1651,8 +1195,6 @@ OPERATOR_POD=$(oc get pods -l app.kubernetes.io/name=wanaku-operator -n "${WANAK
 LOGS=$(oc logs "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}")
 echo "${LOGS}" | grep -q "Starting router reconciliation for ${WANAKU_ROUTER_NAME}" \
   && echo "PASS: router reconciliation logged" || echo "FAIL: no router reconciliation in the logs"
-echo "${LOGS}" | grep -q "Starting service catalog reconciliation for op-test-service-catalogs" \
-  && echo "PASS: service catalog reconciliation logged" || echo "FAIL: no service catalog reconciliation in the logs"
 
 RESTARTS=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.containerStatuses[0].restartCount}')
 [ "${RESTARTS}" = "0" ] && echo "PASS: operator has zero restarts" || echo "WARN: operator restarted ${RESTARTS} time(s)"
@@ -1661,47 +1203,8 @@ RESTARTS=$(oc get pod "${OPERATOR_POD}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.
 **Expected result:**
 
 - The output includes `PASS: router reconciliation logged`.
-- The output includes `PASS: service catalog reconciliation logged`.
 - The output includes `PASS: operator has zero restarts` or `WARN: operator restarted`.
 - The output contains no line starting with `FAIL:`.
-
-
----
-
-## Phase 8: Service Catalog Removal
-
-### Test 8.1: Delete the WanakuServiceCatalog and verify Barn removes the catalog
-
-**Description:** The operator removes the deployed catalogs from Barn before it releases the resource. Barn keeps a
-removed catalog in its removed list, so it can be restored.
-
-Run this block in the shared Bash session.
-
-```bash run
-oc delete wanakuservicecatalog op-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=60s
-wait_for_deletion wanakuservicecatalog op-test-service-catalogs "${WANAKU_NAMESPACE}" 30 || return 1
-
-start_barn_port_forward || return 1
-ACTIVE=$(${WANAKU_CLI} service catalog list --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
-REMOVED=$(${WANAKU_CLI} service removed --host "${WANAKU_BARN_URL}" --no-auth --plain 2>&1)
-stop_barn_port_forward
-
-echo "${ACTIVE}" | grep -q "^${OP_CATALOG_NAME}" \
-  && { echo "FAIL: ${OP_CATALOG_NAME} is still an active catalog"; return 1; } \
-  || echo "PASS: ${OP_CATALOG_NAME} is no longer an active catalog"
-echo "${REMOVED}" | grep -q "^${OP_CATALOG_NAME}" \
-  && echo "PASS: ${OP_CATALOG_NAME} is in the Barn removed list" \
-  || echo "WARN: ${OP_CATALOG_NAME} is not in the removed list"
-```
-
-**Expected result:**
-
-- The output reports `PASS:` for deletion of `wanakuservicecatalog/op-test-service-catalogs`.
-- The output includes `PASS: Barn reachable at`.
-- The output includes `PASS: <OP_CATALOG_NAME> is no longer an active catalog`.
-- The output includes `PASS: <OP_CATALOG_NAME> is in the Barn removed list` or `WARN: <OP_CATALOG_NAME> is not in the removed list`.
-- The output contains no line starting with `FAIL:`.
-- The commands exit with code 0.
 
 
 ---
@@ -1710,45 +1213,37 @@ echo "${REMOVED}" | grep -q "^${OP_CATALOG_NAME}" \
 
 ### Test 9.1: Delete the router and verify the managed resources are removed
 
-Run these blocks in the shared Bash session. The first block deletes the router and waits for the workloads, Services,
-Routes and ConfigMap. The second waits for the PVCs, which Kubernetes removes after their pods have stopped.
+Run these blocks in the shared Bash session. The first block deletes the router and waits for the workloads, Services
+and Routes. The second waits for the PVC, which Kubernetes removes after its pod has stopped.
 
 ```bash run
 oc delete wanakurouter "${WANAKU_ROUTER_NAME}" -n "${WANAKU_NAMESPACE}"
 
 FAIL=0
 wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-server" "${WANAKU_NAMESPACE}" 90 || FAIL=1
-wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-barn" "${WANAKU_NAMESPACE}" 90 || FAIL=1
 wait_for_deletion deployment "${WANAKU_ROUTER_NAME}-oauth2-proxy" "${WANAKU_NAMESPACE}" 90 || FAIL=1
 wait_for_deletion service "server-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
-wait_for_deletion service "barn-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion service "oauth2-proxy-${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion route "${WANAKU_ROUTER_NAME}" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 wait_for_deletion route "${WANAKU_ROUTER_NAME}-mcp" "${WANAKU_NAMESPACE}" 60 || FAIL=1
-wait_for_deletion configmap "${WANAKU_ROUTER_NAME}-server-config" "${WANAKU_NAMESPACE}" 60 || FAIL=1
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
 ```bash run
 FAIL=0
 wait_for_deletion pvc server-volume-claim "${WANAKU_NAMESPACE}" 50 || FAIL=1
-wait_for_deletion pvc "${WANAKU_ROUTER_NAME}-barn-data" "${WANAKU_NAMESPACE}" 50 || FAIL=1
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
 
 - The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-server deleted`.
-- The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-barn deleted`.
 - The output includes `PASS: deployment/<WANAKU_ROUTER_NAME>-oauth2-proxy deleted`.
 - The output includes `PASS: service/server-<WANAKU_ROUTER_NAME> deleted`.
-- The output includes `PASS: service/barn-<WANAKU_ROUTER_NAME> deleted`.
 - The output includes `PASS: service/oauth2-proxy-<WANAKU_ROUTER_NAME> deleted`.
 - The output includes `PASS: route/<WANAKU_ROUTER_NAME> deleted`.
 - The output includes `PASS: route/<WANAKU_ROUTER_NAME>-mcp deleted`.
-- The output includes `PASS: configmap/<WANAKU_ROUTER_NAME>-server-config deleted`.
 - The output includes `PASS: pvc/server-volume-claim deleted`.
-- The output includes `PASS: pvc/<WANAKU_ROUTER_NAME>-barn-data deleted`.
 - The output contains no line starting with `FAIL:`.
 - The commands exit with code 0.
 
@@ -1764,7 +1259,6 @@ Perform full teardown. Then remove the local credential store:
 Follow [common/cleanup.md](common/cleanup.md).
 
 ```bash run
-stop_barn_port_forward 2>/dev/null || true
 rm -rf "${WANAKU_CREDENTIALS}"
 echo "PASS: local credentials removed"
 if [ -n "${WANAKU_DOWNLOADED_SOURCE_DIR}" ]; then
@@ -1789,31 +1283,27 @@ echo "PASS: downloaded source assets removed or no download was owned"
 | S     | S.0     | Prepare the operator Helm chart and realm configuration                | Critical |
 | S     | S.1     | Prerequisite check script                                              | Critical |
 | S     | S.2     | Environment variables                                                  | Critical |
-| S     | S.3-S.5 | Deletion, condition and Barn port-forward helpers                      | Critical |
+| S     | S.3-S.4 | Deletion and condition helpers                                         | Critical |
 | 0     | 0.1     | Log in to OpenShift                                                    | Critical |
 | 0     | —       | OpenShift login                                                        | Critical |
 | 1     | 1.1-1.2 | Environment setup (namespace, Keycloak, auth Secret)                   | Critical |
 | 2     | 2.1     | Install the operator                                                   | Critical |
 | 2     | —       | Operator installation, CRDs, RBAC and health                           | Critical |
 | 3     | 3.1-3.2 | WanakuRouter Ready and conditions                                      | Critical |
-| 3     | 3.3-3.7 | Server and Barn Deployments, Services, PVCs, ConfigMap                 | Critical |
+| 3     | 3.3-3.6 | Server Deployment, Service and PVC                                     | Critical |
 | 3     | 3.8-3.9 | Routes and status endpoints                                            | Critical |
 | 3     | 3.10    | Owner references and managed-by labels                                 | High     |
 | 4     | 4.1-4.2 | Health endpoints and management API through the Route                  | Critical |
 | 4     | 4.3     | Namespace creation and DNS-label validation                            | High     |
 | 4     | 4.4     | MCP endpoint `/<namespace>/mcp`, bare `/mcp` rejected                  | Critical |
-| 4     | 4.5-4.6 | Admin UI, Barn plugin proxy, Barn CLI access                           | High     |
+| 4     | 4.5     | Admin UI                                                               | High     |
 | 4     | 4.7     | Registry persistence across a pod restart                              | High     |
-| 5     | 5.1-5.3 | WanakuServiceCatalog deploys a packaged catalog to Barn                | High     |
-| 5     | 5.4-5.6 | Service catalog negative tests                                         | High     |
 | 6     | 6.1-6.3 | Authentication negative tests (validation, Secret)                     | High     |
 | 6     | 6.4-6.6 | oauth2-proxy resources, 401 without token, protected-resource metadata | Critical |
 | 6     | 6.7-6.8 | OIDC login, token accepted by the management and MCP proxies           | Critical |
 | 6     | 6.9     | Secret change restarts the proxies                                     | Medium   |
 | 7     | 7.1-7.2 | Update reconciliation and spec validation                              | Medium   |
-| 7     | 7.3-7.4 | Disable and enable Barn, data kept                                     | High     |
 | 7     | 7.5     | Operator logs and restarts                                             | Medium   |
-| 8     | 8.1     | Catalog removed from Barn on CR deletion                               | High     |
 | 9     | 9.1     | Deletion and ownership cascade                                         | Critical |
 | 10    | 10.1    | Full teardown and local credential removal                             | Critical |
 | 10    | —       | Cleanup                                                                | Critical |
