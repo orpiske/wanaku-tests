@@ -46,7 +46,15 @@ registration works the same way when authentication is enabled.
 
 Every step is fully automatable.
 
-**Hard timeout rule:** Any single operation (oc wait, polling loop, port-forward setup, etc.) that takes longer than **3 minutes** MUST be considered broken. Mark the test as FAIL immediately and abort — do not wait longer. All `--timeout` values in this plan MUST NOT exceed `180s`.
+Run command blocks in Saci's shared Bash session, including procedure blocks, so helper functions and exported
+variables remain available to later tests. Source each block in that session; a top-level `return 1` fails the
+block without terminating the session. Do not execute blocks as separate scripts or enable `set -e` globally.
+
+**Hard timeout rule:** Saci stops a command block that runs longer than 120 seconds (`limits.operation_timeout_secs`),
+and a stopped block can lose the shared Bash session. Any single operation (oc wait, polling loop, port-forward setup,
+etc.) that takes longer than **100 seconds** MUST be considered broken. Mark the test as FAIL immediately and abort —
+do not wait longer. All `--timeout` values and polling deadlines in this plan MUST NOT exceed `100s`. A test that waits
+for several slow operations splits them into separate blocks, so that each block finishes within the Saci limit.
 
 > [!NOTE]
 > The CIC startup probe allows 10 minutes, because a runtime resolves Maven dependencies at startup. The routes in
@@ -169,7 +177,7 @@ else
   done
   WANAKU_DOWNLOADED_SOURCE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/wanaku-operator-source.XXXXXX") || return 1
   mkdir "${WANAKU_DOWNLOADED_SOURCE_DIR}/repo" || return 1
-  curl --fail --location --connect-timeout 10 --max-time 120 \
+  curl --fail --location --connect-timeout 10 --max-time 90 \
     "https://github.com/wanaku-ai/wanaku-barn/archive/${WANAKU_BARN_REF}.tar.gz" \
     --output "${WANAKU_DOWNLOADED_SOURCE_DIR}/source.tar.gz" \
     || { echo "FAIL: Wanaku Barn source archive download failed"; return 1; }
@@ -277,12 +285,12 @@ Follow [common/wait-for-deletion.md](common/wait-for-deletion.md).
 ### Step S.4: Define the custom resource condition helpers
 
 The function polls a condition until it has the expected status and, optionally, the expected reason. It fails after
-180 seconds. The functions are exported so that blocks running in a child `bash` process can use them.
+100 seconds. The functions are exported so that blocks running in a child `bash` process can use them.
 
 ```bash run
 wait_cr_condition() {
   # $1 = kind, $2 = name, $3 = condition type, $4 = expected status, $5 = expected reason (optional)
-  WCC_END=$(( $(date +%s) + 180 ))
+  WCC_END=$(( $(date +%s) + 100 ))
   while [ "$(date +%s)" -lt "${WCC_END}" ]; do
     WCC_STATUS=$(oc get "$1" "$2" -n "${WANAKU_NAMESPACE}" \
       -o jsonpath="{.status.conditions[?(@.type==\"$3\")].status}" 2>/dev/null)
@@ -316,7 +324,7 @@ export -f wait_cr_condition check
 ```bash run
 wait_for_tool() {
   # $1 = tool name
-  for i in $(seq 1 40); do
+  for i in $(seq 1 25); do
     if ${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>/dev/null \
         | grep -q "$1"; then
       echo "PASS: tool $1 is registered in Wanaku Server (attempt ${i})"
@@ -355,7 +363,8 @@ Follow [common/operator-deployment.md](common/operator-deployment.md).
 
 ### Test 3.1: Create a WanakuRouter with Wanaku Barn
 
-Run this block in the shared Bash session so that `wait_cr_condition` is available.
+Run these blocks in the shared Bash session so that `wait_cr_condition` is available. The first block creates the
+router and waits for `Ready`. The second checks `BarnAvailable`.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -374,8 +383,11 @@ spec:
       size: 1Gi
 EOF
 
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
 # Expected output: wanakurouter.wanaku.ai/wanaku-test-router condition met
+```
+
+```bash run
 wait_cr_condition wanakurouter "${WANAKU_ROUTER_NAME}" BarnAvailable True Available || return 1
 ```
 
@@ -501,15 +513,19 @@ echo "integration-cr-exists=$?"
 **Description:** `Ready` requires `Reconciled`, `Available` (the runtime pod is ready) and `Registered` (Wanaku
 Server has an available forward named `cic-echo` with the `cic.instance` label of the runtime).
 
-Run this block as a separate `bash` script, not in the shared session.
+Run these blocks in the shared Bash session. The first block waits for `Reconciled` and `Available`. The second
+waits for `Registered` and `Ready`. Each block prints the runtime log when a condition is not met.
 
 ```bash run
-FAIL=0
-wait_cr_condition wanakuintegration cic-echo Reconciled True ReconcileSucceeded || FAIL=1
-wait_cr_condition wanakuintegration cic-echo Available True Available || FAIL=1
-wait_cr_condition wanakuintegration cic-echo Registered True Registered || FAIL=1
-wait_cr_condition wanakuintegration cic-echo Ready True || FAIL=1
-[ "${FAIL}" -eq 0 ] || { oc logs deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}" --tail=30; exit 1; }
+wait_cr_condition wanakuintegration cic-echo Reconciled True ReconcileSucceeded \
+  && wait_cr_condition wanakuintegration cic-echo Available True Available \
+  || { oc logs deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}" --tail=30; return 1; }
+```
+
+```bash run
+wait_cr_condition wanakuintegration cic-echo Registered True Registered \
+  && wait_cr_condition wanakuintegration cic-echo Ready True \
+  || { oc logs deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}" --tail=30; return 1; }
 ```
 
 **Expected result:**
@@ -521,7 +537,7 @@ wait_cr_condition wanakuintegration cic-echo Ready True || FAIL=1
 **Description:** The operator creates the `<name>-cic` Deployment. It passes the routes, the tags and the
 registration settings to the runtime as environment variables.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -543,7 +559,7 @@ check "liveness probe" "$(cic_jsonpath '{.spec.template.spec.containers[0].liven
 check "strategy" "$(cic_jsonpath '{.spec.strategy.type}')" "RollingUpdate"
 check "maxUnavailable" "$(cic_jsonpath '{.spec.strategy.rollingUpdate.maxUnavailable}')" "0"
 check "routes volume" "$(cic_jsonpath '{.spec.template.spec.volumes[?(@.name=="routes")].configMap.name}')" "cic-echo-routes"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -570,7 +586,7 @@ check "routes volume" "$(cic_jsonpath '{.spec.template.spec.volumes[?(@.name=="r
 **Description:** The `<name>-cic` Service publishes the addresses of pods that are not ready, because Wanaku Server
 discovers the tools while the runtime registers, before the pod is ready.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -582,7 +598,7 @@ int_jsonpath() { oc get wanakuintegration cic-echo -n "${WANAKU_NAMESPACE}" -o j
 check "status.forwardName" "$(int_jsonpath '{.status.forwardName}')" "cic-echo"
 check "status.mcpAddress" "$(int_jsonpath '{.status.mcpAddress}')" "http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp"
 echo "status.wanakuEndpoint=$(int_jsonpath '{.status.wanakuEndpoint}')"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 > [!WARNING]
@@ -605,14 +621,14 @@ echo "status.wanakuEndpoint=$(int_jsonpath '{.status.wanakuEndpoint}')"
 `cic.version` and `cic.routes-digest` labels. The CLI does not print forward labels, so `curl` reads
 `GET /api/v1/forwards/{name}`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "^cic-echo[[:space:]]*http://cic-echo-cic.${WANAKU_NAMESPACE}.svc:9090/mcp" \
   && echo "PASS: forward cic-echo is listed with the runtime address" \
-  || { echo "FAIL: forward cic-echo not listed"; exit 1; }
+  || { echo "FAIL: forward cic-echo not listed"; return 1; }
 
 FORWARD=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-echo")
 echo "${FORWARD}" | jq '.data | {name, namespace, available, labels}'
@@ -624,7 +640,7 @@ for LABEL in cic.instance cic.version cic.routes-digest; do
     && echo "PASS: forward label ${LABEL} is set" || { echo "FAIL: forward label ${LABEL} missing"; FAIL=1; }
 done
 export CIC_ECHO_INSTANCE=$(echo "${FORWARD}" | jq -r '.data.labels["cic.instance"]')
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -640,25 +656,25 @@ export CIC_ECHO_INSTANCE=$(echo "${FORWARD}" | jq -r '.data.labels["cic.instance
 
 ### Test 4.7: Verify the discovered tools and the tag filter
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-wait_for_tool cic-echo || exit 1
+wait_for_tool cic-echo || return 1
 
 OUTPUT=$(${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "cic-hidden" \
-  && { echo "FAIL: cic-hidden is registered although its tag does not match spec.mcp.tags"; exit 1; } \
+  && { echo "FAIL: cic-hidden is registered although its tag does not match spec.mcp.tags"; return 1; } \
   || echo "PASS: the tag filter hides cic-hidden"
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "cic-echo" && echo "PASS: cic-echo is listed at /default/mcp" \
-  || { echo "FAIL: cic-echo not listed at /default/mcp"; exit 1; }
+  || { echo "FAIL: cic-echo not listed at /default/mcp"; return 1; }
 
 # Namespace isolation: the tool is not served in another namespace
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "cic-echo" \
-  && { echo "FAIL: cic-echo is served in ${CIC_CATALOG_NAMESPACE}"; exit 1; } \
+  && { echo "FAIL: cic-echo is served in ${CIC_CATALOG_NAMESPACE}"; return 1; } \
   || echo "PASS: cic-echo is not served in ${CIC_CATALOG_NAMESPACE}"
 ```
 
@@ -679,7 +695,7 @@ echo "${OUTPUT}" | grep -q "cic-echo" \
 **Description:** Without a governance configuration, Wanaku Server denies `tools/call`. The CLI prints the denial and
 exits with a non-zero code.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
@@ -690,7 +706,7 @@ if echo "${OUTPUT}" | grep -qE "No governance policy permits this action|evaluat
   echo "PASS: the tool call is denied by the fail-safe governance default (exit code ${EXIT_CODE})"
 else
   echo "FAIL: the tool call was not denied"
-  exit 1
+  return 1
 fi
 ```
 
@@ -707,7 +723,8 @@ in `${CIC_GOVERNED_NAMESPACES}`. The `plugins` section stays. The ConfigMap is m
 pod does not see the change: restart the Server. The registry (forwards and tools) is on the PVC, so it survives the
 restart.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run these blocks in the shared Bash session. The first block updates the ConfigMap and restarts the Server. The
+second waits for the rollout. The third waits for the tool.
 
 ```bash run
 CM="${WANAKU_ROUTER_NAME}-server-config"
@@ -734,16 +751,22 @@ oc set data "configmap/${CM}" -n "${WANAKU_NAMESPACE}" --from-file=wanaku.yaml="
 rm -f "${GOV_FILE}"
 
 oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' | grep -q "^governance:" \
-  && echo "PASS: governance section added" || { echo "FAIL: governance section missing"; exit 1; }
+  && echo "PASS: governance section added" || { echo "FAIL: governance section missing"; return 1; }
 oc get configmap "${CM}" -n "${WANAKU_NAMESPACE}" -o jsonpath='{.data.wanaku\.yaml}' | grep -q "wanaku-barn-api" \
-  && echo "PASS: plugins section kept" || { echo "FAIL: plugins section lost"; exit 1; }
+  && echo "PASS: plugins section kept" || { echo "FAIL: plugins section lost"; return 1; }
 
 oc rollout restart "deployment/${WANAKU_ROUTER_NAME}-server" -n "${WANAKU_NAMESPACE}"
-oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=180s -n "${WANAKU_NAMESPACE}"
-oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=180s -n "${WANAKU_NAMESPACE}"
+```
 
+```bash run
+oc rollout status "deployment/${WANAKU_ROUTER_NAME}-server" --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  || { echo "FAIL: deployment/${WANAKU_ROUTER_NAME}-server did not roll out"; return 1; }
+oc wait "wanakurouter/${WANAKU_ROUTER_NAME}" --for=condition=Ready --timeout=100s -n "${WANAKU_NAMESPACE}"
+```
+
+```bash run
 # An invalid governance section stops the Server at startup, so a Ready Server also validates the YAML
-wait_for_tool cic-echo || exit 1
+wait_for_tool cic-echo || return 1
 ```
 
 **Expected result:**
@@ -757,7 +780,7 @@ wait_for_tool cic-echo || exit 1
 
 **Description:** The route returns the message twice with a `-` separator.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
@@ -768,7 +791,7 @@ if [ "${EXIT_CODE}" -eq 0 ] && echo "${OUTPUT}" | grep -q "hello-hello"; then
   echo "PASS: cic-echo returned hello-hello"
 else
   echo "FAIL: unexpected tool result (exit code ${EXIT_CODE})"
-  exit 1
+  return 1
 fi
 ```
 
@@ -780,7 +803,7 @@ fi
 
 ### Test 5.4: Negative test - invoke a tool that does not exist
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
@@ -791,7 +814,7 @@ if [ "${EXIT_CODE}" -ne 0 ]; then
   echo "PASS: invocation of a non-existent tool failed (exit code ${EXIT_CODE})"
 else
   echo "FAIL: invocation of a non-existent tool succeeded"
-  exit 1
+  return 1
 fi
 ```
 
@@ -807,13 +830,13 @@ fi
 `decision` `block` and `reason_code` `governance_no_match`. The CLI has no audit command, so `curl` reads
 `GET /api/v1/audit/events`. The response is `{"data":{"events":[...],"limit":..,"offset":..,"total":..},"error":null}`.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 # The list endpoint filters by target; one page holds up to 100 events by default
 EVENTS=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/audit/events?target=cic-echo")
 echo "${EVENTS}" | jq -e '.data.events' > /dev/null 2>&1 && echo "PASS: audit events endpoint returns events" \
-  || { echo "FAIL: unexpected audit response: ${EVENTS}"; exit 1; }
+  || { echo "FAIL: unexpected audit response: ${EVENTS}"; return 1; }
 
 BLOCKED=$(echo "${EVENTS}" | jq '[.data.events[] | select(.operation=="tools/call" and .target=="cic-echo"
   and .decision=="block" and .reason_code=="governance_no_match")] | length')
@@ -839,28 +862,38 @@ echo "${EVENTS}" | jq -c '[.data.events[] | select(.target=="cic-echo") | {opera
 **Description:** A new pod registers the forward again with a new `cic.instance` label. The old pod does not remove
 the forward at shutdown, because the label no longer matches its own identifier.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run these blocks in the shared Bash session. The first block restarts the runtime and waits for the rollout. The
+second waits until the old pod is gone. The third verifies the forward and the tool.
 
 ```bash run
 OLD_POD=$(oc get pods -l app=cic-echo-cic -n "${WANAKU_NAMESPACE}" -o jsonpath='{.items[0].metadata.name}')
 oc rollout restart deployment/cic-echo-cic -n "${WANAKU_NAMESPACE}"
-oc rollout status deployment/cic-echo-cic --timeout=180s -n "${WANAKU_NAMESPACE}"
-wait_for_deletion pod "${OLD_POD}" "${WANAKU_NAMESPACE}" 120 || exit 1
+oc rollout status deployment/cic-echo-cic --timeout=100s -n "${WANAKU_NAMESPACE}" \
+  || { echo "FAIL: deployment/cic-echo-cic did not roll out"
+       oc get pods -l app=cic-echo-cic -n "${WANAKU_NAMESPACE}"
+       oc logs -l app=cic-echo-cic -n "${WANAKU_NAMESPACE}" --prefix --tail=20
+       return 1; }
+```
 
-wait_cr_condition wanakuintegration cic-echo Registered True Registered || exit 1
+```bash run
+wait_for_deletion pod "${OLD_POD}" "${WANAKU_NAMESPACE}" 100 || return 1
+```
+
+```bash run
+wait_cr_condition wanakuintegration cic-echo Registered True Registered || return 1
 
 NEW_INSTANCE=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-echo" | jq -r '.data.labels["cic.instance"]')
 if [ -n "${NEW_INSTANCE}" ] && [ "${NEW_INSTANCE}" != "${CIC_ECHO_INSTANCE}" ]; then
   echo "PASS: the new runtime owns the forward (cic.instance ${CIC_ECHO_INSTANCE} -> ${NEW_INSTANCE})"
 else
   echo "FAIL: cic.instance did not change ('${CIC_ECHO_INSTANCE}' -> '${NEW_INSTANCE}')"
-  exit 1
+  return 1
 fi
 
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-echo --param message=again 2>&1)
 echo "${OUTPUT}" | grep -q "again-again" && echo "PASS: the tool works after the replacement" \
-  || { echo "FAIL: the tool does not work after the replacement: ${OUTPUT}"; exit 1; }
+  || { echo "FAIL: the tool does not work after the replacement: ${OUTPUT}"; return 1; }
 ```
 
 **Expected result:**
@@ -876,7 +909,7 @@ echo "${OUTPUT}" | grep -q "again-again" && echo "PASS: the tool works after the
 
 ### Test 7.1: Package the catalog and deploy it with WanakuServiceCatalog
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 export CIC_CATALOG="${CIC_CATALOG:-cic-hello-catalog}"
@@ -895,6 +928,7 @@ cat > "${TEMP_DIR}/catalog/${CIC_CATALOG_SYSTEM}/routes.camel.yaml" <<'ROUTES'
     from:
       uri: ai-tool:cic-catalog-greet
       parameters:
+        tags: wanaku
         description: "Greets a person by name"
         parameter.name: string
         parameter.name.description: "The name of the person to greet"
@@ -906,7 +940,7 @@ cat > "${TEMP_DIR}/catalog/${CIC_CATALOG_SYSTEM}/routes.camel.yaml" <<'ROUTES'
 ROUTES
 
 ${WANAKU_CLI} service package --path="${TEMP_DIR}/catalog" -o "${TEMP_DIR}/catalog.b64"
-[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; exit 1; }
+[ -s "${TEMP_DIR}/catalog.b64" ] && echo "PASS: catalog packaged" || { echo "FAIL: catalog not packaged"; return 1; }
 
 oc create configmap cic-hello-catalog-data --from-file=catalog.zip="${TEMP_DIR}/catalog.b64" \
   --dry-run=client -o yaml | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -925,9 +959,9 @@ spec:
       configMapRef: cic-hello-catalog-data
 EOF
 
-wait_cr_condition wanakuservicecatalog cic-test-service-catalogs Ready True ReconciliationSucceeded || exit 1
+wait_cr_condition wanakuservicecatalog cic-test-service-catalogs Ready True ReconciliationSucceeded || return 1
 oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.deployedCatalogs[*]}' \
-  | grep -qw "${CIC_CATALOG}" && echo "PASS: ${CIC_CATALOG} deployed to Barn" || { echo "FAIL: ${CIC_CATALOG} not deployed"; exit 1; }
+  | grep -qw "${CIC_CATALOG}" && echo "PASS: ${CIC_CATALOG} deployed to Barn" || { echo "FAIL: ${CIC_CATALOG} not deployed"; return 1; }
 ```
 
 **Expected result:**
@@ -942,7 +976,8 @@ oc get wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" -
 **Description:** The runtime downloads the catalog from Barn and registers its forward in the Wanaku namespace
 `${CIC_CATALOG_NAMESPACE}`. The forward name is `cic-catalog-fwd` (`spec.registration.name`).
 
-Run this block as a separate `bash` script, not in the shared session.
+Run these blocks in the shared Bash session. The first block creates the integration and waits for `Registered`.
+The second waits for `Ready`. Each block prints the runtime log when the condition is not met.
 
 ```bash run
 cat <<EOF | oc apply -n "${WANAKU_NAMESPACE}" -f -
@@ -963,10 +998,13 @@ spec:
     namespace: ${CIC_CATALOG_NAMESPACE}
 EOF
 
-FAIL=0
-wait_cr_condition wanakuintegration cic-catalog Registered True Registered || FAIL=1
-wait_cr_condition wanakuintegration cic-catalog Ready True || FAIL=1
-[ "${FAIL}" -eq 0 ] || { oc logs deployment/cic-catalog-cic -n "${WANAKU_NAMESPACE}" --tail=30; exit 1; }
+wait_cr_condition wanakuintegration cic-catalog Registered True Registered \
+  || { oc logs deployment/cic-catalog-cic -n "${WANAKU_NAMESPACE}" --tail=30; return 1; }
+```
+
+```bash run
+wait_cr_condition wanakuintegration cic-catalog Ready True \
+  || { oc logs deployment/cic-catalog-cic -n "${WANAKU_NAMESPACE}" --tail=30; return 1; }
 ```
 
 **Expected result:**
@@ -975,7 +1013,7 @@ wait_cr_condition wanakuintegration cic-catalog Ready True || FAIL=1
 
 ### Test 7.3: Verify the catalog environment and the status
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 FAIL=0
@@ -990,7 +1028,7 @@ check "WANAKU_NAMESPACE" "$(cic_env WANAKU_NAMESPACE)" "${CIC_CATALOG_NAMESPACE}
 check "status.forwardName" "$(oc get wanakuintegration cic-catalog -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.forwardName}')" "cic-catalog-fwd"
 ENDPOINT=$(oc get wanakuintegration cic-catalog -n "${WANAKU_NAMESPACE}" -o jsonpath='{.status.wanakuEndpoint}')
 check "status.wanakuEndpoint" "${ENDPOINT}" "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1007,25 +1045,25 @@ check "status.wanakuEndpoint" "${ENDPOINT}" "${WANAKU_ROUTER_MCP_URL}/${CIC_CATA
 
 ### Test 7.4: Verify the catalog tool is served only in its namespace, and invoke it
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
-wait_for_tool cic-catalog-greet || exit 1
+wait_for_tool cic-catalog-greet || return 1
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "cic-catalog-greet" && echo "PASS: cic-catalog-greet listed in ${CIC_CATALOG_NAMESPACE}" \
-  || { echo "FAIL: cic-catalog-greet not listed in ${CIC_CATALOG_NAMESPACE}"; exit 1; }
+  || { echo "FAIL: cic-catalog-greet not listed in ${CIC_CATALOG_NAMESPACE}"; return 1; }
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/default/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "cic-catalog-greet" \
-  && { echo "FAIL: cic-catalog-greet is also served in default"; exit 1; } \
+  && { echo "FAIL: cic-catalog-greet is also served in default"; return 1; } \
   || echo "PASS: cic-catalog-greet is not served in default"
 
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-catalog-greet --param name=Alice 2>&1)
 echo "${OUTPUT}"
 echo "${OUTPUT}" | grep -q "Hello Alice from the catalog" && echo "PASS: cic-catalog-greet returned the greeting" \
-  || { echo "FAIL: unexpected result"; exit 1; }
+  || { echo "FAIL: unexpected result"; return 1; }
 ```
 
 **Expected result:**
@@ -1043,7 +1081,8 @@ echo "${OUTPUT}" | grep -q "Hello Alice from the catalog" && echo "PASS: cic-cat
 ### Test 8.1: Deploy a CIC runtime without the operator
 
 **Description:** The runtime does not register itself (`WANAKU_REGISTER` is not set). Its route serves the tool
-`cic-manual-echo`. Wanaku Server stores tools by name, not by namespace and name: a second forward that serves a tool
+`cic-manual-echo`. Without `MCP_TAGS`, the runtime serves only the routes with the tag `wanaku`, so the route has that
+tag. Wanaku Server stores tools by name, not by namespace and name: a second forward that serves a tool
 with the same name replaces the first entry, and removing that forward removes the tool. Use a tool name that no other
 forward serves.
 
@@ -1062,6 +1101,7 @@ data:
         from:
           uri: ai-tool:cic-manual-echo
           parameters:
+            tags: wanaku
             description: "Echo back the input message duplicated with a separator"
             parameter.message: string
             parameter.message.description: "The message to echo back"
@@ -1142,7 +1182,7 @@ spec:
       targetPort: mcp
 EOF
 
-oc wait deployment/cic-manual --for=condition=Available --timeout=180s -n "${WANAKU_NAMESPACE}"
+oc wait deployment/cic-manual --for=condition=Available --timeout=100s -n "${WANAKU_NAMESPACE}"
 echo "cic-manual-available=$?"
 # Expected: cic-manual-available=0
 ```
@@ -1156,22 +1196,22 @@ echo "cic-manual-available=$?"
 **Description:** `forwards add` requires `--name`, `--service` and `--namespace`. The command prints nothing on
 success. Wanaku Server discovers the tools while it creates the forward.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 ${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-manual --service "http://cic-manual.${WANAKU_NAMESPACE}.svc:9090/mcp" --namespace "${CIC_CATALOG_NAMESPACE}"
-[ $? -eq 0 ] && echo "PASS: forward cic-manual added" || { echo "FAIL: forwards add failed"; exit 1; }
+[ $? -eq 0 ] && echo "PASS: forward cic-manual added" || { echo "FAIL: forwards add failed"; return 1; }
 
 FORWARD=$(curl -s ${CURL_TLS_OPTS} "${WANAKU_ROUTER_URL}/api/v1/forwards/cic-manual")
 FAIL=0
 check "cic-manual available" "$(echo "${FORWARD}" | jq -r '.data.available')" "true"
-[ "${FAIL}" -eq 0 ] || { echo "${FORWARD}" | jq -r '.data.statusMessage'; exit 1; }
+[ "${FAIL}" -eq 0 ] || { echo "${FORWARD}" | jq -r '.data.statusMessage'; return 1; }
 
 OUTPUT=$(${WANAKU_CLI} mcp tool --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth \
   --name cic-manual-echo --param message=manual 2>&1)
 echo "${OUTPUT}" | grep -q "manual-manual" && echo "PASS: the manually registered tool works" \
-  || { echo "FAIL: unexpected result: ${OUTPUT}"; exit 1; }
+  || { echo "FAIL: unexpected result: ${OUTPUT}"; return 1; }
 ```
 
 **Expected result:**
@@ -1187,7 +1227,7 @@ echo "${OUTPUT}" | grep -q "manual-manual" && echo "PASS: the manually registere
 **Description:** Wanaku Server stores a forward whose upstream is unreachable, but marks it unavailable with a status
 message. It discovers no tools for it.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 ${WANAKU_CLI} forwards add --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth \
@@ -1200,7 +1240,7 @@ check "cic-unreachable available" "$(echo "${FORWARD}" | jq -r '.data.available'
   || { echo "FAIL: no statusMessage"; FAIL=1; }
 
 ${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --name cic-unreachable
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1212,19 +1252,19 @@ ${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPT
 
 ### Test 8.4: Remove the forward and verify its tools are removed
 
-Run this block as a separate `bash` script, not in the shared session.
+Run this block in the shared Bash session.
 
 ```bash run
 ${WANAKU_CLI} forwards remove --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --name cic-manual
-[ $? -eq 0 ] && echo "PASS: forward cic-manual removed" || { echo "FAIL: forwards remove failed"; exit 1; }
+[ $? -eq 0 ] && echo "PASS: forward cic-manual removed" || { echo "FAIL: forwards remove failed"; return 1; }
 
 OUTPUT=$(${WANAKU_CLI} mcp tool list --uri "${WANAKU_ROUTER_MCP_URL}/${CIC_CATALOG_NAMESPACE}/mcp" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>&1)
 echo "${OUTPUT}" | grep -q "cic-manual-echo" \
-  && { echo "FAIL: cic-manual-echo is still served in ${CIC_CATALOG_NAMESPACE}"; exit 1; } \
+  && { echo "FAIL: cic-manual-echo is still served in ${CIC_CATALOG_NAMESPACE}"; return 1; } \
   || echo "PASS: the tools of the removed forward are gone"
 
 # The other forwards keep their tools
-wait_for_tool cic-echo || exit 1
+wait_for_tool cic-echo || return 1
 
 oc delete deployment cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete service cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
@@ -1285,7 +1325,7 @@ EOF
 
 **Expected result:**
 
-- The invalid resource `bad-no-router-ref has `Reconciled=False` with reason `ValidationError`, its message contains `spec.routerRef is required`, and it creates no Deployment.
+- The invalid resource `bad-no-router-ref` has `Reconciled=False` with reason `ValidationError`, its message contains `spec.routerRef is required`, and it creates no Deployment.
 
 ### Test 9.2: Non-existent routerRef
 
@@ -1304,7 +1344,7 @@ EOF
 
 **Expected result:**
 
-- The invalid resource `bad-missing-router has `Reconciled=False` with reason `ValidationError`, its message contains `does not exist`, and it creates no Deployment.
+- The invalid resource `bad-missing-router` has `Reconciled=False` with reason `ValidationError`, its message contains `does not exist`, and it creates no Deployment.
 
 ---
 
@@ -1315,20 +1355,25 @@ EOF
 **Description:** Kubernetes deletes the runtime Deployment and Service through the owner reference. The runtime
 removes its own forward at shutdown, so Wanaku Server no longer serves the tools.
 
-Run this block as a separate `bash` script, not in the shared session.
+Run these blocks in the shared Bash session. The first block deletes the integrations and waits for the Deployments
+and Services. The second verifies that the forwards and the tools are removed.
 
 ```bash run
 oc delete wanakuintegration cic-echo cic-catalog -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 
 FAIL=0
 for NAME in cic-echo cic-catalog; do
-  wait_for_deletion deployment "${NAME}-cic" "${WANAKU_NAMESPACE}" 120 || FAIL=1
-  wait_for_deletion service "${NAME}-cic" "${WANAKU_NAMESPACE}" 60 || FAIL=1
+  wait_for_deletion deployment "${NAME}-cic" "${WANAKU_NAMESPACE}" 60 || FAIL=1
+  wait_for_deletion service "${NAME}-cic" "${WANAKU_NAMESPACE}" 30 || FAIL=1
 done
+[ "${FAIL}" -eq 0 ] || return 1
+```
 
+```bash run
+FAIL=0
 for FWD in cic-echo cic-catalog-fwd; do
   GONE=false
-  for i in $(seq 1 30); do
+  for i in $(seq 1 12); do
     if ! ${WANAKU_CLI} forwards list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS_OPTS} --no-auth --plain 2>/dev/null \
         | grep -q "^${FWD}[[:space:]]"; then
       GONE=true
@@ -1344,7 +1389,7 @@ OUTPUT=$(${WANAKU_CLI} tools list --host "${WANAKU_ROUTER_URL}" ${WANAKU_CLI_TLS
 echo "${OUTPUT}" | grep -qE "cic-echo|cic-catalog-greet" \
   && { echo "FAIL: CIC tools are still registered"; FAIL=1; } \
   || echo "PASS: no CIC tools remain"
-[ "${FAIL}" -eq 0 ] || exit 1
+[ "${FAIL}" -eq 0 ] || return 1
 ```
 
 **Expected result:**
@@ -1358,8 +1403,8 @@ echo "${OUTPUT}" | grep -qE "cic-echo|cic-catalog-greet" \
 ### Test 10.2: Delete the WanakuServiceCatalog
 
 ```bash run
-oc delete wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=120s --ignore-not-found=true
-wait_for_deletion wanakuservicecatalog cic-test-service-catalogs "${WANAKU_NAMESPACE}" 60
+oc delete wanakuservicecatalog cic-test-service-catalogs -n "${WANAKU_NAMESPACE}" --timeout=60s --ignore-not-found=true
+wait_for_deletion wanakuservicecatalog cic-test-service-catalogs "${WANAKU_NAMESPACE}" 30
 ```
 
 **Expected result:**
@@ -1407,7 +1452,7 @@ Delete the leftover resources of this plan. Then run the full teardown in Step 1
 ```bash run
 oc delete deployment,service cic-manual -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 oc delete wanakuintegration --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
-oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=120s
+oc delete wanakuservicecatalog --all -n "${WANAKU_NAMESPACE}" --ignore-not-found=true --timeout=90s
 oc delete configmap -l wanaku-test=true -n "${WANAKU_NAMESPACE}" --ignore-not-found=true
 echo "PASS: CIC test resources deleted"
 ```
