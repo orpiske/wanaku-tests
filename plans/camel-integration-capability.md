@@ -601,10 +601,9 @@ echo "status.wanakuEndpoint=$(int_jsonpath '{.status.wanakuEndpoint}')"
 [ "${FAIL}" -eq 0 ] || return 1
 ```
 
-> [!WARNING]
-> **Known issue:** for the `default` namespace, `status.wanakuEndpoint` is the router `status.endpoints.mcp` value
-> (`https://<mcp-host>/mcp`). Wanaku Server rejects the bare `/mcp` path. MCP clients must use
-> `${WANAKU_ROUTER_MCP_URL}/default/mcp`. Report the issue if it is still open.
+> [!NOTE]
+> Since wanaku-ai/wanaku-barn#282, `status.wanakuEndpoint` names the endpoint of the forward's namespace, for example
+> `https://<mcp-host>/default/mcp` for the `default` namespace. Wanaku Server rejects the bare `/mcp` path.
 
 **Expected result:**
 
