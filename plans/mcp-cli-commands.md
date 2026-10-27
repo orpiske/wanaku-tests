@@ -834,9 +834,12 @@ The deterministic processor from [the block fixture](../fixtures/evaluator-block
 `mcp-cli-evaluator-block`. Its compiled component is embedded below, so the worker needs only `base64`, already
 available in its Linux image. The `passthrough` engine makes no network or LLM calls. The evaluator matches only
 this run's namespace. Capture the original active revision before changing anything, and restore its configuration
-on success and failure. Rollback creates a new revision; the original revision's ID must not become active again.
+on success and failure. Cleanup restores it only while the active revision is the one this run created, which it
+recognizes by this run's temporary processor path; otherwise it reports a conflict and leaves the active revision in
+place. Rollback creates a new revision; the original revision's ID must not become active again.
 Run Phase 8 even if restoration fails: it retries the restoration while the server runs, then removes the server and
-its data.
+its data. If the run continues after a restoration failure, the restart in Test 6.2 replaces the retained evaluator
+state with the startup configuration.
 
 ```bash run
 if [ "${WANAKU_SERVER_MODE}" != builtin ]; then
@@ -855,6 +858,12 @@ else
     # Restoring the saved configuration is sufficient; revision IDs are immutable history.
     if ! printf '%s' "${current}" | jq -e --slurpfile saved "${MCP_EVALUATOR_DATA_DIR}/original.json" \
       '.data.evaluators == $saved[0].data.evaluators' > /dev/null; then
+      # Only this run's update references its temporary processor; anything else is a concurrent change.
+      if ! printf '%s' "${current}" | jq -e --arg path "${MCP_EVALUATOR_DATA_DIR}/block.wasm" \
+        '.data.evaluators | length == 1 and .[0].processor.path == $path' > /dev/null; then
+        echo "FAIL [5.6]: the active evaluator revision was not created by this run; refusing restoration"
+        return 1
+      fi
       wanaku evaluators revisions activate "${original}" \
         --expected-revision "$(printf '%s' "${current}" | jq -er '.data.revision.id')" \
         --host "${WANAKU_SERVER_URL}" --no-auth --plain || return 1
