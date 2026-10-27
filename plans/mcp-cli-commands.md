@@ -8,7 +8,7 @@ prompts come from the supplied infra-remediation MCP test fixture, which is regi
 `list`, `call`, `read` and `get` operations return real data.
 
 This plan covers tool/resource/prompt operations, namespace isolation, governance, enable/disable, the forward
-lifecycle across a server restart and error handling against a builtin or existing Wanaku Server. All steps are
+lifecycle across a server restart, evaluator updates and rollback through the CLI, and error handling against a builtin or existing Wanaku Server. All steps are
 automatable.
 
 The plan does not test help output, option validation or argument conversion. The CLI unit tests in
@@ -31,6 +31,7 @@ For operator deployment and authenticated MCP operations on OpenShift, use
 | `curl`            | any                                                              | `curl --version`             |
 | `timeout`         | GNU coreutils; required in the worker image                      | `timeout --version`          |
 | `jq`              | 1.6+                                                             | `jq --version`               |
+| `base64`          | GNU coreutils; builtin evaluator scenario                         | `base64 --version`           |
 
 ### CLI invocation
 
@@ -161,6 +162,7 @@ MCP_CREATED_SERVER=false
 MCP_CREATED_SERVER_DATA_DIR=""
 WANAKU_SERVER_PID=""
 MCP_CREATED_FIXTURE=false
+MCP_EVALUATOR_DATA_DIR=""
 MCP_FIXTURE_PID=""
 MCP_FIXTURE_DATA_DIR=""
 export TEST_MCP_URL="${TEST_MCP_URL:-${TEST_MCP_ADVERTISED_URL:-}}"
@@ -799,6 +801,102 @@ OUTPUT=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name restartService --pa
 - The output includes `PASS [5.5]: restartService callable again`.
 - The output contains no line starting with `FAIL`.
 
+### Test 5.6: Evaluator updates change MCP behavior and rollback restores it
+
+This scenario requires the CLI commands from `wanaku-barn#235` and the server revision API from
+`wanaku#1879`. It runs only against the **builtin server owned by this plan**. Existing mode is BLOCKED:
+evaluator updates replace the global configuration, so the plan must not reconfigure somebody else's server.
+
+The deterministic processor from [the block fixture](../fixtures/evaluator-block/README.md) always blocks with
+`mcp-cli-evaluator-block`. Its compiled component is embedded below, so the worker needs only `base64`, already
+available in its Linux image. The `passthrough` engine makes no network or LLM calls. The evaluator matches only
+this run's namespace. Capture the original active revision before changing anything, and restore its configuration
+on success and failure. Rollback creates a new revision; the original revision's ID must not become active again.
+Run Phase 8 even if restoration fails, and investigate any retained temporary directory.
+
+```bash run
+if [ "${WANAKU_SERVER_MODE}" != builtin ]; then
+  echo "BLOCKED [5.6]: evaluator mutation requires the builtin server owned by this plan"
+else
+  MCP_EVALUATOR_DATA_DIR=$(mktemp -d "${WANAKU_SERVER_DATA_DIR}/evaluator-cli.XXXXXX")
+  # Also used by Phase 8 if the step is interrupted before its EXIT trap completes.
+  mcp_restore_evaluators() {
+    [ -f "${MCP_EVALUATOR_DATA_DIR}/original.json" ] || return 0
+    local current original restored
+    current=$(curl --connect-timeout 2 --max-time 10 -fsS \
+      "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active") || return 1
+    original=$(jq -er '.data.revision.id' "${MCP_EVALUATOR_DATA_DIR}/original.json") || return 1
+    # Restoring the saved configuration is sufficient; revision IDs are immutable history.
+    if ! printf '%s' "${current}" | jq -e --slurpfile saved "${MCP_EVALUATOR_DATA_DIR}/original.json" \
+      '.data.evaluators == $saved[0].data.evaluators' > /dev/null; then
+      wanaku evaluators revisions activate "${original}" \
+        --expected-revision "$(printf '%s' "${current}" | jq -er '.data.revision.id')" \
+        --host "${WANAKU_SERVER_URL}" --no-auth --plain || return 1
+      restored=$(curl --connect-timeout 2 --max-time 10 -fsS \
+        "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active") || return 1
+      printf '%s' "${restored}" | jq -e --slurpfile saved "${MCP_EVALUATOR_DATA_DIR}/original.json" \
+        '.data.evaluators == $saved[0].data.evaluators' > /dev/null || return 1
+    fi
+    rm -rf "${MCP_EVALUATOR_DATA_DIR}"
+  }
+  (
+    set -eu
+    trap 'result=$?; trap - EXIT; if ! mcp_restore_evaluators; then echo "FAIL [5.6]: evaluator restoration failed; run Phase 8"; result=1; fi; exit "${result}"' EXIT
+    curl --connect-timeout 2 --max-time 10 -fsS \
+      "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active" > "${MCP_EVALUATOR_DATA_DIR}/original.json"
+    ORIGINAL_REVISION=$(jq -er '.data.revision.id' "${MCP_EVALUATOR_DATA_DIR}/original.json")
+    jq -e '.data.evaluators | type == "array"' "${MCP_EVALUATOR_DATA_DIR}/original.json" > /dev/null
+    BEFORE=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name restartService \
+      --param serverId=test-server --param service=nginx --plain)
+    [ "${BEFORE}" = "SUCCESS: Service 'nginx' restarted on server 'test-server'." ]
+    base64 -d > "${MCP_EVALUATOR_DATA_DIR}/block.wasm" <<'WASM'
+AGFzbQ0AAQAHGgFCAgFAAQZyZWFzb25zAQAEAAVibG9jawEACh4BABl3YW5ha3U6ZXZhbHVhdG9yL3Jlc3BvbnNlBQAGCgEBAAAFYmxvY2sBSABhc20BAAAABQMBAAEHCgEGbWVtb3J5AgALHQEAQQALF21jcC1jbGktZXZhbHVhdG9yLWJsb2NrAA4EbmFtZQAHBnJlYXNvbgIEAQAAAAYMAQACAQAGbWVtb3J5CAcBAQAAAQMAAg0BAQEHcmVzcG9uZAAAAc8BAGFzbQEAAAABHwNgAn9/AGAEf39/fwF/YA5/f39/f39/f39/f39/fwACEAEEaG9zdAdyZXNwb25kAAADAwIBAgUDAQABBgcBfwFBgAgLBx8DBm1lbW9yeQIAB3JlYWxsb2MAAQhldmFsdWF0ZQACCiICFwEBfyMAIQQjACADakEHakF4cSQAIAQLCABBAEEXEAALADoEbmFtZQAKCXByb2Nlc3NvcgEKAQAHcmVzcG9uZAISAQECAwRzaXplBAdwb2ludGVyBwcBAARuZXh0AgsBAAEBBGhvc3QSAQYlAwACAQIGbWVtb3J5AAABAgdyZWFsbG9jAAABAghldmFsdWF0ZQdRBGtzbwJzc3ACcgYGbWV0aG9kcwluYW1lc3BhY2VzCXRvb2wtbmFtZQEJYXJndW1lbnRzAwpsbG0tcmVzdWx0cw9jb252ZXJzYXRpb24taWQBCxgBABJldmFsdWF0aW9uLWNvbnRleHQDBAAHCgFAAQNjdHgFAQAICgEAAAICAwEEAQYLDgEACGV2YWx1YXRlAQEAAPABDmNvbXBvbmVudC1uYW1lAScAAAMAD3Jlc3BvbmQtbG93ZXJlZAEHcmVhbGxvYwIIZXZhbHVhdGUBGgACAgANcmVhc29uLW1lbW9yeQEGbWVtb3J5ARYAEQIABnJlYXNvbgEJcHJvY2Vzc29yASQAEgMAD3JlYXNvbi1pbnN0YW5jZQEEaG9zdAIIaW5zdGFuY2UBCwEBAAdyZXNwb25kAUEDBQEPb3B0aW9uYWwtc3RyaW5nAghhcmd1bWVudAMJYXJndW1lbnRzBAdjb250ZXh0BQ5wdWJsaWMtY29udGV4dAEMBQEACHJlc3BvbnNl
+WASM
+    jq -n --arg namespace "${MCP_NAMESPACE}" --arg path "${MCP_EVALUATOR_DATA_DIR}/block.wasm" \
+      '{evaluators: [{name: "mcp-cli-block", trigger: {method: "tools/call", namespace: $namespace},
+        engine: {type: "passthrough"}, processor: {path: $path}}]}' \
+      > "${MCP_EVALUATOR_DATA_DIR}/block.json"
+    wanaku evaluators update "${MCP_EVALUATOR_DATA_DIR}/block.json" --expected-revision "${ORIGINAL_REVISION}" \
+      --host "${WANAKU_SERVER_URL}" --no-auth --plain
+    curl --connect-timeout 2 --max-time 10 -fsS \
+      "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active" > "${MCP_EVALUATOR_DATA_DIR}/blocked.json"
+    BLOCK_REVISION=$(jq -er '.data.revision.id' "${MCP_EVALUATOR_DATA_DIR}/blocked.json")
+    [ "${BLOCK_REVISION}" -gt "${ORIGINAL_REVISION}" ]
+    jq -e --arg namespace "${MCP_NAMESPACE}" \
+      '.data.evaluators | length == 1 and .[0].name == "mcp-cli-block" and .[0].trigger.namespace == $namespace' \
+      "${MCP_EVALUATOR_DATA_DIR}/blocked.json" > /dev/null
+    set +e
+    BLOCKED=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name restartService \
+      --param serverId=test-server --param service=nginx --plain 2>&1)
+    BLOCK_EXIT=$?
+    set -e
+    [ "${BLOCK_EXIT}" -eq 1 ]
+    printf '%s' "${BLOCKED}" | grep -Fq 'mcp-cli-evaluator-block'
+    echo "PASS [5.6]: CLI evaluator update blocks the previously successful MCP call"
+    wanaku evaluators revisions activate "${ORIGINAL_REVISION}" --expected-revision "${BLOCK_REVISION}" \
+      --host "${WANAKU_SERVER_URL}" --no-auth --plain
+    curl --connect-timeout 2 --max-time 10 -fsS \
+      "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active" > "${MCP_EVALUATOR_DATA_DIR}/restored.json"
+    jq -e --argjson blocked "${BLOCK_REVISION}" --slurpfile saved "${MCP_EVALUATOR_DATA_DIR}/original.json" \
+      '.data.revision.id > $blocked and .data.evaluators == $saved[0].data.evaluators' \
+      "${MCP_EVALUATOR_DATA_DIR}/restored.json" > /dev/null
+    AFTER=$(wanaku mcp tool --uri "${MCP_URI}" --no-auth --name restartService \
+      --param serverId=test-server --param service=nginx --plain)
+    [ "${AFTER}" = "${BEFORE}" ]
+    echo "PASS [5.6]: CLI rollback creates a new revision and restores the successful MCP call"
+  )
+  EVALUATOR_RESULT=$?
+  [ "${EVALUATOR_RESULT}" -eq 0 ] || echo "FAIL [5.6]: evaluator round trip failed (exit ${EVALUATOR_RESULT})"
+  (exit "${EVALUATOR_RESULT}")
+fi
+```
+
+**Expected result:** Builtin mode prints both `PASS [5.6]` messages with no `FAIL` lines. A real MCP call
+succeeds before the update, fails with the processor's unique marker after the update, and succeeds with the same
+result after rollback. REST verification confirms rollback created a newer revision containing the saved evaluator
+configuration. The temporary fixture is removed only after configuration restoration succeeds. Existing mode is
+reported BLOCKED, never PASS.
+
 ---
 
 ## Phase 6: Forwards and Restart
@@ -928,6 +1026,10 @@ Remove only resources recorded as created by this run, including after partial s
 Wanaku Server or delete its persistence/configuration. Do not use port-wide process killing on a shared machine.
 
 ```bash run
+if [ -n "${MCP_EVALUATOR_DATA_DIR:-}" ] && [ -d "${MCP_EVALUATOR_DATA_DIR}" ]; then
+  mcp_restore_evaluators \
+    || { echo "FAIL [8.1]: evaluator configuration restoration failed; inspect retained ${MCP_EVALUATOR_DATA_DIR}"; exit 1; }
+fi
 if [ "${MCP_CREATED_FORWARD:-false}" = true ]; then
   wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth \
     --name "${TEST_MCP_FORWARD}" --plain > /dev/null 2>&1 || true
@@ -969,7 +1071,7 @@ Cleanup failures must be investigated; ignored missing-resource errors alone do 
 | 2     | 2.1-2.4 | Tool list, call, missing arg, unknown tool                                            | Critical |
 | 3     | 3.1-3.3 | Resource list, read, unknown resource                                                 | Critical |
 | 4     | 4.1-4.5 | Prompt list, get, get with args, missing arg, unknown prompt                          | Critical |
-| 5     | 5.1-5.5 | Namespace isolation, fail-safe governance, disable/enable                             | Critical |
+| 5     | 5.1-5.6 | Namespace isolation, governance, disable/enable, evaluator update and rollback                             | Critical |
 | 6     | 6.1-6.2 | Forward listing, forwards survive a restart (builtin mode)                            | Critical |
 | 7     | 7.1-7.2 | Bare `/mcp`, unreachable server                                                       | High     |
 | 8     | 8.1     | Cleanup                                                                               | Critical |
