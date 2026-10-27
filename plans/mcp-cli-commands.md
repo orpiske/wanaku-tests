@@ -237,6 +237,8 @@ case "${WANAKU_SERVER_MODE}" in
     MCP_CREATED_SERVER_DATA_DIR="${WANAKU_SERVER_DATA_DIR}"
     export WANAKU_SERVER_CONFIG="${WANAKU_SERVER_DATA_DIR}/wanaku.yaml"
     {
+      # An empty evaluator list makes the server start with an active evaluator revision, which Test 5.6 captures.
+      echo "evaluators: []"
       echo "governance:"
       echo "  default:"
       echo "    mode: enforce"
@@ -833,7 +835,8 @@ The deterministic processor from [the block fixture](../fixtures/evaluator-block
 available in its Linux image. The `passthrough` engine makes no network or LLM calls. The evaluator matches only
 this run's namespace. Capture the original active revision before changing anything, and restore its configuration
 on success and failure. Rollback creates a new revision; the original revision's ID must not become active again.
-Run Phase 8 even if restoration fails, and investigate any retained temporary directory.
+Run Phase 8 even if restoration fails: it retries the restoration while the server runs, then removes the server and
+its data.
 
 ```bash run
 if [ "${WANAKU_SERVER_MODE}" != builtin ]; then
@@ -842,7 +845,9 @@ else
   MCP_EVALUATOR_DATA_DIR=$(mktemp -d "${WANAKU_SERVER_DATA_DIR}/evaluator-cli.XXXXXX")
   # Also used by Phase 8 if the step is interrupted before its EXIT trap completes.
   mcp_restore_evaluators() {
-    [ -f "${MCP_EVALUATOR_DATA_DIR}/original.json" ] || return 0
+    # The configuration changes only after the original revision is captured, so there is nothing to restore before.
+    jq -e '.data.revision.id' "${MCP_EVALUATOR_DATA_DIR}/original.json" > /dev/null 2>&1 \
+      || { rm -rf "${MCP_EVALUATOR_DATA_DIR}"; return 0; }
     local current original restored
     current=$(curl --connect-timeout 2 --max-time 10 -fsS \
       "${WANAKU_SERVER_URL}/api/v1/evaluators/revisions/active") || return 1
@@ -1047,8 +1052,9 @@ Remove only resources recorded as created by this run, including after partial s
 Wanaku Server or delete its persistence/configuration. Do not use port-wide process killing on a shared machine.
 
 If Test 5.6 left its evaluator directory, because it was interrupted or could not restore the evaluator
-configuration, the block first tries to restore that configuration. If that fails, the block stops at once: it
-removes nothing and leaves the fixture and the server running, so that the saved files stay for inspection.
+configuration, the block first tries again to restore that configuration and prints a `FAIL` line if that fails. It
+skips this when the builtin server of this run no longer runs: the evaluator revisions are in the server data
+directory, which the block removes. The cleanup continues either way.
 
 The removal commands ignore errors, such as a resource that is already gone. The block then checks the result with
 the CLI list commands while the server still runs, and prints a `PASS` or `FAIL` line for each check: the run's
@@ -1057,11 +1063,12 @@ when this run started no server or its server no longer runs, nothing can remain
 directory, which the block removes.
 
 ```bash run
-if [ -n "${MCP_EVALUATOR_DATA_DIR:-}" ] && [ -d "${MCP_EVALUATOR_DATA_DIR}" ]; then
-  mcp_restore_evaluators \
-    || { echo "FAIL [8.1]: evaluator configuration restoration failed; inspect retained ${MCP_EVALUATOR_DATA_DIR}"; return 1; }
-fi
 CLEANUP_FAILED=0
+if [ -n "${MCP_EVALUATOR_DATA_DIR:-}" ] && [ -d "${MCP_EVALUATOR_DATA_DIR}" ] \
+  && { [ "${WANAKU_SERVER_MODE}" != builtin ] || kill -0 "${WANAKU_SERVER_PID}" 2>/dev/null; }; then
+  mcp_restore_evaluators \
+    || { echo "FAIL [8.1]: evaluator configuration restoration failed"; CLEANUP_FAILED=1; }
+fi
 # timeout needs an executable, so invoke the route selected in S.1 directly, as Step 1.1 does.
 cleanup_cli() {
   if [ "${WANAKU_CLI_MODE}" = jar ]; then
