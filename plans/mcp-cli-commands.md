@@ -341,15 +341,28 @@ submit the step assessment.
 ### Step 1.2: Create the test namespaces
 
 ```bash run
-for NS in "${MCP_NAMESPACE}" "${MCP_ISOLATED_NAMESPACE}" "${MCP_UNGOVERNED_NAMESPACE}"; do
+EXISTING_NAMESPACES=$(wanaku namespaces list --host "${WANAKU_SERVER_URL}" --no-auth --plain) \
+  || { echo "FAIL [1.2]: namespace list failed"; return 1; }
+for NS_VAR in MCP_NAMESPACE MCP_ISOLATED_NAMESPACE MCP_UNGOVERNED_NAMESPACE; do
+  NS="${!NS_VAR}"
+  # Creating an existing namespace does not fail, so check first: this run must not reuse a namespace
+  if echo "${EXISTING_NAMESPACES}" | awk -F'\t' -v ns="${NS}" '$1 == ns { found = 1 } END { exit !found }'; then
+    echo "FAIL [1.2]: namespace ${NS} already exists; use new namespace names"; return 1
+  fi
   wanaku namespaces create "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null \
     || { echo "FAIL [1.2]: namespace creation failed; stop before registering the forward"; return 1; }
   MCP_CREATED_NAMESPACES="${MCP_CREATED_NAMESPACES} ${NS}"
-  echo "PASS [1.2]: test namespace created"
+  echo "PASS [1.2]: new namespace created for ${NS_VAR} (${NS})"
 done
 ```
 
-**Expected result:** Three new namespaces are created; none are reused.
+**Expected result:**
+
+- The output includes `PASS [1.2]: new namespace created for MCP_NAMESPACE`.
+- The output includes `PASS [1.2]: new namespace created for MCP_ISOLATED_NAMESPACE`.
+- The output includes `PASS [1.2]: new namespace created for MCP_UNGOVERNED_NAMESPACE`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ### Step 1.3: Start or reuse the MCP fixture and register it as a forward
 
