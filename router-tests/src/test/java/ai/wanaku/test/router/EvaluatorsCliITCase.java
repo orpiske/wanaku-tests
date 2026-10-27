@@ -4,6 +4,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import ai.wanaku.test.WanakuTestConstants;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
@@ -24,6 +25,7 @@ import static org.assertj.core.api.Assumptions.assumeThat;
 /** Exercises the evaluator CLI against the real management API (wanaku-barn#235). */
 @Timeout(120)
 class EvaluatorsCliITCase extends RouterTestBase {
+    private static final Pattern REVISION_ID = Pattern.compile("(?m)^id\\t([0-9]+)$");
     private final ObjectMapper mapper = new ObjectMapper();
 
     @TempDir
@@ -31,6 +33,8 @@ class EvaluatorsCliITCase extends RouterTestBase {
 
     private CLIExecutor cli;
     private EvaluatorClient evaluators;
+    private JsonNode originalRevision;
+    private long ownedRevisionId;
 
     @BeforeEach
     void setupCli() {
@@ -38,15 +42,26 @@ class EvaluatorsCliITCase extends RouterTestBase {
         cli = CLIExecutor.createDefault();
         assumeThat(cli.isAvailable()).as("Wanaku CLI must be available").isTrue();
         evaluators = new EvaluatorClient(getServerBaseUrl(), null);
+        var active = evaluators.getActiveRevision();
+        // The server has no active revision (404) until the first evaluator update.
+        assertThat(active.statusCode()).as("Active evaluator revision lookup").isIn(200, 404);
+        originalRevision = active.statusCode() == 200 ? active.body() : null;
+        ownedRevisionId = originalRevisionId();
     }
 
     @AfterEach
-    void clearEvaluators() {
-        if (evaluators != null) {
-            assertThat(evaluators.updateEvaluators("{\"evaluators\": []}").statusCode())
-                    .as("Evaluator cleanup must succeed")
-                    .isEqualTo(200);
+    void restoreEvaluators() {
+        if (ownedRevisionId == originalRevisionId()) {
+            return;
         }
+        // The expected revision rejects the restore if a concurrent change replaced this test's revision.
+        String expected = "\"expected_revision\": " + ownedRevisionId;
+        var restored = originalRevision == null
+                ? evaluators.updateEvaluators("{\"evaluators\": [], " + expected + "}")
+                : evaluators.activateRevision(originalRevisionId(), "{" + expected + "}");
+        assertThat(restored.statusCode())
+                .as("Restore original evaluators without overwriting concurrent changes")
+                .isEqualTo(200);
     }
 
     @Test
@@ -73,8 +88,7 @@ class EvaluatorsCliITCase extends RouterTestBase {
         assertThat(list.getCombinedOutput()).contains("id", "status", "checksum", "superseded", "active");
         assertThat(list.getCombinedOutput()).containsPattern("(?m)^\\s*" + first + "\\s+");
         assertThat(list.getCombinedOutput()).containsPattern("(?m)^\\s*" + second + "\\s+");
-        assertThat(list.getCombinedOutput())
-                .containsPattern("(?ms)^" + second + "\\t[^\\n]*\\n.*?^" + first + "\\t");
+        assertThat(list.getCombinedOutput()).containsPattern("(?ms)^" + second + "\\t[^\\n]*\\n.*?^" + first + "\\t");
 
         CLIResult active = execute("revisions", "active");
         assertSuccess(active);
@@ -133,8 +147,9 @@ class EvaluatorsCliITCase extends RouterTestBase {
 
     @Test
     void shouldReportMissingRevisionsWithoutChangingActiveConfiguration() {
-        assertThat(evaluators.updateEvaluators("{\"evaluators\": []}").statusCode())
-                .isEqualTo(200);
+        var cleared = evaluators.updateEvaluators("{\"evaluators\": []}");
+        assertThat(cleared.statusCode()).isEqualTo(200);
+        ownedRevisionId = cleared.body().path("revision").path("id").asLong();
         JsonNode before = active();
         String missing = Long.toString(Long.MAX_VALUE);
         assertThat(evaluators.getRevision(Long.MAX_VALUE).statusCode()).isEqualTo(404);
@@ -203,11 +218,29 @@ class EvaluatorsCliITCase extends RouterTestBase {
         return response.body();
     }
 
+    private long originalRevisionId() {
+        return originalRevision == null
+                ? 0
+                : originalRevision.path("revision").path("id").asLong();
+    }
+
     private CLIResult execute(String... args) {
         List<String> command = new ArrayList<>(List.of("evaluators"));
         command.addAll(List.of(args));
         command.addAll(List.of("--host", getServerBaseUrl(), "--no-auth"));
-        return cli.execute(command.toArray(String[]::new));
+        CLIResult result = cli.execute(command.toArray(String[]::new));
+        if (result.isSuccess() && (args[0].equals("update") || (args.length > 1 && args[1].equals("activate")))) {
+            var revision = REVISION_ID.matcher(result.getCombinedOutput());
+            boolean printed = revision.find();
+            // Record the revision before asserting, so cleanup can still restore if the output is unexpected.
+            ownedRevisionId = printed
+                    ? Long.parseLong(revision.group(1))
+                    : active().path("revision").path("id").asLong();
+            assertThat(printed)
+                    .as("Successful evaluator mutation must print its revision ID: %s", result.getCombinedOutput())
+                    .isTrue();
+        }
+        return result;
     }
 
     private static void assertSuccess(CLIResult result) {
