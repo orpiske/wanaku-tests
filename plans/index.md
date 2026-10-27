@@ -16,6 +16,7 @@ cover the behavior of single features.
 | Barn on OpenShift | [operator-service-catalog.md](operator-service-catalog.md) | Barn deployed by the operator, `WanakuServiceCatalog`, and the CLI service catalog lifecycle from `init` to deploy, remove and restore, templates and negative tests. |
 | CIC on OpenShift | [camel-integration-capability.md](camel-integration-capability.md) | `WanakuIntegration`, self-registration, catalog source and plain Deployment. |
 | Semantic Router on OpenShift | [semantic-router-openshift.md](semantic-router-openshift.md) | `WanakuSemanticRouter` deployment, routing, audit and deletion. |
+| Cloud CLI on OpenShift | [cloud-run-semantic.md](cloud-run-semantic.md) | `wanaku cloud run semantic`: stored target, rejected submissions, ConfigMap with `items`, file tree in the runtime, registration, status, failed start and deletion. |
 
 ## Credentials
 
@@ -34,7 +35,7 @@ The plans do not contain passwords, tokens or client secrets. They get each cred
 | `OPENSHIFT_SA_TOKEN` | OpenShift plans | Environment. See [setup/service-account-setup.md](setup/service-account-setup.md). |
 | `KEYCLOAK_ADMIN_PASS` | Plans that use Keycloak | Generated on OpenShift. Environment for the local Compose option of [cli-auth-commands.md](cli-auth-commands.md). |
 | `WANAKU_MCPROUTER_SECRET` | [cli-auth-commands.md](cli-auth-commands.md), local Compose option | Environment. Use the value of the Compose deployment. |
-| `TYPESAFE_API_KEY` | [semantic-router-openshift.md](semantic-router-openshift.md) | Environment (optional). |
+| `TYPESAFE_API_KEY` | [semantic-router-openshift.md](semantic-router-openshift.md), [cloud-run-semantic.md](cloud-run-semantic.md) | Environment (optional). |
 
 To set the values, export them in the shell that runs Saci, or pass them as `env:` parameters of an environment in
 [saci.yaml](saci.yaml), as the `openshift` environment does for `OPENSHIFT_SA_TOKEN`. To keep them in a file, put
