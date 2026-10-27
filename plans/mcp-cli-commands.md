@@ -127,16 +127,16 @@ else
 fi
 if [ "${WANAKU_CLI_MODE}" = jar ]; then
   [ -r "${CLI_JAR}" ] \
-    || { echo "FAIL [S.1]: selected jar missing or unreadable: ${CLI_JAR}. Install wanaku or set CLI_JAR to a built jar."; exit 1; }
+    || { echo "FAIL [S.1]: selected jar missing or unreadable: ${CLI_JAR}. Install wanaku or set CLI_JAR to a built jar."; return 1; }
   command -v java > /dev/null 2>&1 \
-    || { echo "FAIL [S.1]: jar invocation requires Java 21+ on PATH"; exit 1; }
+    || { echo "FAIL [S.1]: jar invocation requires Java 21+ on PATH"; return 1; }
   wanaku() { java -jar "${CLI_JAR}" "$@"; }
 else
   wanaku() { "${WANAKU_CLI_EXEC}" "$@"; }
 fi
 wanaku --version \
   && echo "PASS [S.1]: selected ${WANAKU_CLI_MODE} CLI runs" \
-  || { echo "FAIL [S.1]: selected ${WANAKU_CLI_MODE} CLI failed --version; inspect the error above (launcher, permissions or Java compatibility)."; exit 1; }
+  || { echo "FAIL [S.1]: selected ${WANAKU_CLI_MODE} CLI failed --version; inspect the error above (launcher, permissions or Java compatibility)."; return 1; }
 ```
 
 **Expected result:** The selected CLI prints its version and `PASS [S.1]`; setup stops with a useful diagnostic
@@ -225,10 +225,10 @@ the installed binary. Run this block directly; no other startup procedure is nee
 case "${WANAKU_SERVER_MODE}" in
   builtin)
     WANAKU_SERVER_BIN=$(command -v wanaku-server) \
-      || { echo "FAIL [1.1]: builtin mode requires wanaku-server on PATH"; exit 1; }
+      || { echo "FAIL [1.1]: builtin mode requires wanaku-server on PATH"; return 1; }
     for PORT in "${WANAKU_SERVER_MGMT_PORT}" 8081; do
       if curl --connect-timeout 1 --max-time 2 -s -o /dev/null "http://localhost:${PORT}/"; then
-        echo "FAIL [1.1]: builtin listener port already in use"; exit 1
+        echo "FAIL [1.1]: builtin listener port already in use"; return 1
       fi
     done
     export WANAKU_SERVER_DATA_DIR="$(mktemp -d)"
@@ -258,7 +258,7 @@ case "${WANAKU_SERVER_MODE}" in
     echo "PASS [1.1]: builtin server process launched"
     ;;
   existing) ;;
-  *) echo "FAIL [1.1]: mode must be builtin or existing"; exit 1 ;;
+  *) echo "FAIL [1.1]: mode must be builtin or existing"; return 1 ;;
 esac
 ```
 
@@ -287,13 +287,13 @@ case "${WANAKU_SERVER_MODE}" in
     : "${WANAKU_MCP_BASE_URL:?Set MCP listener base URL}"
     echo "PASS [1.1]: existing server selected (${WANAKU_SERVER_URL})"
     ;;
-  *) echo "FAIL [1.1]: mode must be builtin or existing"; exit 1 ;;
+  *) echo "FAIL [1.1]: mode must be builtin or existing"; return 1 ;;
 esac
 for ATTEMPT in $(seq 1 15); do
   if [ "${MCP_CREATED_SERVER:-false}" = true ] && ! kill -0 "${WANAKU_SERVER_PID}" 2>/dev/null; then
     echo "FAIL [1.1]: builtin server exited during startup"
     tail -n 20 "${WANAKU_SERVER_LOG}"
-    exit 1
+    return 1
   fi
   if curl --connect-timeout 1 --max-time 1 -fsS "${WANAKU_SERVER_URL}/healthz" > /dev/null 2>&1; then
     echo "PASS [1.1]: management endpoint ready"
@@ -302,7 +302,7 @@ for ATTEMPT in $(seq 1 15); do
   if [ "${ATTEMPT}" -eq 15 ]; then
     echo "FAIL [1.1]: management endpoint unavailable after bounded readiness wait"
     [ "${MCP_CREATED_SERVER:-false}" != true ] || tail -n 20 "${WANAKU_SERVER_LOG}"
-    exit 1
+    return 1
   fi
   sleep 1
 done
@@ -317,7 +317,7 @@ for KIND in tools resources prompts forwards; do
   fi
   RESULT=$?
   [ "${RESULT}" -eq 0 ] \
-    || { echo "FAIL [1.1]: ${KIND} registry inspection failed or timed out (exit ${RESULT})"; exit 1; }
+    || { echo "FAIL [1.1]: ${KIND} registry inspection failed or timed out (exit ${RESULT})"; return 1; }
 done
 echo "PASS [1.1]: server setup complete (mode ${WANAKU_SERVER_MODE})"
 ```
@@ -338,7 +338,7 @@ submit the step assessment.
 ```bash run
 for NS in "${MCP_NAMESPACE}" "${MCP_ISOLATED_NAMESPACE}" "${MCP_UNGOVERNED_NAMESPACE}"; do
   wanaku namespaces create "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null \
-    || { echo "FAIL [1.2]: namespace creation failed; stop before registering the forward"; exit 1; }
+    || { echo "FAIL [1.2]: namespace creation failed; stop before registering the forward"; return 1; }
   MCP_CREATED_NAMESPACES="${MCP_CREATED_NAMESPACES} ${NS}"
   echo "PASS [1.2]: test namespace created"
 done
@@ -364,26 +364,26 @@ launched fixture listens on `0.0.0.0` at `TEST_MCP_PORT` (default `8181`); no ne
 ```bash run
 if [ -z "${TEST_MCP_URL:-}" ]; then
   command -v test-mcp-server > /dev/null 2>&1 \
-    || { echo "FAIL [1.3]: install test-mcp-server in the worker or provide TEST_MCP_URL"; exit 1; }
+    || { echo "FAIL [1.3]: install test-mcp-server in the worker or provide TEST_MCP_URL"; return 1; }
   export TEST_MCP_PORT="${TEST_MCP_PORT:-8181}"
   case "${TEST_MCP_PORT}" in
-    ''|*[!0-9]*) echo "FAIL [1.3]: TEST_MCP_PORT must be an integer"; exit 1 ;;
+    ''|*[!0-9]*) echo "FAIL [1.3]: TEST_MCP_PORT must be an integer"; return 1 ;;
   esac
   [ "${TEST_MCP_PORT}" -ge 1 ] && [ "${TEST_MCP_PORT}" -le 65535 ] \
-    || { echo "FAIL [1.3]: TEST_MCP_PORT must be between 1 and 65535"; exit 1; }
+    || { echo "FAIL [1.3]: TEST_MCP_PORT must be between 1 and 65535"; return 1; }
   export TEST_MCP_URL="http://localhost:${TEST_MCP_PORT}/mcp"
   if curl --connect-timeout 1 --max-time 2 -s -o /dev/null "${TEST_MCP_URL}"; then
-    echo "FAIL [1.3]: fixture port already in use; provide TEST_MCP_URL or select a free TEST_MCP_PORT"; exit 1
+    echo "FAIL [1.3]: fixture port already in use; provide TEST_MCP_URL or select a free TEST_MCP_PORT"; return 1
   fi
   MCP_FIXTURE_DATA_DIR=$(mktemp -d) \
-    || { echo "FAIL [1.3]: cannot create fixture log directory"; exit 1; }
+    || { echo "FAIL [1.3]: cannot create fixture log directory"; return 1; }
   QUARKUS_HTTP_HOST=0.0.0.0 QUARKUS_HTTP_PORT="${TEST_MCP_PORT}" \
     test-mcp-server < /dev/null > "${MCP_FIXTURE_DATA_DIR}/fixture.log" 2>&1 &
   MCP_FIXTURE_PID=$!
   MCP_CREATED_FIXTURE=true
   for ATTEMPT in $(seq 1 30); do
     kill -0 "${MCP_FIXTURE_PID}" 2>/dev/null \
-      || { echo "FAIL [1.3]: fixture exited; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; exit 1; }
+      || { echo "FAIL [1.3]: fixture exited; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; return 1; }
     if curl --connect-timeout 1 --max-time 2 -fsS \
       -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
       --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"wanaku-cli-plan","version":"1"}}}' \
@@ -394,13 +394,13 @@ if [ -z "${TEST_MCP_URL:-}" ]; then
       break
     fi
     [ "${ATTEMPT}" -lt 30 ] \
-      || { echo "FAIL [1.3]: fixture startup timed out; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; exit 1; }
+      || { echo "FAIL [1.3]: fixture startup timed out; inspect ${MCP_FIXTURE_DATA_DIR}/fixture.log"; return 1; }
     sleep 1
   done
 fi
 case "${TEST_MCP_URL}" in
   http://*|https://*) ;;
-  *) echo "FAIL [1.3]: TEST_MCP_URL must use http:// or https://"; exit 1 ;;
+  *) echo "FAIL [1.3]: TEST_MCP_URL must use http:// or https://"; return 1 ;;
 esac
 export TEST_MCP_NAMESPACE="${MCP_NAMESPACE}"
 ```
@@ -411,16 +411,16 @@ Record ownership immediately after successful registration, so cleanup also work
 ```bash run
 wanaku forwards add --host "${WANAKU_SERVER_URL}" --no-auth \
   --name "${TEST_MCP_FORWARD}" --service "${TEST_MCP_URL}" --namespace "${TEST_MCP_NAMESPACE}" \
-  || { echo "FAIL [1.3]: forward registration failed"; exit 1; }
+  || { echo "FAIL [1.3]: forward registration failed"; return 1; }
 MCP_CREATED_FORWARD=true
 for ATTEMPT in $(seq 1 30); do
   OUTPUT=$(wanaku tools list --host "${WANAKU_SERVER_URL}" --no-auth --plain) \
-    || { echo "FAIL [1.3]: discovery query failed"; exit 1; }
+    || { echo "FAIL [1.3]: discovery query failed"; return 1; }
   if echo "${OUTPUT}" | grep -Eq '^restartService([[:space:]]|$)'; then
     echo "PASS [1.3]: restartService discovered"
     break
   fi
-  [ "${ATTEMPT}" -lt 30 ] || { echo "FAIL [1.3]: fixture restartService not discovered; check server-to-fixture reachability"; exit 1; }
+  [ "${ATTEMPT}" -lt 30 ] || { echo "FAIL [1.3]: fixture restartService not discovered; check server-to-fixture reachability"; return 1; }
   wanaku forwards refresh --host "${WANAKU_SERVER_URL}" --no-auth --name "${TEST_MCP_FORWARD}" > /dev/null 2>&1 || true
   sleep 1
 done
@@ -439,12 +439,12 @@ and `restartService` is discovered. Step 1.4 also verifies the MCP listener thro
 export MCP_URI="${WANAKU_MCP_BASE_URL}/${MCP_NAMESPACE}/mcp"
 for ATTEMPT in $(seq 1 30); do
   OUTPUT=$(wanaku mcp tool list --uri "${MCP_URI}" --no-auth --plain) \
-    || { echo "FAIL [1.4]: MCP listener unavailable"; exit 1; }
+    || { echo "FAIL [1.4]: MCP listener unavailable"; return 1; }
   if echo "${OUTPUT}" | grep -Eq '^restartService([[:space:]]|$)'; then
     echo "PASS [1.4]: MCP listener lists fixture restartService"
     break
   fi
-  [ "${ATTEMPT}" -lt 30 ] || { echo "FAIL [1.4]: fixture restartService missing from test namespace; stop before MCP tests"; exit 1; }
+  [ "${ATTEMPT}" -lt 30 ] || { echo "FAIL [1.4]: fixture restartService missing from test namespace; stop before MCP tests"; return 1; }
   sleep 1
 done
 ```
@@ -1025,11 +1025,16 @@ echo "${OUTPUT}" | grep -q "Connection refused" \
 Remove only resources recorded as created by this run, including after partial setup. Never stop an existing
 Wanaku Server or delete its persistence/configuration. Do not use port-wide process killing on a shared machine.
 
+The removal commands ignore errors, such as a resource that is already gone. The block then checks the result with
+the CLI list commands while the server still runs, and prints a `PASS` or `FAIL` line for each check. The registry
+was empty before the run (Step 1.1), so no tools, resources or prompts may remain.
+
 ```bash run
 if [ -n "${MCP_EVALUATOR_DATA_DIR:-}" ] && [ -d "${MCP_EVALUATOR_DATA_DIR}" ]; then
   mcp_restore_evaluators \
-    || { echo "FAIL [8.1]: evaluator configuration restoration failed; inspect retained ${MCP_EVALUATOR_DATA_DIR}"; exit 1; }
+    || { echo "FAIL [8.1]: evaluator configuration restoration failed; inspect retained ${MCP_EVALUATOR_DATA_DIR}"; return 1; }
 fi
+CLEANUP_FAILED=0
 if [ "${MCP_CREATED_FORWARD:-false}" = true ]; then
   wanaku forwards remove --host "${WANAKU_SERVER_URL}" --no-auth \
     --name "${TEST_MCP_FORWARD}" --plain > /dev/null 2>&1 || true
@@ -1037,6 +1042,29 @@ fi
 for NS in $(printf '%s' "${MCP_CREATED_NAMESPACES}"); do
   wanaku namespaces delete "${NS}" --host "${WANAKU_SERVER_URL}" --no-auth --plain > /dev/null 2>&1 || true
 done
+
+# $1 = registry kind, $2 = extended regular expression of the names that must not be listed
+cleanup_check_absent() {
+  CLEANUP_LIST=$(wanaku "$1" list --host "${WANAKU_SERVER_URL}" --no-auth --plain 2>/dev/null) \
+    || { echo "FAIL [8.1]: ${1} list failed"; CLEANUP_FAILED=1; return 0; }
+  if echo "${CLEANUP_LIST}" | grep -Eq "^($2)([[:space:]]|\$)"; then
+    echo "FAIL [8.1]: ${1} of this run still listed:"; echo "${CLEANUP_LIST}"; CLEANUP_FAILED=1
+  else
+    echo "PASS [8.1]: no ${1} of this run remain"
+  fi
+}
+if [ "${WANAKU_SERVER_MODE}" = builtin ] && [ "${MCP_CREATED_SERVER:-false}" != true ]; then
+  for KIND in forwards namespaces tools resources prompts; do
+    echo "PASS [8.1]: no ${KIND} of this run remain (this run started no server)"
+  done
+else
+  cleanup_check_absent forwards "${TEST_MCP_FORWARD}"
+  cleanup_check_absent namespaces "${MCP_NAMESPACE}|${MCP_ISOLATED_NAMESPACE}|${MCP_UNGOVERNED_NAMESPACE}"
+  for KIND in tools resources prompts; do
+    cleanup_check_absent "${KIND}" '[^[:space:]]+'
+  done
+fi
+
 if [ "${MCP_CREATED_FIXTURE:-false}" = true ]; then
   kill "${MCP_FIXTURE_PID}" 2>/dev/null || true
   wait "${MCP_FIXTURE_PID}" 2>/dev/null || true
@@ -1044,6 +1072,14 @@ fi
 if [ -n "${MCP_FIXTURE_DATA_DIR:-}" ]; then
   rm -rf "${MCP_FIXTURE_DATA_DIR}"
 fi
+if [ "${MCP_CREATED_FIXTURE:-false}" != true ]; then
+  echo "PASS [8.1]: fixture cleanup done (the fixture was supplied, so it is left running)"
+elif kill -0 "${MCP_FIXTURE_PID}" 2>/dev/null || [ -e "${MCP_FIXTURE_DATA_DIR}" ]; then
+  echo "FAIL [8.1]: the launched fixture is still running or its files remain"; CLEANUP_FAILED=1
+else
+  echo "PASS [8.1]: fixture cleanup done (launched fixture stopped and its files removed)"
+fi
+
 if [ "${WANAKU_SERVER_MODE}" = builtin ]; then
   if [ "${MCP_CREATED_SERVER:-false}" = true ]; then
     kill "${WANAKU_SERVER_PID}" 2>/dev/null || true
@@ -1052,14 +1088,31 @@ if [ "${WANAKU_SERVER_MODE}" = builtin ]; then
   if [ -n "${MCP_CREATED_SERVER_DATA_DIR:-}" ]; then
     rm -rf "${MCP_CREATED_SERVER_DATA_DIR}"
   fi
+  if { [ -n "${WANAKU_SERVER_PID}" ] && kill -0 "${WANAKU_SERVER_PID}" 2>/dev/null; } \
+    || { [ -n "${MCP_CREATED_SERVER_DATA_DIR}" ] && [ -e "${MCP_CREATED_SERVER_DATA_DIR}" ]; }; then
+    echo "FAIL [8.1]: the builtin server is still running or its configuration and data remain"; CLEANUP_FAILED=1
+  else
+    echo "PASS [8.1]: server cleanup done (builtin server stopped, configuration and data removed)"
+  fi
+elif curl --connect-timeout 1 --max-time 2 -fsS "${WANAKU_SERVER_URL}/healthz" > /dev/null 2>&1; then
+  echo "PASS [8.1]: server cleanup done (existing server still reachable)"
+else
+  echo "FAIL [8.1]: the existing server is not reachable after cleanup"; CLEANUP_FAILED=1
 fi
+[ "${CLEANUP_FAILED}" -eq 0 ] || return 1
 ```
 
-**Expected result:** The run's forward, discovered entries and three namespaces are absent (verify with the CLI
-list commands). A supplied fixture remains running; a fixture launched by this run and its temporary files
-are removed. In builtin mode the owned server process and fresh
-configuration/data directory are removed. In existing mode the server remains reachable and its unrelated configuration/data is preserved.
-Cleanup failures must be investigated; ignored missing-resource errors alone do not establish PASS.
+**Expected result:**
+
+- The output includes `PASS [8.1]: no forwards of this run remain`.
+- The output includes `PASS [8.1]: no namespaces of this run remain`.
+- The output includes `PASS [8.1]: no tools of this run remain`.
+- The output includes `PASS [8.1]: no resources of this run remain`.
+- The output includes `PASS [8.1]: no prompts of this run remain`.
+- The output includes `PASS [8.1]: fixture cleanup done`.
+- The output includes `PASS [8.1]: server cleanup done`.
+- The output contains no line starting with `FAIL`.
+- The commands exit with code 0.
 
 ## Test Summary Matrix
 
