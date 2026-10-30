@@ -60,11 +60,11 @@ environments:
 # Comment this block if you don't have it.
 actions:
   servers:
-    mailer:
+    internal-mcp:
       url: http://127.0.0.1:58081/saci-ns/mcp
   definitions:
     email-report:
-      server: mailer
+      server: internal-mcp
       tool: send-email
       on: [passed, failed, blocked, inconclusive, error, cancelled]
       arguments:
@@ -75,6 +75,13 @@ actions:
         finished_at: "{{run.finished_at}}"
         counts: "{{run.counts}}"
         summary: "Units:\n{{summary}}"
+        x-request-id: "{{run.id}}"
+    investigate:
+      server: internal-mcp
+      tool: investigate
+      on: [ failed, inconclusive, error ]
+      arguments:
+        run_id: "{{run.id}}"
         x-request-id: "{{run.id}}"
 
 investigations:
