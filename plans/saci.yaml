@@ -53,7 +53,7 @@ environments:
       OPENSHIFT_API_URL: env:OPENSHIFT_API_URL
   investigator:
     secrets:
-      GIT_TOKEN:
+      GH_TOKEN:
         env: GH_TOKEN      # read code and create issues only
 
 # NOTE: this requires the saci script runner with the MCP scripts for tools.
