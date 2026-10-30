@@ -2,7 +2,6 @@ package ai.wanaku.test.forward;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
-import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
@@ -32,32 +31,12 @@ class McpForwardingErrorITCase extends McpForwardingTestBase {
         }
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Adding a forward with a valid target succeeds")
     @Test
-    void shouldAddForwardWithValidTarget() {
-        int maxAttempts = 5;
-        ForwardsClient.ForwardsClientException lastException = null;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                forwardsClient.add("valid-fwd", getServerBaseUrl() + "/default/mcp/", testNamespaceName);
-                assertThat(forwardsClient.exists("valid-fwd")).isTrue();
-                return;
-            } catch (ForwardsClient.ForwardsClientException e) {
-                lastException = e;
-                if (attempt < maxAttempts) {
-                    try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
-            }
-        }
-        assumeThat(lastException.getMessage())
-                .as("Router validates forward target connectivity")
-                .doesNotContain("500");
+    void shouldAddForwardWithValidTarget() throws Exception {
+        forwardsClient.add("valid-fwd", startTargetMcpServer(), testNamespaceName);
+
+        assertThat(forwardsClient.exists("valid-fwd")).isTrue();
     }
 
     @DisplayName("List forwards returns valid response even when empty")

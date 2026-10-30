@@ -2,8 +2,6 @@ package ai.wanaku.test.router;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
-import ai.wanaku.test.base.KnownLimitation;
-import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,21 +24,10 @@ class ForwardsCrudITCase extends RouterTestBase {
                 .isNotNull();
     }
 
-    private void addForwardOrSkip(String name, String address) {
-        try {
-            forwardsClient.add(name, address, nsId);
-        } catch (ForwardsClient.ForwardsClientException e) {
-            assumeThat(e.getMessage())
-                    .as("Forward add failed due to target validation (Router connects to target): %s", e.getMessage())
-                    .doesNotContain("500");
-        }
-    }
-
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward and verify it exists")
     @Test
-    void shouldAddForward() {
-        addForwardOrSkip("test-fwd", getServerBaseUrl() + "/default/mcp/");
+    void shouldAddForward() throws Exception {
+        forwardsClient.add("test-fwd", startTargetMcpServer(), nsId);
 
         assertThat(forwardsClient.exists("test-fwd")).isTrue();
     }
@@ -61,14 +48,11 @@ class ForwardsCrudITCase extends RouterTestBase {
         assertThat(removed).isFalse();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
-    void shouldRemoveForward() {
-        addForwardOrSkip("fwd-to-remove", getServerBaseUrl() + "/default/mcp/");
-        assumeThat(forwardsClient.exists("fwd-to-remove"))
-                .as("Forward must exist before removal")
-                .isTrue();
+    void shouldRemoveForward() throws Exception {
+        forwardsClient.add("fwd-to-remove", startTargetMcpServer(), nsId);
+        assertThat(forwardsClient.exists("fwd-to-remove")).isTrue();
 
         boolean removed = forwardsClient.remove("fwd-to-remove");
 
@@ -76,15 +60,14 @@ class ForwardsCrudITCase extends RouterTestBase {
         assertThat(forwardsClient.exists("fwd-to-remove")).isFalse();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Refresh a forward without error")
     @Test
-    void shouldRefreshForwards() {
-        addForwardOrSkip("refresh-fwd", getServerBaseUrl() + "/default/mcp/");
-        assumeThat(forwardsClient.exists("refresh-fwd"))
-                .as("Forward must exist before refresh")
-                .isTrue();
+    void shouldRefreshForwards() throws Exception {
+        forwardsClient.add("refresh-fwd", startTargetMcpServer(), nsId);
+        assertThat(forwardsClient.exists("refresh-fwd")).isTrue();
 
         forwardsClient.refresh("refresh-fwd");
+
+        assertThat(forwardsClient.exists("refresh-fwd")).isTrue();
     }
 }

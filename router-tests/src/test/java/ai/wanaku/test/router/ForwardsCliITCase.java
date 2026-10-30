@@ -1,7 +1,6 @@
 package ai.wanaku.test.router;
 
 import io.quarkus.test.junit.QuarkusTest;
-import ai.wanaku.test.base.KnownLimitation;
 import ai.wanaku.test.client.CLIExecutor;
 import ai.wanaku.test.client.CLIResult;
 
@@ -28,11 +27,11 @@ class ForwardsCliITCase extends RouterTestBase {
         assumeThat(nsId).as("Test namespace must be available").isNotNull();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward via CLI and verify it exists via REST")
     @Test
-    void shouldAddForwardViaCli() {
+    void shouldAddForwardViaCli() throws Exception {
         String name = "test-fwd";
+        String targetMcpUrl = startTargetMcpServer();
 
         CLIResult result = executeWithAuth(
                 "forwards",
@@ -42,13 +41,10 @@ class ForwardsCliITCase extends RouterTestBase {
                 "--name",
                 name,
                 "--service",
-                getServerBaseUrl() + "/default/mcp/",
+                targetMcpUrl,
                 "--namespace-name",
                 "fwd-cli-test-ns");
 
-        assumeThat(result.getCombinedOutput())
-                .as("Router may reject forward target due to connectivity validation")
-                .doesNotContain("Internal Server Error");
         assertThat(result.isSuccess())
                 .as("CLI command should succeed: %s", result.getCombinedOutput())
                 .isTrue();
@@ -65,17 +61,10 @@ class ForwardsCliITCase extends RouterTestBase {
                 .isTrue();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward via CLI")
     @Test
-    void shouldRemoveForwardViaCli() {
-        try {
-            forwardsClient.add("cli-remove-fwd", getServerBaseUrl() + "/default/mcp/", nsId);
-        } catch (Exception e) {
-            assumeThat(false)
-                    .as("Cannot add forward for removal test (Router validates target): %s", e.getMessage())
-                    .isTrue();
-        }
+    void shouldRemoveForwardViaCli() throws Exception {
+        forwardsClient.add("cli-remove-fwd", startTargetMcpServer(), nsId);
         assertThat(forwardsClient.exists("cli-remove-fwd")).isTrue();
 
         CLIResult result = executeWithAuth("forwards", "remove", "--host", getRouterHost(), "--name", "cli-remove-fwd");
