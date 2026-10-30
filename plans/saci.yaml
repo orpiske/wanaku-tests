@@ -20,7 +20,7 @@ worker:
 
 llm:
   base_url: env:SACI_LLM_BASE_URL
-  model: rits/zai-org/glm-5-3
+  model: env:SACI_LLM_MODEL
   api_key: env:SACI_LLM_API_KEY
 
 judge:
