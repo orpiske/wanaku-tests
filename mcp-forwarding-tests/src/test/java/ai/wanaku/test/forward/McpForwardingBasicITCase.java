@@ -2,8 +2,6 @@ package ai.wanaku.test.forward;
 
 import java.util.List;
 import io.quarkus.test.junit.QuarkusTest;
-import ai.wanaku.test.base.KnownLimitation;
-import ai.wanaku.test.client.ForwardsClient;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -18,40 +16,13 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
     @BeforeEach
     void assumeInfrastructureAvailable() {
         assumeThat(isServerRunning()).as("Router must be available").isTrue();
-        assumeThat(isServerRunning())
-                .as("Target router must be available for forwarding tests")
-                .isTrue();
         assumeThat(testNamespaceName).as("Test namespace must be available").isNotNull();
     }
 
-    private boolean tryAddForward(String name, String address) {
-        int maxAttempts = 5;
-        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
-            try {
-                forwardsClient.add(name, address, testNamespaceName);
-                return true;
-            } catch (ForwardsClient.ForwardsClientException e) {
-                if (attempt < maxAttempts) {
-                    try {
-                        Thread.sleep(3000);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        return false;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Add a forward to the target MCP server")
     @Test
-    void shouldAddForward() {
-        boolean added = tryAddForward("test-forward", getTargetMcpUrl());
-        assumeThat(added)
-                .as("Router must accept the forward target (validates connectivity)")
-                .isTrue();
+    void shouldAddForward() throws Exception {
+        forwardsClient.add("test-forward", startTargetMcpServer(), testNamespaceName);
 
         assertThat(forwardsClient.exists("test-forward")).isTrue();
     }
@@ -64,12 +35,11 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         assertThat(forwards).isNotNull();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Remove a forward and verify it no longer exists")
     @Test
-    void shouldRemoveForward() {
-        boolean added = tryAddForward("fwd-to-remove", getTargetMcpUrl());
-        assumeThat(added).as("Forward must be added before removal").isTrue();
+    void shouldRemoveForward() throws Exception {
+        forwardsClient.add("fwd-to-remove", startTargetMcpServer(), testNamespaceName);
+        assertThat(forwardsClient.exists("fwd-to-remove")).isTrue();
 
         boolean removed = forwardsClient.remove("fwd-to-remove");
 
@@ -85,12 +55,11 @@ class McpForwardingBasicITCase extends McpForwardingTestBase {
         assertThat(removed).isFalse();
     }
 
-    @KnownLimitation("wanaku#1741")
     @DisplayName("Refresh a forward without error")
     @Test
-    void shouldRefreshForwards() {
-        boolean added = tryAddForward("refresh-test-fwd", getTargetMcpUrl());
-        assumeThat(added).as("Forward must be added before refresh").isTrue();
+    void shouldRefreshForwards() throws Exception {
+        forwardsClient.add("refresh-test-fwd", startTargetMcpServer(), testNamespaceName);
+        assertThat(forwardsClient.exists("refresh-test-fwd")).isTrue();
 
         forwardsClient.refresh("refresh-test-fwd");
 
