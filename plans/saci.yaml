@@ -103,4 +103,4 @@ investigations:
 
 policies:
   default:
-    actions: [email-report]
+    actions: [email-report, investigate]
